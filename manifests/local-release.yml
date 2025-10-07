@@ -1,0 +1,6 @@
+---
+- type: replace
+  path: /releases/name=bosh-libvirt-cpi
+  value:
+    name: bosh-libvirt-cpi
+    url: file:///tmp/vbox-cpi-release # bosh create-release --force --tarball /tmp/vbox-cpi-release
