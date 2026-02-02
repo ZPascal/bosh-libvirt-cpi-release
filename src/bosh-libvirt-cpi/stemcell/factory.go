@@ -4,9 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"time"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -16,11 +14,8 @@ import (
 	boshuuid "github.com/cloudfoundry/bosh-utils/uuid"
 
 	"bosh-libvirt-cpi/driver"
+	"bosh-libvirt-cpi/qemu"
 	bpds "bosh-libvirt-cpi/vm/portdevices"
-)
-
-var (
-	stemcellSuggestedName = regexp.MustCompile(`Suggested VM name "(.+?)"`)
 )
 
 type FactoryOpts struct {
@@ -84,24 +79,17 @@ func (f Factory) ImportFromPath(imagePath string) (Stemcell, error) {
 		return nil, err
 	}
 
-	internalTmpID, err := f.importOVF(filepath.Join(stemcellPath, "image.ovf"))
+	// For libvirt, we create a base domain from the stemcell disk
+	err = f.createDomainFromStemcell(id, stemcellPath)
 	if err != nil {
 		return nil, err
-	}
-
-	// todo remove stemcell after import?
-
-	_, err = f.driver.Execute("modifyvm", internalTmpID, "--name", id)
-	if err != nil {
-		f.cleanUpPartialImport(internalTmpID)
-		return nil, bosherr.WrapErrorf(err, "Setting stemcell name")
 	}
 
 	stemcell := f.newStemcell(apiv1.NewStemcellCID(id))
 
 	err = stemcell.Prepare()
 	if err != nil {
-		f.cleanUpPartialImport(internalTmpID)
+		f.cleanUpPartialImport(id)
 		return nil, bosherr.WrapErrorf(err, "Preparing stemcell")
 	}
 
@@ -266,46 +254,57 @@ func (f Factory) switchRootDiskToSATAController(tmpDir string) error {
 	return nil
 }
 
-func (f Factory) importOVF(ovfPath string) (string, error) {
-	var internalTmpID string
+func (f Factory) createDomainFromStemcell(id, stemcellPath string) error {
+	// Convert VMDK to qcow2 using native qemu package
+	vmdkPath := filepath.Join(stemcellPath, "image-disk1.vmdk")
+	qcow2Path := filepath.Join(stemcellPath, "image.qcow2")
 
-	actionFunc := func() error {
-		output, err := f.driver.Execute("import", ovfPath)
-		if err != nil {
-			return driver.RetryableErrorImpl{err}
-		}
-
-		matches := stemcellSuggestedName.FindStringSubmatch(output)
-		if len(matches) != 2 {
-			return driver.RetryableErrorImpl{bosherr.Errorf("Couldn't find VM name in the output:\nOutput: '%s'", output)}
-		}
-
-		suggestedName := matches[1]
-
-		output, err = f.driver.Execute("list", "vms")
-		if err != nil {
-			f.cleanUpPartialImport(suggestedName)
-			return driver.RetryableErrorImpl{bosherr.WrapError(err, "Listing VMs after an import")}
-		}
-
-		// todo regexp.MustCompile(`^"#{Regexp.escape(suggestedName)}" \{(.+?)\}$`)
-
-		for _, line := range strings.Split(output, "\n") {
-			if strings.HasPrefix(line, fmt.Sprintf(`"%s" `, suggestedName)) {
-				internalTmpID = strings.TrimSuffix(strings.SplitN(line, " {", 2)[1], "}")
-				return nil
-			}
-		}
-
-		f.cleanUpPartialImport(suggestedName)
-		return driver.RetryableErrorImpl{bosherr.Errorf("Failed to import '%s'", ovfPath)}
+	qemuImg := qemu.NewImage()
+	err := qemuImg.Convert(vmdkPath, qcow2Path, qemu.FormatVMDK, qemu.FormatQCOW2)
+	if err != nil {
+		return bosherr.WrapError(err, "Converting VMDK to qcow2")
 	}
 
-	return internalTmpID, f.retrier.RetryComplex(actionFunc, 2, 2*time.Second)
+	// Create a minimal domain XML for the stemcell
+	domainXML := fmt.Sprintf(`<domain type='kvm'>
+  <name>%s</name>
+  <memory unit='MiB'>1024</memory>
+  <vcpu>1</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='%s'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <interface type='network'>
+      <source network='default'/>
+      <model type='virtio'/>
+    </interface>
+  </devices>
+</domain>`, id, qcow2Path)
+
+	// Write domain XML to temp file
+	xmlPath := filepath.Join(stemcellPath, "domain.xml")
+	err = f.fs.WriteFileString(xmlPath, domainXML)
+	if err != nil {
+		return bosherr.WrapError(err, "Writing domain XML")
+	}
+
+	// Define the domain
+	_, err = f.driver.Execute("define", xmlPath)
+	if err != nil {
+		return bosherr.WrapErrorf(err, "Defining stemcell domain")
+	}
+
+	return nil
 }
 
 func (f Factory) cleanUpPartialImport(suggestedNameOrID string) {
-	_, err := f.driver.Execute("unregistervm", suggestedNameOrID, "--delete")
+	_, err := f.driver.Execute("undefine", suggestedNameOrID, "--remove-all-storage")
 	if err != nil {
 		f.logger.Error(f.logTag, "Failed to clean up partially imported stemcell: %s", err)
 	}

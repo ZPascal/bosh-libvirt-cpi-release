@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	execDriverNotReadyErr = regexp.MustCompile("VBoxManage: error: The object is not ready")
-	execDriverDevCtlErr   = regexp.MustCompile(`failed to open \/dev\/vboxnetctl`)
-	execDriverGenericErr  = regexp.MustCompile("VBoxManage: error:")
+	// Generic error patterns for command execution
+	execDriverNotReadyErr = regexp.MustCompile("error:")
+	execDriverGenericErr  = regexp.MustCompile("error:")
 )
 
 type ExecDriver struct {
@@ -47,11 +47,11 @@ func (d ExecDriver) ExecuteComplex(args []string, opts ExecuteOpts) (string, err
 
 		output, status, err = d.runner.Execute(d.binPath, args...)
 		if err != nil {
-			return RetryableErrorImpl{err}
+			return RetryableErrorImpl{Err: err}
 		}
 
 		if status != 0 && execDriverNotReadyErr.MatchString(output) {
-			return RetryableErrorImpl{err}
+			return RetryableErrorImpl{Err: bosherr.Errorf("Command not ready")}
 		}
 
 		return nil
@@ -67,22 +67,15 @@ func (d ExecDriver) ExecuteComplex(args []string, opts ExecuteOpts) (string, err
 
 	if status != 0 {
 		if status == 126 {
-			// This exit code happens if VBoxManage is on the PATH,
-			// but another executable it tries to execute is missing.
-			return output, bosherr.Errorf("Most likely corrupted installation")
+			// Binary executable but failed to execute
+			return output, bosherr.Errorf("Most likely corrupted installation or missing dependencies")
 		} else {
 			errored = !opts.IgnoreNonZeroExitStatus
 		}
 	} else {
-		// Sometimes, VBoxManage fails but doesn't actual return a non-zero exit code.
-		if execDriverDevCtlErr.MatchString(output) {
-			// This catches an error message that only shows when kernel
-			// drivers aren't properly installed.
-			return output, bosherr.Errorf("Error message about vboxnetctl")
-		}
-
+		// Sometimes commands fail but don't return non-zero exit code
 		if execDriverGenericErr.MatchString(output) {
-			d.logger.Debug(d.logTag, "VBoxManage error text found, assuming error.")
+			d.logger.Debug(d.logTag, "Error text found in output, assuming error.")
 			errored = true
 		}
 	}
@@ -95,6 +88,8 @@ func (d ExecDriver) ExecuteComplex(args []string, opts ExecuteOpts) (string, err
 }
 
 func (d ExecDriver) IsMissingVMErr(output string) bool {
-	// todo better check for VBOX_E_OBJECT_NOT_FOUND?
-	return strings.Contains(output, "Could not find a registered machine")
+	// Check for common libvirt error messages indicating missing domain
+	return strings.Contains(output, "Domain not found") ||
+		strings.Contains(output, "failed to get domain") ||
+		strings.Contains(output, "no domain with matching")
 }

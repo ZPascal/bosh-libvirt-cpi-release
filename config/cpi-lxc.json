@@ -1,0 +1,21 @@
+{
+  "hypervisor": "lxc",
+  "uri": "lxc:///",
+  "bin_path": "virsh",
+  "store_dir": "/var/vcap/store/libvirt-lxc",
+  "storage_controller": "SATA",
+  "auto_enable_networks": true,
+  "agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": [
+      "0.pool.ntp.org",
+      "1.pool.ntp.org"
+    ],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
+}

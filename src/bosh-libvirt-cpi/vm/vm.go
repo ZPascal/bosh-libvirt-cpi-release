@@ -2,7 +2,6 @@ package vm
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
@@ -45,38 +44,42 @@ func NewVMImpl(
 func (vm VMImpl) ID() apiv1.VMCID { return vm.cid }
 
 func (vm VMImpl) SetProps(props VMProps) error {
-	_, err := vm.driver.Execute(
-		"modifyvm", vm.cid.AsString(),
-		"--name", vm.cid.AsString(),
-		"--memory", strconv.Itoa(props.Memory),
-		"--cpus", strconv.Itoa(props.CPUs),
-		"--paravirtprovider", props.ParavirtProvider,
-		"--audio", props.Audio,
-		"--firmware", props.Firmware,
-	)
-	if err != nil {
-		return err
+	// For libvirt, we modify domain properties using virsh commands
+
+	// Memory modification (in KB)
+	if props.Memory > 0 {
+		memoryKB := strconv.Itoa(props.Memory * 1024)
+		_, err := vm.driver.Execute("setmaxmem", vm.cid.AsString(), memoryKB, "--config")
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Setting max memory")
+		}
+		_, err = vm.driver.Execute("setmem", vm.cid.AsString(), memoryKB, "--config")
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Setting memory")
+		}
 	}
 
-	for index, folder := range props.SharedFolders {
-		name := fmt.Sprintf("folder-%d", index)
-
-		_, err := vm.driver.Execute(
-			"setextradata", vm.cid.AsString(),
-			"VBoxInternal2/SharedFoldersEnableSymlinksCreate/"+name, "1",
-		)
+	// CPU modification
+	if props.CPUs > 0 {
+		_, err := vm.driver.Execute("setvcpus", vm.cid.AsString(), strconv.Itoa(props.CPUs), "--config", "--maximum")
 		if err != nil {
-			return err
+			return bosherr.WrapErrorf(err, "Setting maximum vcpus")
 		}
-
-		_, err = vm.driver.Execute(
-			"sharedfolder", "add", vm.cid.AsString(),
-			"--name", name,
-			"--hostpath", folder.HostPath,
-		)
+		_, err = vm.driver.Execute("setvcpus", vm.cid.AsString(), strconv.Itoa(props.CPUs), "--config")
 		if err != nil {
-			return err
+			return bosherr.WrapErrorf(err, "Setting vcpus")
 		}
+	}
+
+	// Note: SharedFolders, ParavirtProvider, Audio, and Firmware are VirtualBox-specific
+	// For libvirt, we handle these differently:
+	// - SharedFolders: Use virtio-9p or virtiofs
+	// - ParavirtProvider: Set via CPU mode in domain XML
+	// - Audio/Firmware: Set via domain XML devices section
+
+	// TODO: Implement shared folder support via virtio-9p if needed
+	if len(props.SharedFolders) > 0 {
+		vm.logger.Debug("vm.SetProps", "Shared folders not yet implemented for libvirt")
 	}
 
 	return nil
@@ -107,13 +110,14 @@ func (vm VMImpl) Delete() error {
 		return err
 	}
 
-	// todo is this necessary?
+	// Detach persistent disks
 	err = vm.detachPersistentDisks()
 	if err != nil {
 		return err
 	}
 
-	_, err = vm.driver.Execute("unregistervm", vm.cid.AsString(), "--delete")
+	// Undefine (delete) the domain with all storage
+	_, err = vm.driver.Execute("undefine", vm.cid.AsString(), "--remove-all-storage")
 	if err != nil {
 		return err
 	}

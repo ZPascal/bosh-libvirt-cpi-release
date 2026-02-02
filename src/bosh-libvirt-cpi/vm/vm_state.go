@@ -1,21 +1,11 @@
 package vm
 
 import (
-	"regexp"
-
-	bosherr "github.com/cloudfoundry/bosh-utils/errors"
-
-	"bosh-libvirt-cpi/driver"
-)
-
-var (
-	vmStarted           = regexp.MustCompile(`VM ".+?" has been successfully started`)
-	vmStateMatch        = regexp.MustCompile(`VMState="(.+?)"`)
-	vmStateInaccessible = regexp.MustCompile(`name="<inaccessible>"`)
+	"strings"
 )
 
 func (vm VMImpl) Exists() (bool, error) {
-	output, err := vm.driver.Execute("showvminfo", vm.cid.AsString(), "--machinereadable")
+	output, err := vm.driver.Execute("dominfo", vm.cid.AsString())
 	if err != nil {
 		if vm.driver.IsMissingVMErr(output) {
 			return false, nil
@@ -27,16 +17,14 @@ func (vm VMImpl) Exists() (bool, error) {
 }
 
 func (vm VMImpl) Start(gui bool) error {
-	mode := "headless"
-	if gui {
-		mode = "gui"
-	}
-
-	output, err := vm.driver.ExecuteComplex(
-		[]string{"startvm", vm.cid.AsString(), "--type", mode},
-		driver.ExecuteOpts{IgnoreNonZeroExitStatus: true},
-	)
-	if err != nil && !vmStarted.MatchString(output) {
+	// For libvirt, we start with virsh start
+	// GUI parameter is not relevant for libvirt (handled by graphics device in domain XML)
+	_, err := vm.driver.Execute("start", vm.cid.AsString())
+	if err != nil {
+		// Check if already running
+		if strings.Contains(err.Error(), "already active") || strings.Contains(err.Error(), "is already running") {
+			return nil
+		}
 		return err
 	}
 
@@ -44,12 +32,8 @@ func (vm VMImpl) Start(gui bool) error {
 }
 
 func (vm VMImpl) Reboot() error {
-	err := vm.HaltIfRunning()
-	if err != nil {
-		return err
-	}
-
-	return vm.Start(false) // todo find out previous state
+	_, err := vm.driver.Execute("reboot", vm.cid.AsString())
+	return err
 }
 
 func (vm VMImpl) HaltIfRunning() error {
@@ -59,7 +43,8 @@ func (vm VMImpl) HaltIfRunning() error {
 	}
 
 	if running {
-		_, err = vm.driver.Execute("controlvm", vm.cid.AsString(), "poweroff")
+		// Use destroy for immediate shutdown (like VirtualBox poweroff)
+		_, err = vm.driver.Execute("destroy", vm.cid.AsString())
 	}
 
 	return err
@@ -75,7 +60,7 @@ func (vm VMImpl) IsRunning() (bool, error) {
 }
 
 func (vm VMImpl) State() (string, error) {
-	output, err := vm.driver.Execute("showvminfo", vm.cid.AsString(), "--machinereadable")
+	output, err := vm.driver.Execute("domstate", vm.cid.AsString())
 	if err != nil {
 		if vm.driver.IsMissingVMErr(output) {
 			return "missing", nil
@@ -83,14 +68,20 @@ func (vm VMImpl) State() (string, error) {
 		return "", err
 	}
 
-	if vmStateInaccessible.MatchString(output) {
-		return "inaccessible", nil
-	}
+	// virsh domstate returns: running, shut off, paused, etc.
+	state := strings.TrimSpace(strings.ToLower(output))
 
-	matches := vmStateMatch.FindStringSubmatch(output)
-	if len(matches) == 2 {
-		return matches[1], nil
+	// Normalize state names to match expected values
+	switch state {
+	case "shut off", "shutoff":
+		return "poweroff", nil
+	case "running":
+		return "running", nil
+	case "paused":
+		return "paused", nil
+	case "crashed":
+		return "aborted", nil
+	default:
+		return state, nil
 	}
-
-	return "", bosherr.Errorf("Unknown VM state:\nOutput: '%s'", output)
 }

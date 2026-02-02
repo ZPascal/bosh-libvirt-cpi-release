@@ -1,0 +1,24 @@
+{
+  "hypervisor": "qemu",
+  "uri": "qemu+ssh://user@remote-host/system",
+  "host": "remote-host",
+  "username": "user",
+  "private_key": "/path/to/private/key",
+  "bin_path": "virsh",
+  "store_dir": "/var/vcap/store/libvirt",
+  "storage_controller": "SATA",
+  "auto_enable_networks": true,
+  "agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": [
+      "0.pool.ntp.org",
+      "1.pool.ntp.org"
+    ],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
+}

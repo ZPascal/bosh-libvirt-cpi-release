@@ -1,41 +1,143 @@
-# Roadmap: Replacing the VirtualBox CLI Wrapper with libvirt
+# BOSH Libvirt CPI Release
 
-This document outlines the steps required to replace the existing VirtualBox implementation with a `libvirt`-based implementation. The goal is to make the CPI more flexible and remove the dependency on the VirtualBox CLI.
+A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple virtualization technologies including **QEMU/KVM**, **VirtualBox**, **LXC**, and more.
 
-## Phase 1: Analysis and Design
+## Features
 
-1.  **Analysis of the Existing Codebase:**
-    *   Investigate the `vm` and `driver` packages to understand the exact interaction with the VirtualBox CLI.
-    *   Identify the core functionalities that need to be replaced by `libvirt` (e.g., VM creation, status queries, network and storage management).
-    *   Analyze the test suites (`cpi_suite_test.go`, `vm_suite_test.go`) to understand the scope of test adjustments required for the migration.
+- **Multi-Hypervisor Support**: Support for different virtualization backends through libvirt
+  - QEMU/KVM - Full virtualization with KVM acceleration
+  - VirtualBox - Desktop virtualization via libvirt-vbox
+  - LXC - Linux Containers
+  - Xen - Xen hypervisor
+  - VMware - VMware ESX (experimental)
+- **Unified Interface**: Single libvirt-based implementation for all hypervisors
+- **Flexible Architecture**: Easy switching between hypervisors via configuration
+- **Remote Management**: Support for managing VMs on remote hosts via SSH
 
-2.  **Design of an Abstraction Layer:**
-    *   Define a `Driver` interface that encapsulates interactions with the virtualization layer. This interface should include methods for all VM operations (create, delete, start, stop, etc.).
-    *   Adapt the `cpi.Factory` to choose different `Driver` implementations. This could be controlled via the `cpi.json` configuration file.
+## Quick Start
 
-## Phase 2: Implementation
+### Prerequisites
 
-3.  **Implementation of the `libvirt` Driver:**
-    *   Create a new Go package for the `libvirt` driver (e.g., `driver/libvirt_driver`).
-    *   Implement the `Driver` interface defined in Phase 1 using the `go-libvirt` library.
-    *   Ensure that all functions required by the CPI (VM lifecycle, network and disk management) are covered.
+```bash
+# Install libvirt
+sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients virtinst
 
-4.  **Integration and migration of the `libvirt` Driver:**
-    *   Adjust the factory code (`cpi/factory.go`) to instantiate the new `libvirt` driver based on the configuration.
-    *   Refactor/ migrate the existing CPI logic to use the new `Driver` interface instead of direct VirtualBox calls.
+# For VirtualBox support (optional)
+sudo apt-get install virtualbox libvirt-daemon-driver-vbox
 
-## Phase 3: Testing
+# For LXC support (optional)
+sudo apt-get install lxc libvirt-daemon-driver-lxc
 
-5.  **Unit Tests:**
-    *   Create unit tests for the new `libvirt` driver. Mocks for the `go-libvirt` API can be helpful here.
-    *   Adapt existing unit tests to account for the new abstraction layer.
+# Start and enable libvirt service
+sudo systemctl start libvirtd
+sudo systemctl enable libvirtd
 
-6.  **Integration Tests:**
-    *   Adapt and extend the existing integration tests (`cpi_suite_test.go`) to fully test the `libvirt` implementation.
-    *   Perform end-to-end tests in a BOSH environment to ensure the CPI functions correctly with `libvirt`.
+# Add user to libvirt group
+sudo usermod -aG libvirt $USER
+```
 
-## Phase 4: Documentation and Finalization
+### Configuration
 
-7.  **Documentation:**
-    *   Update the `README.md` file with instructions on how to configure and use the `libvirt`-based CPI.
-    *   Document the new `Driver` architecture and how additional virtualization platforms can be added if needed.
+Create a CPI configuration file (e.g., `cpi.json`):
+
+**For QEMU/KVM:**
+```json
+{
+  "hypervisor": "qemu",
+  "uri": "qemu:///system",
+  "bin_path": "virsh",
+  "store_dir": "/var/vcap/store/libvirt",
+  "storage_controller": "SATA",
+  "auto_enable_networks": true,
+  "agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
+}
+```
+
+**For VirtualBox (via libvirt):**
+```json
+{
+  "hypervisor": "vbox",
+  "uri": "vbox:///session",
+  ...
+}
+```
+
+**For LXC:**
+```json
+{
+  "hypervisor": "lxc",
+  "uri": "lxc:///",
+  ...
+}
+```
+
+## Documentation
+
+- **[Provider Configuration Guide](docs/PROVIDER_CONFIGURATION.md)** - Detailed guide on configuring different hypervisors
+- **Configuration Examples**:
+  - [QEMU/KVM Local](config/cpi-libvirt.json)
+  - [QEMU/KVM Remote](config/cpi-libvirt-remote.json)
+  - [VirtualBox](config/cpi-vbox.json)
+  - [LXC](config/cpi-lxc.json)
+
+## Architecture
+
+The CPI uses libvirt as a unified interface to different virtualization technologies:
+
+```
+BOSH Director
+    ↓
+CPI Factory
+    ↓
+Libvirt Provider
+    ↓
+┌────────────────────────────────────┐
+│         Libvirt API                │
+└────────────────────────────────────┘
+    ↓           ↓           ↓
+┌─────────┐ ┌─────────┐ ┌─────────┐
+│QEMU/KVM │ │VirtualBox│ │   LXC   │
+└─────────┘ └─────────┘ └─────────┘
+```
+
+The `hypervisor` configuration field determines which virtualization backend libvirt uses.
+
+## Supported Hypervisors
+
+| Hypervisor | URI Format | Status | Use Case |
+|------------|-----------|--------|----------|
+| **qemu** (KVM) | `qemu:///system` | ✅ Stable | Production, best performance |
+| **vbox** (VirtualBox) | `vbox:///session` | ✅ Stable | Development, desktop |
+| **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers |
+| **xen** | `xen:///` | ⚠️ Experimental | Xen environments |
+| **vmware** | `vmware:///session` | ⚠️ Experimental | VMware workstation |
+
+## Building
+
+```bash
+cd src/bosh-libvirt-cpi
+go build -o ../../bin/cpi ./main
+```
+
+## Testing
+
+```bash
+cd src/bosh-libvirt-cpi
+go test ./...
+```
+
+## License
+
+See [LICENSE](LICENSE) file.
+
+
+
