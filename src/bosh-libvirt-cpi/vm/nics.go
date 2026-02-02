@@ -2,13 +2,8 @@ package vm
 
 import (
 	"fmt"
-	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 	"math/rand"
-	"os"
-	"strconv"
-	"strings"
 
-	network "bosh-libvirt-cpi/vm/network"
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 
@@ -17,8 +12,8 @@ import (
 )
 
 const (
-	// Attaching NICs to running VM is not allowed, so 4 NICs will always be connected.
-	maxNICs = 4
+	// Libvirt supports many NICs, but we'll keep a reasonable limit
+	maxNICs = 8
 )
 
 type NICs struct {
@@ -31,82 +26,82 @@ func (n NICs) Configure(nets Networks, host Host) error {
 		return bosherr.Errorf("Exceeded maximum # of NICs (%d)", maxNICs)
 	}
 
-	nicIdx := 1
-
-	for _, net := range nets { // todo there is no network order?
-		mac, err := n.addNIC(strconv.Itoa(nicIdx), net, host)
+	for _, net := range nets {
+		mac, err := n.addNIC(net, host)
 		if err != nil {
 			return err
 		}
 
 		net.SetMAC(mac)
-		nicIdx++
 	}
 
 	return nil
 }
 
-func (n NICs) addNIC(nic string, net Network, host Host) (string, error) {
-	// http://www.virtualbox.org/manual/ch06.html#network_nat_service
-	// https://www.virtualbox.org/ticket/6176
-	// `VBoxManage setextradata VM_NAME "VBoxInternal/Devices/pcnet/0/LUN#0/Config/Network" "172.23.24/24"`
-	// `VBoxManage setextradata VM_NAME "VBoxInternal/Devices/pcnet/0/LUN#0/Config/DNSProxy" 1`
-	args := []string{"modifyvm", n.vmCID.AsString(), "--nic" + nic}
+func (n NICs) addNIC(net Network, host Host) (string, error) {
+	// Generate MAC address
+	mac, err := n.randomMAC()
+	if err != nil {
+		return "", err
+	}
+	macStr := n.userFriendly(mac)
+
+	// Determine network type and source
+	var networkType, networkSource string
 
 	switch net.CloudPropertyType() {
 	case bnet.NATType:
-		args = append(args, []string{"nat"}...)
+		// Use default NAT network
+		networkType = "network"
+		networkSource = "default"
 
 	case bnet.NATNetworkType:
 		actualNet, err := host.FindNetwork(net)
 		if err != nil {
 			return "", err
 		}
-		args = append(args, []string{"natnetwork", "--nat-network" + nic, actualNet.Name()}...)
+		networkType = "network"
+		networkSource = actualNet.Name()
 
 	case bnet.HostOnlyType:
 		actualNet, err := host.FindNetwork(net)
 		if err != nil {
 			return "", err
 		}
-
-		logger := boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
-		systemInfo, err := network.NewNetworks(n.driver, logger).NewSystemInfo()
-		if err != nil {
-			return "", err
-		}
-
-		if systemInfo.IsMacOSXVBoxSpecial6or7Case() {
-			args = append(args, []string{"hostonlynet", "--host-only-net" + nic, actualNet.Name()}...)
-		} else {
-			args = append(args, []string{"hostonly", "--hostonlyadapter" + nic, actualNet.Name()}...)
-		}
+		networkType = "network"
+		networkSource = actualNet.Name()
 
 	case bnet.BridgedType:
 		actualNet, err := host.FindNetwork(net)
 		if err != nil {
 			return "", err
 		}
-		args = append(args, []string{"bridged", "--bridgeadapter" + nic, actualNet.Name()}...)
+		networkType = "bridge"
+		networkSource = actualNet.Name()
 
 	default:
 		return "", bosherr.Errorf("Unknown network type: %s", net.CloudPropertyType())
 	}
 
-	mac, err := n.randomMAC()
+	// Attach network interface using virsh
+	args := []string{
+		"attach-interface", n.vmCID.AsString(),
+		networkType,
+		"--source", networkSource,
+		"--mac", macStr,
+		"--model", "virtio", // Use virtio for better performance
+		"--config", // Make it persistent
+	}
+
+	_, err = n.driver.Execute(args...)
 	if err != nil {
 		return "", err
 	}
 
-	args = append(args, []string{"--macaddress" + nic, strings.ToUpper(fmt.Sprintf("%02x", mac))}...)
-
-	_, err = n.driver.Execute(args...)
-
-	return n.userFriendly(mac), err
+	return macStr, nil
 }
 
 func (NICs) randomMAC() ([]byte, error) {
-	// http://stackoverflow.com/questions/21018729/generate-mac-address-in-go
 	buf := make([]byte, 6)
 
 	_, err := rand.Read(buf)
@@ -114,9 +109,9 @@ func (NICs) randomMAC() ([]byte, error) {
 		return nil, err
 	}
 
-	// VirtualBox uses '[0-9A-Fa-f][02468ACEace][0-9A-Fa-f]{10}' to validate MACs
-	// Also set local bit, ensure unicast address
-	buf[0] = 2
+	// Set locally administered bit (bit 1 of first byte) and ensure unicast (bit 0 = 0)
+	// This creates a valid private MAC address
+	buf[0] = (buf[0] & 0xfe) | 0x02
 
 	return buf, nil
 }

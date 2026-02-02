@@ -31,8 +31,15 @@ func (d DiskImpl) ID() apiv1.DiskCID { return d.cid }
 
 func (d DiskImpl) Path() string { return d.path }
 
+// VMDKPath returns the disk file path (qcow2 for libvirt)
 func (d DiskImpl) VMDKPath() string {
-	return filepath.Join(d.path, "disk.vmdk")
+	// For libvirt, we use qcow2 format instead of VMDK
+	return filepath.Join(d.path, "disk.qcow2")
+}
+
+// DiskPath returns the actual disk file path
+func (d DiskImpl) DiskPath() string {
+	return d.VMDKPath()
 }
 
 func (d DiskImpl) Exists() (bool, error) {

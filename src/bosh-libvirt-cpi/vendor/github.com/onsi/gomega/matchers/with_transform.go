@@ -9,17 +9,20 @@ import (
 
 type WithTransformMatcher struct {
 	// input
-	Transform interface{} // must be a function of one parameter that returns one value
+	Transform any // must be a function of one parameter that returns one value and an optional error
 	Matcher   types.GomegaMatcher
 
 	// cached value
 	transformArgType reflect.Type
 
 	// state
-	transformedValue interface{}
+	transformedValue any
 }
 
-func NewWithTransformMatcher(transform interface{}, matcher types.GomegaMatcher) *WithTransformMatcher {
+// reflect.Type for error
+var errorT = reflect.TypeOf((*error)(nil)).Elem()
+
+func NewWithTransformMatcher(transform any, matcher types.GomegaMatcher) *WithTransformMatcher {
 	if transform == nil {
 		panic("transform function cannot be nil")
 	}
@@ -27,8 +30,10 @@ func NewWithTransformMatcher(transform interface{}, matcher types.GomegaMatcher)
 	if txType.NumIn() != 1 {
 		panic("transform function must have 1 argument")
 	}
-	if txType.NumOut() != 1 {
-		panic("transform function must have 1 return value")
+	if numout := txType.NumOut(); numout != 1 {
+		if numout != 2 || !txType.Out(1).AssignableTo(errorT) {
+			panic("transform function must either have 1 return value, or 1 return value plus 1 error value")
+		}
 	}
 
 	return &WithTransformMatcher{
@@ -38,7 +43,7 @@ func NewWithTransformMatcher(transform interface{}, matcher types.GomegaMatcher)
 	}
 }
 
-func (m *WithTransformMatcher) Match(actual interface{}) (bool, error) {
+func (m *WithTransformMatcher) Match(actual any) (bool, error) {
 	// prepare a parameter to pass to the Transform function
 	var param reflect.Value
 	if actual != nil && reflect.TypeOf(actual).AssignableTo(m.transformArgType) {
@@ -57,20 +62,25 @@ func (m *WithTransformMatcher) Match(actual interface{}) (bool, error) {
 	// call the Transform function with `actual`
 	fn := reflect.ValueOf(m.Transform)
 	result := fn.Call([]reflect.Value{param})
+	if len(result) == 2 {
+		if !result[1].IsNil() {
+			return false, fmt.Errorf("Transform function failed: %s", result[1].Interface().(error).Error())
+		}
+	}
 	m.transformedValue = result[0].Interface() // expect exactly one value
 
 	return m.Matcher.Match(m.transformedValue)
 }
 
-func (m *WithTransformMatcher) FailureMessage(_ interface{}) (message string) {
+func (m *WithTransformMatcher) FailureMessage(_ any) (message string) {
 	return m.Matcher.FailureMessage(m.transformedValue)
 }
 
-func (m *WithTransformMatcher) NegatedFailureMessage(_ interface{}) (message string) {
+func (m *WithTransformMatcher) NegatedFailureMessage(_ any) (message string) {
 	return m.Matcher.NegatedFailureMessage(m.transformedValue)
 }
 
-func (m *WithTransformMatcher) MatchMayChangeInTheFuture(_ interface{}) bool {
+func (m *WithTransformMatcher) MatchMayChangeInTheFuture(_ any) bool {
 	// TODO: Maybe this should always just return true? (Only an issue for non-deterministic transformers.)
 	//
 	// Querying the next matcher is fine if the transformer always will return the same value.

@@ -2,18 +2,12 @@ package portdevices
 
 import (
 	"fmt"
-	"regexp"
-	"strings"
+	"strconv"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 
 	"bosh-libvirt-cpi/driver"
-)
-
-var (
-	// Covers `"SATA-ImageUUID-0-0"="a840e5e0-947c-4e63-ac2f-678a86d13980"`
-	portImagewUUIDConfig = regexp.MustCompile(`^"(\w+)-ImageUUID-(\d+)-(\d+)"="(.+)"$`)
 )
 
 type PortDevice struct {
@@ -58,39 +52,26 @@ func (d PortDevice) Port() string   { return d.port }
 func (d PortDevice) Device() string { return d.device }
 
 func (d PortDevice) Hint() apiv1.DiskHint {
+	// For libvirt, devices are typically named vda, vdb, vdc, etc. (virtio)
+	// or sda, sdb, sdc, etc. (SCSI/SATA)
+	// or hda, hdb, hdc, etc. (IDE)
+
+	portNum, _ := strconv.Atoi(d.port)
+	deviceNum, _ := strconv.Atoi(d.device)
+	diskIndex := portNum*2 + deviceNum
+
 	switch d.controller {
 	case IDEController:
-		switch {
-		case d.port == "0": // Assume system disk is 0
-			return apiv1.NewDiskHintFromString(d.device)
-		default:
-			// todo unsafe disk selection!
-			// todo does not work on reboot
-			// Ideally will specify scsi_host_no in addition to scsi_id
-			// (https://www.ibm.com/support/knowledgecenter/linuxonibm/com.ibm.linux.z.lgdd/lgdd_t_fcp_wrk_uinfo.html)
-			return apiv1.NewDiskHintFromMap(map[string]interface{}{"id": "1ATA"})
-		}
+		// IDE: hda, hdb, hdc, hdd
+		diskLetter := string(rune('a' + diskIndex))
+		return apiv1.NewDiskHintFromString("hd" + diskLetter)
 
-	case SCSIController:
-		// Assumes that all ports are connected to the root disk device
-		// given how current bosh-agent tries to find disks
-		// todo ideally specify port & device (unrelated to root disk)
-		return apiv1.NewDiskHintFromString(d.port)
-
-	case SATAController:
-		// First section of imageUUID appears under /dev/disk/by-id
-		// example ata-VBOX_HARDDISK_VBb1ade788-61d20269
-		// b1ade788 would be first section of imageUUID
-		imageUUID, err := d.imageUUID()
-		if err != nil {
-			panic(bosherr.WrapError(err, "Disk hint"))
-		}
-
-		prefix := strings.Split(imageUUID, "-")[0]
-
-		// DiskHint used by: SCSIIDDevicePathResolver
-		// "id" gets mapped into DeviceID by EphemeralDiskSettings()
-		return apiv1.NewDiskHintFromMap(map[string]interface{}{"id": prefix + "*"})
+	case SCSIController, SATAController:
+		// SCSI/SATA with virtio: vda, vdb, vdc, etc.
+		// Or SCSI: sda, sdb, sdc, etc.
+		diskLetter := string(rune('a' + diskIndex))
+		// Use virtio naming for better performance
+		return apiv1.NewDiskHintFromString("vd" + diskLetter)
 
 	default:
 		panic(fmt.Sprintf("Unexpected storage controller '%s'", d.name))
@@ -98,47 +79,54 @@ func (d PortDevice) Hint() apiv1.DiskHint {
 }
 
 func (d PortDevice) Attach(path string) error {
+	// Generate device target name
+	portNum, _ := strconv.Atoi(d.port)
+	deviceNum, _ := strconv.Atoi(d.device)
+	diskIndex := portNum*2 + deviceNum
+
+	var targetDev string
+	switch d.controller {
+	case IDEController:
+		targetDev = fmt.Sprintf("hd%c", 'a'+diskIndex)
+	case SCSIController, SATAController:
+		// Use virtio block device naming
+		targetDev = fmt.Sprintf("vd%c", 'a'+diskIndex)
+	default:
+		return bosherr.Errorf("Unknown controller type: %s", d.controller)
+	}
+
+	// Attach disk using virsh attach-disk
 	_, err := d.driver.Execute(
-		"storageattach", d.vmCID.AsString(),
-		"--storagectl", d.name,
-		"--port", d.port,
-		"--device", d.device,
-		"--type", "hdd",
-		"--medium", path,
-		"--mtype", "normal",
+		"attach-disk", d.vmCID.AsString(),
+		path,
+		targetDev,
+		"--persistent",
+		"--subdriver", "qcow2",
 	)
 	return err
 }
 
 func (d PortDevice) Detach() error {
+	// Generate device target name (same logic as Attach)
+	portNum, _ := strconv.Atoi(d.port)
+	deviceNum, _ := strconv.Atoi(d.device)
+	diskIndex := portNum*2 + deviceNum
+
+	var targetDev string
+	switch d.controller {
+	case IDEController:
+		targetDev = fmt.Sprintf("hd%c", 'a'+diskIndex)
+	case SCSIController, SATAController:
+		targetDev = fmt.Sprintf("vd%c", 'a'+diskIndex)
+	default:
+		return bosherr.Errorf("Unknown controller type: %s", d.controller)
+	}
+
+	// Detach disk using virsh detach-disk
 	_, err := d.driver.Execute(
-		"storageattach", d.vmCID.AsString(),
-		"--storagectl", d.name,
-		"--port", d.port,
-		"--device", d.device,
-		"--type", "hdd",
-		"--medium", "none", // removes
+		"detach-disk", d.vmCID.AsString(),
+		targetDev,
+		"--persistent",
 	)
 	return err
-}
-
-func (d PortDevice) imageUUID() (string, error) {
-	output, err := d.driver.Execute("showvminfo", d.vmCID.AsString(), "--machinereadable")
-	if err != nil {
-		return "", bosherr.WrapErrorf(err, "Determining imageUUID")
-	}
-
-	for _, line := range strings.Split(output, "\n") {
-		matches := portImagewUUIDConfig.FindStringSubmatch(line)
-		if len(matches) > 0 {
-			if len(matches) != 5 {
-				return "", fmt.Errorf("Internal inconsistency: Expected len(%d matches) == 5", len(matches))
-			}
-
-			if matches[1] == d.name && matches[2] == d.port && matches[3] == d.device {
-				return matches[4], nil
-			}
-		}
-	}
-	return "", bosherr.Errorf("Failed to deterime imageUUID for PortDevice %s %s-%s", d.name, d.port, d.device)
 }

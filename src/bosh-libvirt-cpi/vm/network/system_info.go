@@ -5,22 +5,14 @@ import (
 	"math/big"
 	"net"
 	"runtime"
-	"strings"
 )
 
 type SystemInfo struct {
-	osVersion        string
-	vBoxMajorVersion string
-	VBoxMinorVersion string
+	osVersion string
 }
 
 func (n Networks) NewSystemInfo() (SystemInfo, error) {
-	vBoxMajorVersion, VBoxMinorVersion, err := n.getVboxVersion()
-	if err != nil {
-		return SystemInfo{}, err
-	}
-
-	return SystemInfo{getOSVersion(), vBoxMajorVersion, VBoxMinorVersion}, nil
+	return SystemInfo{osVersion: getOSVersion()}, nil
 }
 
 // GetFirstIP Get the first usable IP address of a subnet
@@ -35,33 +27,6 @@ func (s SystemInfo) GetLastIP(subnet *net.IPNet) (net.IP, error) {
 		return nil, fmt.Errorf("can't get range size of subnet. subnet: %q", subnet)
 	}
 	return getIndexedIP(subnet, int(size-1))
-}
-
-// IsMacOSXVBoxSpecial6or7Case Identify if you are system is running on MAC OS X and the used
-// VirtualBox version is 6.1 or 7
-func (s SystemInfo) IsMacOSXVBoxSpecial6or7Case() bool {
-	if s.osVersion == "darwin" && (s.vBoxMajorVersion == "7") {
-		return true
-	} else {
-		return false
-	}
-}
-
-// getVboxVersion Extract the corresponding used Virtual Box version
-func (n Networks) getVboxVersion() (string, string, error) {
-	output, err := n.driver.Execute("--version")
-	if err != nil {
-		return "", "", err
-	}
-
-	output = strings.TrimSpace(output)
-	matches := strings.Split(output, ".")
-
-	if len(matches) > 3 {
-		panic(fmt.Sprintf("Internal inconsistency: Expected len(%s matches) >= 3:", createdHostOnlyMatch))
-	}
-
-	return matches[0], matches[1], nil
 }
 
 // getOSVersion Extract the corresponding used operational system
