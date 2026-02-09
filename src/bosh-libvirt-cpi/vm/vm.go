@@ -71,22 +71,10 @@ func (vm VMImpl) SetProps(props VMProps) error {
 		}
 	}
 
-	// Note: SharedFolders, ParavirtProvider, Audio, and Firmware are VirtualBox-specific
-	// For libvirt, we handle these differently:
-	// - SharedFolders: Use virtio-9p or virtiofs
-	// - ParavirtProvider: Set via CPU mode in domain XML
-	// - Audio/Firmware: Set via domain XML devices section
-
-	// TODO: Implement shared folder support via virtio-9p if needed
-	if len(props.SharedFolders) > 0 {
-		vm.logger.Debug("vm.SetProps", "Shared folders not yet implemented for libvirt")
-	}
-
 	return nil
 }
 
 func (vm VMImpl) SetMetadata(meta apiv1.VMMeta) error {
-	// todo can we do better?
 	bytes, err := json.Marshal(meta)
 	if err != nil {
 		return bosherr.WrapError(err, "Marshaling VM metadata")
@@ -107,20 +95,23 @@ func (vm VMImpl) ConfigureNICs(nets Networks, host Host) error {
 func (vm VMImpl) Delete() error {
 	err := vm.HaltIfRunning()
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Halting VM")
 	}
 
-	// Detach persistent disks
 	err = vm.detachPersistentDisks()
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Detaching persistent disks")
 	}
 
-	// Undefine (delete) the domain with all storage
 	_, err = vm.driver.Execute("undefine", vm.cid.AsString(), "--remove-all-storage")
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Undefining domain")
 	}
 
-	return vm.store.Delete()
+	err = vm.store.Delete()
+	if err != nil {
+		return bosherr.WrapError(err, "Deleting VM store")
+	}
+
+	return nil
 }

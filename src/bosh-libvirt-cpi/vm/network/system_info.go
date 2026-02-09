@@ -11,8 +11,9 @@ type SystemInfo struct {
 	osVersion string
 }
 
-func (n Networks) NewSystemInfo() (SystemInfo, error) {
-	return SystemInfo{osVersion: getOSVersion()}, nil
+// NewSystemInfo creates a new SystemInfo instance
+func NewSystemInfo() SystemInfo {
+	return SystemInfo{osVersion: getOSVersion()}
 }
 
 // GetFirstIP Get the first usable IP address of a subnet
