@@ -23,6 +23,3 @@ type Network interface {
 
 	IPNet() *net.IPNet
 }
-
-var _ Network = HostOnly{}
-var _ Network = NATNetwork{}

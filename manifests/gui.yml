@@ -1,4 +1,0 @@
----
-- type: replace
-  path: /resource_pools/name=vms/cloud_properties?/gui
-  value: true

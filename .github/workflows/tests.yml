@@ -1,0 +1,195 @@
+name: Tests and Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('src/bosh-libvirt-cpi/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      working-directory: src/bosh-libvirt-cpi
+      run: go mod download
+
+    - name: Run unit tests
+      working-directory: src/bosh-libvirt-cpi
+      run: make test
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.out
+        flags: unittests
+
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build binary
+      working-directory: src/bosh-libvirt-cpi
+      run: make build
+
+    - name: Upload binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: cpi-binary
+        path: bin/cpi
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      libvirt:
+        image: busybox
+        options: |
+          --privileged
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Install libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+
+    - name: Download dependencies
+      working-directory: src/bosh-libvirt-cpi
+      run: go mod download
+
+    - name: Run integration tests
+      working-directory: src/bosh-libvirt-cpi
+      run: go test -short -race ./...
+
+    - name: Generate coverage
+      working-directory: src/bosh-libvirt-cpi
+      run: go test -short -coverprofile=coverage.out ./...
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.out
+        flags: integration
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Run vet
+      working-directory: src/bosh-libvirt-cpi
+      run: go vet ./...
+
+    - name: Check format
+      working-directory: src/bosh-libvirt-cpi
+      run: |
+        if [ -n "$(gofmt -l .)" ]; then
+          echo "Code formatting issues found:"
+          gofmt -l .
+          exit 1
+        fi
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        working-directory: src/bosh-libvirt-cpi
+        version: latest
+        args: --timeout=5m
+        skip-pkg-cache: true
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Run Gosec Security Scanner
+      uses: securego/gosec@master
+      with:
+        args: '-no-fail -fmt sarif -out gosec-results.sarif ./src/bosh-libvirt-cpi/...'
+
+    - name: Upload Gosec results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: gosec-results.sarif
+
+#  release:
+#    name: Create Release
+#    runs-on: ubuntu-latest
+#    needs: [unit-tests, build, integration-tests, code-quality]
+#    if: startsWith(github.ref, 'refs/tags/')
+#
+#    steps:
+#    - uses: actions/checkout@v3
+#
+#    - name: Download binary
+#      uses: actions/download-artifact@v3
+#      with:
+#        name: cpi-binary
+#
+#    - name: Create Release
+#      uses: actions/create-release@v1
+#      env:
+#        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#      with:
+#        tag_name: ${{ github.ref }}
+#        release_name: Release ${{ github.ref }}
+#        draft: false
+#        prerelease: false
+#
+#    - name: Upload Release Asset
+#      uses: actions/upload-release-asset@v1
+#      env:
+#        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#      with:
+#        upload_url: ${{ steps.create_release.outputs.upload_url }}
+#        asset_path: ./cpi
+#        asset_name: cpi-${{ github.ref_name }}
+#        asset_content_type: application/octet-stream

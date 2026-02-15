@@ -2,7 +2,6 @@ package vm
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
@@ -45,37 +44,30 @@ func NewVMImpl(
 func (vm VMImpl) ID() apiv1.VMCID { return vm.cid }
 
 func (vm VMImpl) SetProps(props VMProps) error {
-	_, err := vm.driver.Execute(
-		"modifyvm", vm.cid.AsString(),
-		"--name", vm.cid.AsString(),
-		"--memory", strconv.Itoa(props.Memory),
-		"--cpus", strconv.Itoa(props.CPUs),
-		"--paravirtprovider", props.ParavirtProvider,
-		"--audio", props.Audio,
-		"--firmware", props.Firmware,
-	)
-	if err != nil {
-		return err
+	// For libvirt, we modify domain properties using virsh commands
+
+	// Memory modification (in KB)
+	if props.Memory > 0 {
+		memoryKB := strconv.Itoa(props.Memory * 1024)
+		_, err := vm.driver.Execute("setmaxmem", vm.cid.AsString(), memoryKB, "--config")
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Setting max memory")
+		}
+		_, err = vm.driver.Execute("setmem", vm.cid.AsString(), memoryKB, "--config")
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Setting memory")
+		}
 	}
 
-	for index, folder := range props.SharedFolders {
-		name := fmt.Sprintf("folder-%d", index)
-
-		_, err := vm.driver.Execute(
-			"setextradata", vm.cid.AsString(),
-			"VBoxInternal2/SharedFoldersEnableSymlinksCreate/"+name, "1",
-		)
+	// CPU modification
+	if props.CPUs > 0 {
+		_, err := vm.driver.Execute("setvcpus", vm.cid.AsString(), strconv.Itoa(props.CPUs), "--config", "--maximum")
 		if err != nil {
-			return err
+			return bosherr.WrapErrorf(err, "Setting maximum vcpus")
 		}
-
-		_, err = vm.driver.Execute(
-			"sharedfolder", "add", vm.cid.AsString(),
-			"--name", name,
-			"--hostpath", folder.HostPath,
-		)
+		_, err = vm.driver.Execute("setvcpus", vm.cid.AsString(), strconv.Itoa(props.CPUs), "--config")
 		if err != nil {
-			return err
+			return bosherr.WrapErrorf(err, "Setting vcpus")
 		}
 	}
 
@@ -83,7 +75,6 @@ func (vm VMImpl) SetProps(props VMProps) error {
 }
 
 func (vm VMImpl) SetMetadata(meta apiv1.VMMeta) error {
-	// todo can we do better?
 	bytes, err := json.Marshal(meta)
 	if err != nil {
 		return bosherr.WrapError(err, "Marshaling VM metadata")
@@ -104,19 +95,23 @@ func (vm VMImpl) ConfigureNICs(nets Networks, host Host) error {
 func (vm VMImpl) Delete() error {
 	err := vm.HaltIfRunning()
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Halting VM")
 	}
 
-	// todo is this necessary?
 	err = vm.detachPersistentDisks()
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Detaching persistent disks")
 	}
 
-	_, err = vm.driver.Execute("unregistervm", vm.cid.AsString(), "--delete")
+	_, err = vm.driver.Execute("undefine", vm.cid.AsString(), "--remove-all-storage")
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Undefining domain")
 	}
 
-	return vm.store.Delete()
+	err = vm.store.Delete()
+	if err != nil {
+		return bosherr.WrapError(err, "Deleting VM store")
+	}
+
+	return nil
 }
