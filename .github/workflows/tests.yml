@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.26'
 
     - name: Cache Go modules
       uses: actions/cache@v3
@@ -47,12 +47,12 @@ jobs:
     needs: unit-tests
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.26'
 
     - name: Build binary
       working-directory: src/bosh-libvirt-cpi
@@ -76,12 +76,12 @@ jobs:
           --privileged
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.26'
 
     - name: Install libvirt
       run: |
@@ -114,12 +114,12 @@ jobs:
     needs: unit-tests
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.26'
 
     - name: Run vet
       working-directory: src/bosh-libvirt-cpi
@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Run Gosec Security Scanner
       uses: securego/gosec@master
@@ -167,7 +167,7 @@ jobs:
 #    if: startsWith(github.ref, 'refs/tags/')
 #
 #    steps:
-#    - uses: actions/checkout@v3
+#    - uses: actions/checkout@v6
 #
 #    - name: Download binary
 #      uses: actions/download-artifact@v3

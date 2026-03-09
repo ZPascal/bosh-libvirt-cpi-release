@@ -2,9 +2,10 @@ package vm
 
 import (
 	bnet "bosh-libvirt-cpi/vm/network"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestHost_FindNetwork(t *testing.T) {
