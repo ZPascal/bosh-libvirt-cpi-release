@@ -12,8 +12,6 @@ bin/
 *.out
 coverage.html
 coverage.out
-# Dependency directories
-vendor/
 # Go workspace file
 go.work
 # IDE
