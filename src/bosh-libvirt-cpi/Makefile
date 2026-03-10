@@ -18,7 +18,7 @@ test: test-unit
 
 test-unit:
 	@echo "Running unit tests..."
-	@$(GO) test $(GO_FLAGS) -short -v ./...
+	@$(GO) test $(GO_FLAGS) -short -v -skip Integration ./...
 
 test-integration:
 	@echo "Running integration tests..."
