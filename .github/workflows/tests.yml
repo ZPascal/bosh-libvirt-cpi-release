@@ -139,7 +139,7 @@ jobs:
       with:
         working-directory: src/bosh-libvirt-cpi
         version: latest
-        args: --timeout=5m --mod=vendor
+        args: --timeout=5m
         skip-pkg-cache: true
 
   security-scan:
