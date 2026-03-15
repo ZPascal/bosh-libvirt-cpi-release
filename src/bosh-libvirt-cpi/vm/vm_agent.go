@@ -1,8 +1,8 @@
 package vm
 
 import (
-	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
+	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 )
 
 func (vm VMImpl) ConfigureAgent(agentEnv apiv1.AgentEnv) error {
@@ -25,7 +25,6 @@ func (vm VMImpl) configureAgent(agentEnv apiv1.AgentEnv) ([]byte, error) {
 }
 
 func (vm VMImpl) reconfigureAgent(hotPlug bool, agentEnvFunc func(apiv1.AgentEnv)) error {
-	// todo hide unmarshaling within apiv1
 	prevContents, err := vm.store.Get("env.json")
 	if err != nil {
 		return bosherr.WrapError(err, "Fetching agent env")
@@ -38,29 +37,14 @@ func (vm VMImpl) reconfigureAgent(hotPlug bool, agentEnvFunc func(apiv1.AgentEnv
 
 	agentEnvFunc(agentEnv)
 
-	newContents, err := vm.configureAgent(agentEnv)
+	_, err = vm.configureAgent(agentEnv)
 	if err != nil {
 		return err
 	}
 
-	isoBytes, err := ISO9660{FileName: "ENV", Contents: newContents}.Bytes()
-	if err != nil {
-		return bosherr.WrapError(err, "Marshaling agent env to ISO")
-	}
+	// For libvirt, we use cloud-init or config-drive
+	// The agent env is written to env.json and picked up on VM restart
+	// TODO: Implement config-drive mounting for libvirt if needed
 
-	err = vm.store.Put("env.iso", isoBytes)
-	if err != nil {
-		return bosherr.WrapError(err, "Updating agent env")
-	}
-
-	updateFunc := func() error {
-		cd, err := vm.portDevices.CDROM()
-		if err != nil {
-			return err
-		}
-
-		return cd.Mount(vm.store.Path("env.iso"))
-	}
-
-	return vm.hotPlugIfNecessary(hotPlug, updateFunc)
+	return nil
 }

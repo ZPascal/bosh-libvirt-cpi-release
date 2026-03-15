@@ -10,13 +10,20 @@ import (
 )
 
 type FactoryOpts struct {
+	// Hypervisor configuration (libvirt driver type)
+	Hypervisor string // "qemu", "vbox", "lxc", "xen", "vmware"
+
+	// Connection settings
 	Host       string
 	Username   string
 	PrivateKey string
 
+	// Libvirt settings
 	BinPath  string
 	StoreDir string
+	URI      string // Libvirt connection URI (auto-generated if not provided)
 
+	// VM settings
 	StorageController  string
 	AutoEnableNetworks bool
 
@@ -24,6 +31,29 @@ type FactoryOpts struct {
 }
 
 func (o FactoryOpts) Validate() error {
+	// Note: Defaults should be applied before calling Validate()
+	// Check if required defaults are present
+	if o.Hypervisor == "" {
+		return bosherr.Error("Hypervisor must be set (defaults should be applied before validation)")
+	}
+
+	if o.BinPath == "" {
+		return bosherr.Error("BinPath must be set (defaults should be applied before validation)")
+	}
+
+	// Validate hypervisor type
+	validHypervisors := []string{"qemu", "vbox", "lxc", "xen", "vmware"}
+	isValid := false
+	for _, h := range validHypervisors {
+		if o.Hypervisor == h {
+			isValid = true
+			break
+		}
+	}
+	if !isValid {
+		return bosherr.Errorf("Invalid hypervisor '%s'. Must be one of: qemu, vbox, lxc, xen, vmware", o.Hypervisor)
+	}
+
 	if len(o.Host) > 0 {
 		if o.Username == "" {
 			return bosherr.Error("Must provide non-empty Username")
@@ -32,10 +62,6 @@ func (o FactoryOpts) Validate() error {
 		if o.PrivateKey == "" {
 			return bosherr.Error("Must provide non-empty PrivateKey")
 		}
-	}
-
-	if o.BinPath == "" {
-		return bosherr.Error("Must provide non-empty BinPath")
 	}
 
 	if o.StoreDir == "" {

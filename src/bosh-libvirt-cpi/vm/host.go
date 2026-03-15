@@ -7,227 +7,73 @@ import (
 	bnet "bosh-libvirt-cpi/vm/network"
 )
 
-type Host struct {
-	networks bnet.Networks
-}
+// Host represents the libvirt host
+// For libvirt, network management is handled differently than VirtualBox
+type Host struct{}
 
+// FindNetwork finds a network by name
+// For libvirt, networks are managed via virsh and are simpler
 func (h Host) FindNetwork(net Network) (bnet.Network, error) {
+	// For libvirt, we use a simple network lookup
+	// Networks are pre-configured in libvirt (virsh net-list)
 	switch net.CloudPropertyType() {
 	case bnet.NATType:
-		return nil, fmt.Errorf("NAT networks cannot be searched")
+		// NAT network - use default libvirt network
+		return &simpleNetwork{name: "default"}, nil
 
-	case bnet.NATNetworkType:
-		return newHostNetwork(net, natNetworksAdapter{h.networks}).Find()
-
-	case bnet.HostOnlyType:
-		return newHostNetwork(net, hostOnlysAdapter{h.networks}).Find()
-
-	case bnet.BridgedType:
-		return newHostNetwork(net, bridgedNetworksAdapter{h.networks}).Find()
+	case bnet.NATNetworkType, bnet.HostOnlyType, bnet.BridgedType:
+		// Named network - use the configured name
+		name := net.CloudPropertyName()
+		if name == "" {
+			name = "default"
+		}
+		return &simpleNetwork{name: name}, nil
 
 	default:
-		return nil, fmt.Errorf("Unknown network type: %s", net.CloudPropertyType())
+		return nil, fmt.Errorf("unknown network type: %s", net.CloudPropertyType())
 	}
 }
 
+// EnableNetworks enables the specified networks
+// For libvirt, networks should be pre-configured
 func (h Host) EnableNetworks(nets Networks) error {
-	for _, net := range nets {
-		switch net.CloudPropertyType() {
-		case bnet.NATType:
-			// do nothing
-
-		case bnet.NATNetworkType:
-			err := newHostNetwork(net, natNetworksAdapter{h.networks}).Enable()
-			if err != nil {
-				return err
-			}
-
-		case bnet.HostOnlyType:
-			err := newHostNetwork(net, hostOnlysAdapter{h.networks}).Enable()
-			if err != nil {
-				return err
-			}
-
-		case bnet.BridgedType:
-			// do nothing
-
-		default:
-			return fmt.Errorf("Unknown network type: %s", net.CloudPropertyType())
-		}
-	}
-
+	// For libvirt, we assume networks are already configured
+	// Networks should be created via: virsh net-define/net-start
+	// This is a no-op for libvirt
 	return nil
 }
 
-type hostNetwork struct {
-	net     Network
-	adapter netAdapter
-
-	triedCreating bool
-	triedEnabling bool
+// simpleNetwork is a simple network implementation for libvirt
+type simpleNetwork struct {
+	name string
 }
 
-func newHostNetwork(net Network, adapter netAdapter) *hostNetwork {
-	return &hostNetwork{net: net, adapter: adapter}
+func (n *simpleNetwork) Name() string {
+	return n.name
 }
 
-func (n *hostNetwork) Find() (bnet.Network, error) {
-	actualNets, err := n.adapter.List()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, actualNet := range actualNets {
-		if n.adapter.Matches(n.net, actualNet) {
-			return actualNet, nil
-		}
-	}
-
-	return nil, fmt.Errorf("Expected to find network '%s'", n.net.CloudPropertyName())
+func (n *simpleNetwork) Description() string {
+	return fmt.Sprintf("libvirt network '%s'", n.name)
 }
 
-func (n *hostNetwork) Enable() error {
-	actualNets, err := n.adapter.List()
-	if err != nil {
-		return err
-	}
-
-	for _, actualNet := range actualNets {
-		if n.adapter.Matches(n.net, actualNet) {
-			if !actualNet.IsEnabled() && !n.triedEnabling {
-				_ = actualNet.Enable()
-				n.triedEnabling = true
-				return n.Enable()
-			}
-			return n.verify(actualNet)
-		}
-	}
-
-	if !n.triedCreating {
-		err := n.adapter.Create(n.net)
-		if err != nil {
-			return err
-		}
-		n.triedCreating = true
-		return n.Enable()
-	}
-
-	return fmt.Errorf("Expected to find network '%s'", n.net.CloudPropertyName())
+func (n *simpleNetwork) IsEnabled() bool {
+	return true
 }
 
-func (n hostNetwork) verify(actualNet bnet.Network) error {
-	if !actualNet.IsEnabled() {
-		return fmt.Errorf("Expected %s to %s",
-			actualNet.Description(), actualNet.EnabledDescription())
-	}
+func (n *simpleNetwork) EnabledDescription() string {
+	return "enabled"
+}
 
-	if len(n.net.IP()) == 0 {
-		if !actualNet.IsDHCPEnabled() {
-			return fmt.Errorf("Expected %s to have DHCP enabled", actualNet.Description())
-		}
-	} else {
-		ip := gonet.ParseIP(n.net.IP())
-		if ip == nil {
-			return fmt.Errorf("Unable to parse IP address '%s' for network '%s'",
-				n.net.IP(), n.net.CloudPropertyName())
-		}
-
-		actualIPNet := actualNet.IPNet()
-
-		if !actualIPNet.Contains(ip) {
-			return fmt.Errorf("Expected IP address '%s' to fit within %s", n.net.IP(), actualNet.Description())
-		}
-
-		actualNetmask := gonet.IP(actualIPNet.Mask).String()
-
-		if actualNetmask != n.net.Netmask() {
-			return fmt.Errorf("Expected netmask '%s' to match %s netmask '%s'",
-				n.net.IP(), actualNet.Description(), actualNetmask)
-		}
-
-		// todo check gateway
-
-		if actualNet.IsDHCPEnabled() {
-			return fmt.Errorf("Expected %s to not have DHCP enabled", actualNet.Description())
-		}
-	}
-
+func (n *simpleNetwork) Enable() error {
+	// Networks should be pre-configured in libvirt
 	return nil
 }
 
-type netAdapter interface {
-	List() ([]bnet.Network, error)
-	Create(Network) error
-	Matches(Network, bnet.Network) bool
+func (n *simpleNetwork) IsDHCPEnabled() bool {
+	return true
 }
 
-type natNetworksAdapter struct {
-	bnet.Networks
-}
-
-func (n natNetworksAdapter) List() ([]bnet.Network, error) {
-	return n.NATNetworks()
-}
-
-func (n natNetworksAdapter) Create(net Network) error {
-	if len(net.IP()) > 0 {
-		return fmt.Errorf("Expected to find NAT Network '%s'", net.CloudPropertyName())
-	}
-	return n.AddNATNetwork(net.CloudPropertyName())
-}
-
-func (n natNetworksAdapter) Matches(net Network, actualNet bnet.Network) bool {
-	return net.CloudPropertyName() == actualNet.Name()
-}
-
-type hostOnlysAdapter struct {
-	bnet.Networks
-}
-
-func (n hostOnlysAdapter) List() ([]bnet.Network, error) {
-	return n.HostOnlys()
-}
-
-func (n hostOnlysAdapter) Create(net Network) error {
-	canCreate, err := n.AddHostOnly(net.CloudPropertyName(), net.Gateway(), net.Netmask())
-	if err != nil {
-		return err
-	} else if !canCreate {
-		return fmt.Errorf("Expected to find Host-only network '%s'", net.CloudPropertyName())
-	}
+func (n *simpleNetwork) IPNet() *gonet.IPNet {
+	// Return nil - network details are managed by libvirt
 	return nil
-}
-
-func (n hostOnlysAdapter) Matches(net Network, actualNet bnet.Network) bool {
-	if len(net.CloudPropertyName()) > 0 {
-		return net.CloudPropertyName() == actualNet.Name()
-	}
-
-	actualIP := gonet.IP(actualNet.IPNet().IP).String()
-	actualNetmask := gonet.IP(actualNet.IPNet().Mask).String()
-
-	return actualNetmask == net.Netmask() && actualIP == net.Gateway()
-}
-
-type bridgedNetworksAdapter struct {
-	bnet.Networks
-}
-
-func (n bridgedNetworksAdapter) List() ([]bnet.Network, error) {
-	return n.BridgedNetworks()
-}
-
-func (n bridgedNetworksAdapter) Create(net Network) error {
-	return fmt.Errorf("Expected to find bridged network '%s'", net.CloudPropertyName())
-}
-
-func (n bridgedNetworksAdapter) Matches(net Network, actualNet bnet.Network) bool {
-	if len(net.CloudPropertyName()) > 0 {
-		return net.CloudPropertyName() == actualNet.Name()
-	}
-
-	actualIP := gonet.IP(actualNet.IPNet().IP).String()
-	actualNetmask := gonet.IP(actualNet.IPNet().Mask).String()
-
-	return actualNetmask == net.Netmask() && actualIP == net.Gateway()
 }

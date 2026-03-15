@@ -45,8 +45,8 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 		return apiv1.DiskHint{}, err
 	}
 
-	// Actually attach the disk
-	err = vm.hotPlugIfNecessary(!ephemeral, func() error { return pd.Attach(disk.VMDKPath()) })
+	// Attach the disk - libvirt supports native hotplug
+	err = pd.Attach(disk.VMDKPath())
 	if err != nil {
 		return apiv1.DiskHint{}, err
 	}
@@ -104,8 +104,8 @@ func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
 		return err
 	}
 
-	// Actually detach the disk
-	err = vm.hotPlug(pd.Detach)
+	// Detach the disk - libvirt supports native hotplug
+	err = pd.Detach()
 	if err != nil {
 		return err
 	}

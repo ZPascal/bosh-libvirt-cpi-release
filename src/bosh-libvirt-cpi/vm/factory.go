@@ -11,7 +11,6 @@ import (
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
 	bstem "bosh-libvirt-cpi/stemcell"
-	bnet "bosh-libvirt-cpi/vm/network"
 	bpds "bosh-libvirt-cpi/vm/portdevices"
 )
 
@@ -70,7 +69,7 @@ func (f Factory) Create(
 	env apiv1.VMEnv,
 ) (VM, error) {
 
-	host := Host{bnet.NewNetworks(f.driver, f.logger)}
+	host := Host{} // Simplified host without a network manager
 
 	vmProps, err := NewVMProps(props)
 	if err != nil {
@@ -129,7 +128,7 @@ func (f Factory) Create(
 		return nil, bosherr.WrapError(err, "Attaching ephemeral disk")
 	}
 
-	err = vm.Start(vmProps.GUI)
+	err = vm.Start(false) // GUI not supported in libvirt mode
 	if err != nil {
 		f.cleanUpPartialCreate(vm)
 		return nil, bosherr.WrapError(err, "Starting VM")

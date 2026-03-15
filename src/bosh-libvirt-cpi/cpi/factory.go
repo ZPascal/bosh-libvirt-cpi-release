@@ -1,7 +1,7 @@
 package cpi
 
 import (
-	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
+	"github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	boshcmd "github.com/cloudfoundry/bosh-utils/fileutil"
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 	boshsys "github.com/cloudfoundry/bosh-utils/system"
@@ -9,6 +9,7 @@ import (
 
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
+	"bosh-libvirt-cpi/provider"
 	bstem "bosh-libvirt-cpi/stemcell"
 	bvm "bosh-libvirt-cpi/vm"
 )
@@ -59,7 +60,36 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	}
 
 	runner := driver.NewExpandingPathRunner(rawRunner)
-	driver := driver.NewExecDriver(runner, retrier, f.opts.BinPath, f.logger)
+
+	// Create libvirt provider with specified hypervisor
+	providerFactory := provider.NewProviderFactory(f.logger)
+
+	hypervisor := provider.HypervisorType(f.opts.Hypervisor)
+	if hypervisor == "" {
+		hypervisor = provider.HypervisorTypeQEMU // default to QEMU/KVM
+	}
+
+	providerOpts := provider.ProviderOptions{
+		BinPath:    f.opts.BinPath,
+		StoreDir:   f.opts.StoreDir,
+		Host:       f.opts.Host,
+		URI:        f.opts.URI,
+		Hypervisor: hypervisor,
+	}
+
+	infraProvider, err := providerFactory.Create(hypervisor, runner, retrier, f.fs, providerOpts)
+	if err != nil {
+		return CPI{}, err
+	}
+
+	// Initialize the provider
+	err = infraProvider.Initialize()
+	if err != nil {
+		return CPI{}, err
+	}
+
+	// Get driver from provider
+	localDriver := infraProvider.GetDriver()
 
 	stemcellsOpts := bstem.FactoryOpts{
 		DirPath:           f.opts.StemcellsDir(),
@@ -67,9 +97,9 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	}
 
 	stemcells := bstem.NewFactory(
-		stemcellsOpts, driver, runner, retrier, f.fs, f.uuidGen, f.compressor, f.logger)
+		stemcellsOpts, localDriver, runner, retrier, f.fs, f.uuidGen, f.compressor, f.logger)
 
-	disks := bdisk.NewFactory(f.opts.DisksDir(), f.uuidGen, driver, runner, f.logger)
+	disks := bdisk.NewFactory(f.opts.DisksDir(), f.uuidGen, localDriver, runner, f.logger)
 
 	vmsOpts := bvm.FactoryOpts{
 		DirPath:            f.opts.VMsDir(),
@@ -78,7 +108,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	}
 
 	vms := bvm.NewFactory(
-		vmsOpts, f.uuidGen, driver, runner, disks,
+		vmsOpts, f.uuidGen, localDriver, runner, disks,
 		f.opts.Agent, apiv1.NewStemcellAPIVersion(ctx), f.logger)
 
 	return CPI{

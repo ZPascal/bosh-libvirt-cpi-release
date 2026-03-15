@@ -2,6 +2,7 @@ package driver
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -60,7 +61,9 @@ func (r *SSHRunner) execute(cmd string) (string, int, error) {
 		return "", 0, err
 	}
 
-	defer sess.Close()
+	defer func(sess *ssh.Session) {
+		_ = sess.Close()
+	}(sess)
 
 	var stderr, stdout bytes.Buffer
 	sess.Stdout = &stdout
@@ -73,15 +76,16 @@ func (r *SSHRunner) execute(cmd string) (string, int, error) {
 		return output, 0, nil
 	}
 
-	switch typedErr := err.(type) {
-	case *ssh.ExitMissingError:
-		return output, 0, bosherr.WrapError(typedErr, "Missing exit info")
-	case *ssh.ExitError:
-		status := typedErr.Waitmsg.ExitStatus()
-		return output, status, bosherr.WrapErrorf(typedErr, "Exit (Output: '%s')", output)
-	default:
-		return output, 0, bosherr.WrapErrorf(typedErr, "Unknown SSH error (Output: '%s')", output)
+	if exitErr, ok := errors.AsType[*ssh.ExitError](err); ok {
+		status := exitErr.ExitStatus()
+		return output, status, bosherr.WrapErrorf(err, "Exit (Output: '%s')", output)
 	}
+
+	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
+		return output, 0, bosherr.WrapError(err, "Missing exit info")
+	}
+
+	return output, 0, bosherr.WrapErrorf(err, "Unknown SSH error (Output: '%s')", output)
 }
 
 func (r *SSHRunner) Upload(srcPath, dstPath string) error {
@@ -92,7 +96,9 @@ func (r *SSHRunner) Upload(srcPath, dstPath string) error {
 		return bosherr.WrapError(err, "Opening source file for upload")
 	}
 
-	defer file.Close()
+	defer func(file boshsys.File) {
+		_ = file.Close()
+	}(file)
 
 	return r.putFromReader(dstPath, file)
 }
@@ -108,7 +114,9 @@ func (r *SSHRunner) putFromReader(path string, in io.Reader) error {
 		return err
 	}
 
-	defer sess.Close()
+	defer func(sess *ssh.Session) {
+		_ = sess.Close()
+	}(sess)
 
 	sess.Stdin = in
 
@@ -128,7 +136,9 @@ func (r *SSHRunner) Get(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	defer sess.Close()
+	defer func(sess *ssh.Session) {
+		_ = sess.Close()
+	}(sess)
 
 	var stdout bytes.Buffer
 	sess.Stdout = &stdout
@@ -179,20 +189,20 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 	return r.existingClient, nil
 }
 
-func (r SSHRunner) shCmd(path string, args []string, stdoutPath string) string {
+func (r *SSHRunner) shCmd(path string, args []string, stdoutPath string) string {
 	escapedCmd := r.shellJoin(append([]string{path}, args...))
-	stdoutRedir := ""
+	stdoutRedirect := ""
 
 	if len(stdoutPath) > 0 {
-		stdoutRedir = "> " + r.shellEscape(stdoutPath)
+		stdoutRedirect = "> " + r.shellEscape(stdoutPath)
 	}
 
 	envPath := "PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-	return fmt.Sprintf(`sh -c "%s %s %s"`, envPath, escapedCmd, stdoutRedir)
+	return fmt.Sprintf(`sh -c "%s %s %s"`, envPath, escapedCmd, stdoutRedirect)
 }
 
-func (r SSHRunner) shellJoin(args []string) string {
+func (r *SSHRunner) shellJoin(args []string) string {
 	var escapedArgs []string
 	for _, arg := range args {
 		escapedArgs = append(escapedArgs, r.shellEscape(arg))
@@ -201,12 +211,12 @@ func (r SSHRunner) shellJoin(args []string) string {
 }
 
 var (
-	shellEscape   = regexp.MustCompile("([^A-Za-z0-9_\\-.,:\\/@\\n])")
-	shellEscapeNl = regexp.MustCompile("\n")
+	shellEscape   = regexp.MustCompile(`([^A-Za-z0-9_\-.,:/@ \n])`)
+	shellEscapeNl = regexp.MustCompile(`\n`)
 )
 
 // http://ruby-doc.org/stdlib-2.0.0/libdoc/shellwords/rdoc/Shellwords.html#method-c-shelljoin
-func (SSHRunner) shellEscape(arg string) string {
+func (r *SSHRunner) shellEscape(arg string) string {
 	if len(arg) == 0 {
 		return "''"
 	}

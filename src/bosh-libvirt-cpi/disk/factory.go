@@ -2,7 +2,6 @@ package disk
 
 import (
 	"path/filepath"
-	"strconv"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -10,6 +9,7 @@ import (
 	boshuuid "github.com/cloudfoundry/bosh-utils/uuid"
 
 	"bosh-libvirt-cpi/driver"
+	"bosh-libvirt-cpi/qemu"
 )
 
 type Factory struct {
@@ -52,18 +52,14 @@ func (f Factory) Create(size int) (Disk, error) {
 
 	_, _, err = f.runner.Execute("mkdir", "-p", disk.Path())
 	if err != nil {
-		return nil, bosherr.WrapError(err, "Creating disk parent")
+		return nil, bosherr.WrapError(err, "Creating disk parent directory")
 	}
 
-	_, err = f.driver.Execute(
-		"createhd",
-		"--filename", disk.VMDKPath(),
-		"--size", strconv.Itoa(size),
-		"--format", "VMDK",
-		"--variant", "Standard",
-	)
+	// Create qcow2 disk using native qemu package
+	qemuImg := qemu.NewImage()
+	err = qemuImg.Create(disk.VMDKPath(), size)
 	if err != nil {
-		return nil, bosherr.WrapError(err, "Creating disk")
+		return nil, bosherr.WrapError(err, "Creating qcow2 disk image")
 	}
 
 	return disk, nil

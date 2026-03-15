@@ -33,16 +33,17 @@ func (s StemcellImpl) ID() apiv1.StemcellCID { return s.cid }
 func (s StemcellImpl) SnapshotName() string { return "prepared-clone" }
 
 func (s StemcellImpl) Prepare() error {
-	_, err := s.driver.Execute("snapshot", s.cid.AsString(), "take", s.SnapshotName())
+	// Create a snapshot of the stemcell for future cloning
+	_, err := s.driver.Execute("snapshot-create-as", s.cid.AsString(), s.SnapshotName(), "--description", "Prepared for cloning")
 	if err != nil {
-		return bosherr.WrapErrorf(err, "Preparing for future cloning")
+		return bosherr.WrapErrorf(err, "Preparing stemcell for future cloning")
 	}
 
 	return nil
 }
 
 func (s StemcellImpl) Exists() (bool, error) {
-	output, err := s.driver.Execute("showvminfo", s.cid.AsString(), "--machinereadable")
+	output, err := s.driver.Execute("dominfo", s.cid.AsString())
 	if err != nil {
 		if s.driver.IsMissingVMErr(output) {
 			return false, nil
@@ -54,16 +55,18 @@ func (s StemcellImpl) Exists() (bool, error) {
 }
 
 func (s StemcellImpl) Delete() error {
-	output, err := s.driver.Execute("unregistervm", s.cid.AsString(), "--delete")
+	// Undefine the stemcell domain
+	output, err := s.driver.Execute("undefine", s.cid.AsString(), "--remove-all-storage", "--snapshots-metadata")
 	if err != nil {
 		if !s.driver.IsMissingVMErr(output) {
-			return bosherr.WrapErrorf(err, "Unregistering stemcell VM")
+			return bosherr.WrapErrorf(err, "Undefining stemcell domain")
 		}
 	}
 
+	// Remove stemcell directory
 	_, _, err = s.runner.Execute("rm", "-rf", s.path)
 	if err != nil {
-		return bosherr.WrapErrorf(err, "Deleting stemcell '%s'", s.path)
+		return bosherr.WrapErrorf(err, "Deleting stemcell directory '%s'", s.path)
 	}
 
 	return nil

@@ -1,8 +1,0 @@
-{
-  "StoreDir": "~/.bosh_libvirt_cpi",
-  "StorageController": "sata",
-  "Agent": {
-    "NTP": ["0.pool.ntp.org", "1.pool.ntp.org"],
-    "Mbus": "nats://10.254.50.4:4222"
-  }
-}
