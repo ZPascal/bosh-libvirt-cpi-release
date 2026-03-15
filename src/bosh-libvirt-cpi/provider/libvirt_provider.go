@@ -3,7 +3,6 @@ package provider
 import (
 	"encoding/xml"
 	"fmt"
-	"regexp"
 	"strings"
 
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -12,10 +11,6 @@ import (
 
 	"bosh-libvirt-cpi/driver"
 	"bosh-libvirt-cpi/qemu"
-)
-
-var (
-	libvirtErrorRegex = regexp.MustCompile("error:")
 )
 
 // LibvirtProvider implements the Provider interface for libvirt
@@ -100,7 +95,13 @@ func (p *LibvirtProvider) CreateVM(name string, opts VMOptions) error {
 	if err != nil {
 		return bosherr.WrapErrorf(err, "Writing domain XML for VM '%s'", name)
 	}
-	defer p.fs.RemoveAll(xmlPath)
+	defer func(fs boshsys.FileSystem, fileOrDir string) {
+		err := fs.RemoveAll(fileOrDir)
+		if err != nil {
+			derr := bosherr.WrapErrorf(err, "Removing temporary file '%s'", fileOrDir)
+			p.logger.Error(p.logTag, derr.Error())
+		}
+	}(p.fs, xmlPath)
 
 	// Define the domain
 	_, err = p.driver.Execute("define", xmlPath)
@@ -115,7 +116,10 @@ func (p *LibvirtProvider) DeleteVM(name string) error {
 	// First ensure VM is stopped
 	state, err := p.GetVMState(name)
 	if err == nil && state == VMStateRunning {
-		p.StopVM(name, true)
+		err := p.StopVM(name, true)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Undefine the domain
@@ -185,7 +189,13 @@ func (p *LibvirtProvider) ModifyVM(name string, opts VMModifyOptions) error {
 	if err != nil {
 		return bosherr.WrapError(err, "Writing modified domain XML")
 	}
-	defer p.fs.RemoveAll(xmlPath)
+	defer func(fs boshsys.FileSystem, fileOrDir string) {
+		err := fs.RemoveAll(fileOrDir)
+		if err != nil {
+			derr := bosherr.WrapErrorf(err, "Removing temporary file '%s'", fileOrDir)
+			p.logger.Error(p.logTag, derr.Error())
+		}
+	}(p.fs, xmlPath)
 
 	// Redefine the domain
 	_, err = p.driver.Execute("define", xmlPath)
@@ -230,7 +240,13 @@ func (p *LibvirtProvider) CreateNetwork(name string, opts NetworkOptions) error 
 	if err != nil {
 		return bosherr.WrapError(err, "Writing network XML")
 	}
-	defer p.fs.RemoveAll(xmlPath)
+	defer func(fs boshsys.FileSystem, fileOrDir string) {
+		err := fs.RemoveAll(fileOrDir)
+		if err != nil {
+			derr := bosherr.WrapErrorf(err, "Removing temporary file '%s'", fileOrDir)
+			p.logger.Error(p.logTag, derr.Error())
+		}
+	}(p.fs, xmlPath)
 
 	_, err = p.driver.Execute("net-define", xmlPath)
 	if err != nil {
@@ -250,10 +266,13 @@ func (p *LibvirtProvider) CreateNetwork(name string, opts NetworkOptions) error 
 
 func (p *LibvirtProvider) DeleteNetwork(name string) error {
 	// Stop the network
-	p.driver.Execute("net-destroy", name)
+	_, err := p.driver.Execute("net-destroy", name)
+	if err != nil {
+		return err
+	}
 
 	// Undefine the network
-	_, err := p.driver.Execute("net-undefine", name)
+	_, err = p.driver.Execute("net-undefine", name)
 	return err
 }
 

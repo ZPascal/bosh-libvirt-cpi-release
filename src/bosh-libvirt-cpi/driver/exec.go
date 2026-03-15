@@ -58,7 +58,7 @@ func (d ExecDriver) ExecuteComplex(args []string, opts ExecuteOpts) (string, err
 	}
 
 	err := d.retrier.Retry(execFunc)
-	output = strings.Replace(output, "\r\n", "\n", -1)
+	output = strings.ReplaceAll(output, "\r\n", "\n")
 	if err != nil {
 		return output, err
 	}

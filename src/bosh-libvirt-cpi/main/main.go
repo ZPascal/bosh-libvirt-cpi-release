@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"time"
 
@@ -20,7 +20,7 @@ var (
 )
 
 func main() {
-	rand.Seed(time.Now().UTC().UnixNano()) // todo MAC generation
+	rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0))
 
 	logger, fs, cmdRunner, uuidGen := basicDeps()
 	defer logger.HandlePanic("Main")

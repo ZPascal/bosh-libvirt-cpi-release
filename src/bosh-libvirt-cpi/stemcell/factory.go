@@ -111,7 +111,13 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		return bosherr.WrapErrorf(err, "Creating tmp stemcell directory")
 	}
 
-	defer f.fs.RemoveAll(tmpDir)
+	defer func(fs boshsys.FileSystem, fileOrDir string) {
+		err := fs.RemoveAll(fileOrDir)
+		if err != nil {
+			boshErr := bosherr.WrapErrorf(err, "Removing temporary file '%s'", fileOrDir)
+			f.logger.Error(f.logTag, boshErr.Error())
+		}
+	}(f.fs, tmpDir)
 
 	err = f.compressor.DecompressFileToDir(imagePath, tmpDir, boshcmd.CompressorOptions{})
 	if err != nil {

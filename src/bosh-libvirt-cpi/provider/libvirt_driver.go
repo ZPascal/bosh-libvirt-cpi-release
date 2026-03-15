@@ -73,7 +73,7 @@ func (d LibvirtDriver) ExecuteComplex(args []string, opts driver.ExecuteOpts) (s
 	}
 
 	err := d.retrier.Retry(execFunc)
-	output = strings.Replace(output, "\r\n", "\n", -1)
+	output = strings.ReplaceAll(output, "\r\n", "\n")
 	if err != nil {
 		return output, err
 	}

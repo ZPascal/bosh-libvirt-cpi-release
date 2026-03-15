@@ -138,7 +138,7 @@ func TestImage_Exists(t *testing.T) {
 	// Create a file
 	f, err := os.Create(existingFile)
 	require.NoError(t, err)
-	f.Close()
+	_ = f.Close()
 	img := NewImage()
 	t.Run("returns true for existing file", func(t *testing.T) {
 		exists := img.Exists(existingFile)

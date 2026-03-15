@@ -24,6 +24,15 @@ func NewConfigFromPath(path string, fs boshsys.FileSystem) (Config, error) {
 		return config, bosherr.WrapError(err, "Unmarshalling config")
 	}
 
+	// Apply defaults before validation
+	if config.Hypervisor == "" {
+		config.Hypervisor = "qemu" // Default to qemu/kvm for backward compatibility
+	}
+
+	if config.BinPath == "" {
+		config.BinPath = "virsh"
+	}
+
 	err = cpi.FactoryOpts(config).Validate()
 	if err != nil {
 		return config, bosherr.WrapError(err, "Validating configuration")

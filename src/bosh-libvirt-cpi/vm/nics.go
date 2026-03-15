@@ -1,8 +1,8 @@
 package vm
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -104,7 +104,7 @@ func (n NICs) addNIC(net Network, host Host) (string, error) {
 func (NICs) randomMAC() ([]byte, error) {
 	buf := make([]byte, 6)
 
-	_, err := rand.Read(buf)
+	_, err := rand.Reader.Read(buf)
 	if err != nil {
 		return nil, err
 	}

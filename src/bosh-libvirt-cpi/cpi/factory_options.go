@@ -31,9 +31,14 @@ type FactoryOpts struct {
 }
 
 func (o FactoryOpts) Validate() error {
-	// Default to qemu/kvm for backward compatibility
+	// Note: Defaults should be applied before calling Validate()
+	// Check if required defaults are present
 	if o.Hypervisor == "" {
-		o.Hypervisor = "qemu"
+		return bosherr.Error("Hypervisor must be set (defaults should be applied before validation)")
+	}
+
+	if o.BinPath == "" {
+		return bosherr.Error("BinPath must be set (defaults should be applied before validation)")
 	}
 
 	// Validate hypervisor type
@@ -57,10 +62,6 @@ func (o FactoryOpts) Validate() error {
 		if o.PrivateKey == "" {
 			return bosherr.Error("Must provide non-empty PrivateKey")
 		}
-	}
-
-	if o.BinPath == "" {
-		o.BinPath = "virsh"
 	}
 
 	if o.StoreDir == "" {
