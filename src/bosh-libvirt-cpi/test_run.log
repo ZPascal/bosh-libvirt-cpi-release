@@ -1,0 +1,15 @@
+FAIL	bosh-libvirt-cpi/cpi [setup failed]
+FAIL	bosh-libvirt-cpi/disk [setup failed]
+FAIL	bosh-libvirt-cpi/driver [setup failed]
+FAIL	bosh-libvirt-cpi/integration [setup failed]
+FAIL	bosh-libvirt-cpi/main [setup failed]
+FAIL	bosh-libvirt-cpi/provider [setup failed]
+FAIL	bosh-libvirt-cpi/stemcell [setup failed]
+FAIL	bosh-libvirt-cpi/test/integration [setup failed]
+FAIL	bosh-libvirt-cpi/testhelpers/mocks [setup failed]
+FAIL	bosh-libvirt-cpi/vm [setup failed]
+FAIL	bosh-libvirt-cpi/vm/portdevices [setup failed]
+FAIL	bosh-libvirt-cpi/qemu [build failed]
+	bosh-libvirt-cpi/testhelpers		coverage: 0.0% of statements
+ok  	bosh-libvirt-cpi/vm/network	0.004s	coverage: 0.0% of statements [no tests to run]
+FAIL

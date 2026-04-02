@@ -1,38 +1,25 @@
 package testhelpers
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"os"
 )
 
-// TestHelper provides common test utilities
-type TestHelper struct {
-	t *testing.T
-}
+// CreateTempFile creates a temporary file with the given content
+func CreateTempFile(content string) string {
+	tmpFile, err := os.CreateTemp("", "test-*")
+	if err != nil {
+		panic(err)
+	}
+	defer func() {
+		_ = tmpFile.Close()
+	}()
 
-// NewTestHelper creates a new test helper
-func NewTestHelper(t *testing.T) *TestHelper {
-	return &TestHelper{t: t}
-}
+	if content != "" {
+		_, err = tmpFile.WriteString(content)
+		if err != nil {
+			panic(err)
+		}
+	}
 
-// Assert returns assertion helper
-func (h *TestHelper) Assert() *assert.Assertions {
-	return assert.New(h.t)
-}
-
-// Require returns requirement helper
-func (h *TestHelper) Require() *require.Assertions {
-	return require.New(h.t)
-}
-
-// TempDir creates a temporary directory for testing
-func (h *TestHelper) TempDir() string {
-	return h.t.TempDir()
-}
-
-// Cleanup registers a cleanup function
-func (h *TestHelper) Cleanup(fn func()) {
-	h.t.Cleanup(fn)
+	return tmpFile.Name()
 }

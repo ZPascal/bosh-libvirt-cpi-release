@@ -1,4 +1,4 @@
-.PHONY: all build test test-unit test-integration test-coverage clean lint fmt check deps vendor vendor-verify vendor-update help
+.PHONY: all build test test-unit test-integration test-coverage test-coverage-report clean lint fmt check deps vendor vendor-verify vendor-update help
 
 # Build variables
 BINARY_NAME=cpi
@@ -18,7 +18,7 @@ test: test-unit
 
 test-unit:
 	@echo "Running unit tests..."
-	@$(GO) test $(GO_FLAGS) -short -v -skip Integration ./...
+	@$(GO) test $(GO_FLAGS) -short -v -skip integration ./...
 
 test-integration:
 	@echo "Running integration tests..."
@@ -26,9 +26,16 @@ test-integration:
 
 test-coverage:
 	@echo "Running tests with coverage..."
-	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out ./...
+	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out -covermode=atomic ./...
 	@$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
+	@echo "Coverage statistics:"
+	@$(GO) tool cover -func=coverage.out | tail -1
+
+test-coverage-report:
+	@echo "Generating detailed coverage report..."
+	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out ./...
+	@$(GO) tool cover -func=coverage.out | grep -E "total|%$$"
 
 clean:
 	@echo "Cleaning..."
@@ -71,17 +78,18 @@ vendor-update:
 
 help:
 	@echo "Available targets:"
-	@echo "  build            - Build the CPI binary"
-	@echo "  test             - Run all unit tests"
-	@echo "  test-unit        - Run unit tests only"
-	@echo "  test-integration - Run integration tests"
-	@echo "  test-coverage    - Generate test coverage report"
-	@echo "  clean            - Clean build artifacts"
-	@echo "  lint             - Run code linters"
-	@echo "  fmt              - Format code"
-	@echo "  check            - Run fmt, lint, and test"
-	@echo "  deps             - Install/update dependencies"
-	@echo "  vendor           - Vendor dependencies"
-	@echo "  vendor-verify    - Verify vendor integrity"
-	@echo "  vendor-update    - Update all dependencies"
-	@echo "  all              - Clean, format, lint, test, and build"
+	@echo "  build                - Build the CPI binary"
+	@echo "  test                 - Run all unit tests"
+	@echo "  test-unit            - Run unit tests only"
+	@echo "  test-integration     - Run integration tests"
+	@echo "  test-coverage        - Generate test coverage report"
+	@echo "  test-coverage-report - Generate detailed coverage report"
+	@echo "  clean                - Clean build artifacts"
+	@echo "  lint                 - Run code linters"
+	@echo "  fmt                  - Format code"
+	@echo "  check                - Run fmt, lint, and test"
+	@echo "  deps                 - Install/update dependencies"
+	@echo "  vendor               - Vendor dependencies"
+	@echo "  vendor-verify        - Verify vendor integrity"
+	@echo "  vendor-update        - Update all dependencies"
+	@echo "  all                  - Clean, format, lint, test, and build"

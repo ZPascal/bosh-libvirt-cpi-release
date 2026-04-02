@@ -11,23 +11,23 @@ import (
 
 type FactoryOpts struct {
 	// Hypervisor configuration (libvirt driver type)
-	Hypervisor string // "qemu", "vbox", "lxc", "xen", "vmware"
+	Hypervisor string `json:"hypervisor"`
 
 	// Connection settings
-	Host       string
-	Username   string
-	PrivateKey string
+	Host       string `json:"host"`
+	Username   string `json:"username"`
+	PrivateKey string `json:"private_key"`
 
 	// Libvirt settings
-	BinPath  string
-	StoreDir string
-	URI      string // Libvirt connection URI (auto-generated if not provided)
+	BinPath  string `json:"bin_path"`
+	StoreDir string `json:"store_dir"`
+	URI      string `json:"uri"` // Libvirt connection URI (auto-generated if not provided)
 
 	// VM settings
-	StorageController  string
-	AutoEnableNetworks bool
+	StorageController  string `json:"storage_controller"`
+	AutoEnableNetworks bool   `json:"auto_enable_networks"`
 
-	Agent apiv1.AgentOptions
+	Agent apiv1.AgentOptions `json:"agent"`
 }
 
 func (o FactoryOpts) Validate() error {

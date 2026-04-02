@@ -1,0 +1,23 @@
+# bosh-libvirt-cpi/stemcell
+driver/driver_edge_cases_test.go:1:1: expected 'package', found 'EOF'
+FAIL	bosh-libvirt-cpi/stemcell [setup failed]
+# bosh-libvirt-cpi/vm
+driver/driver_edge_cases_test.go:1:1: expected 'package', found 'EOF'
+# bosh-libvirt-cpi/vm
+disk/disk_core_test.go:1:1: expected 'package', found 'EOF'
+# bosh-libvirt-cpi/vm
+vm/vm_core_test.go:1:1: expected 'package', found 'EOF'
+FAIL	bosh-libvirt-cpi/vm [setup failed]
+# bosh-libvirt-cpi/driver
+driver/driver_edge_cases_test.go:1:1: expected 'package', found 'EOF'
+FAIL	bosh-libvirt-cpi/driver [setup failed]
+# bosh-libvirt-cpi/cpi
+driver/driver_edge_cases_test.go:1:1: expected 'package', found 'EOF'
+# bosh-libvirt-cpi/cpi
+disk/disk_core_test.go:1:1: expected 'package', found 'EOF'
+# bosh-libvirt-cpi/cpi
+vm/vm_core_test.go:1:1: expected 'package', found 'EOF'
+# bosh-libvirt-cpi/cpi
+cpi/cpi_edge_cases_test.go:1:1: expected 'package', found 'EOF'
+FAIL	bosh-libvirt-cpi/cpi [setup failed]
+FAIL

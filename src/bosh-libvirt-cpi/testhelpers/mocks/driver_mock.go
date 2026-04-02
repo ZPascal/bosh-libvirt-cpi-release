@@ -68,3 +68,84 @@ func (m *MockRetrier) Retry(fn func() error) error {
 func (m *MockRetrier) RetryComplex(fn func() error, attempts uint, sleep uint) error {
 	return fn()
 }
+
+// SimpleMockDriver is a simple mock implementation with callback functions
+type SimpleMockDriver struct {
+	ExecuteFunc        func(args ...string) (string, error)
+	ExecuteComplexFunc func(args []string, opts driver.ExecuteOpts) (string, error)
+	IsMissingVMErrFunc func(output string) bool
+}
+
+func NewSimpleMockDriver() *SimpleMockDriver {
+	return &SimpleMockDriver{
+		ExecuteFunc: func(args ...string) (string, error) { return "", nil },
+		ExecuteComplexFunc: func(args []string, opts driver.ExecuteOpts) (string, error) { return "", nil },
+		IsMissingVMErrFunc: func(output string) bool { return false },
+	}
+}
+
+func (m *SimpleMockDriver) Execute(args ...string) (string, error) {
+	if m.ExecuteFunc != nil {
+		return m.ExecuteFunc(args...)
+	}
+	return "", nil
+}
+
+func (m *SimpleMockDriver) ExecuteComplex(args []string, opts driver.ExecuteOpts) (string, error) {
+	if m.ExecuteComplexFunc != nil {
+		return m.ExecuteComplexFunc(args, opts)
+	}
+	return "", nil
+}
+
+func (m *SimpleMockDriver) IsMissingVMErr(output string) bool {
+	if m.IsMissingVMErrFunc != nil {
+		return m.IsMissingVMErrFunc(output)
+	}
+	return false
+}
+
+// SimpleMockRunner is a simple mock implementation with callback functions
+type SimpleMockRunner struct {
+	ExecuteFunc func(path string, args ...string) (string, int, error)
+	UploadFunc  func(srcDir, dstDir string) error
+	PutFunc     func(path string, contents []byte) error
+	GetFunc     func(path string) ([]byte, error)
+}
+
+func NewSimpleMockRunner() *SimpleMockRunner {
+	return &SimpleMockRunner{
+		ExecuteFunc: func(path string, args ...string) (string, int, error) { return "", 0, nil },
+		UploadFunc:  func(srcDir, dstDir string) error { return nil },
+		PutFunc:     func(path string, contents []byte) error { return nil },
+		GetFunc:     func(path string) ([]byte, error) { return nil, nil },
+	}
+}
+
+func (m *SimpleMockRunner) Execute(path string, args ...string) (string, int, error) {
+	if m.ExecuteFunc != nil {
+		return m.ExecuteFunc(path, args...)
+	}
+	return "", 0, nil
+}
+
+func (m *SimpleMockRunner) Upload(srcDir, dstDir string) error {
+	if m.UploadFunc != nil {
+		return m.UploadFunc(srcDir, dstDir)
+	}
+	return nil
+}
+
+func (m *SimpleMockRunner) Put(path string, contents []byte) error {
+	if m.PutFunc != nil {
+		return m.PutFunc(path, contents)
+	}
+	return nil
+}
+
+func (m *SimpleMockRunner) Get(path string) ([]byte, error) {
+	if m.GetFunc != nil {
+		return m.GetFunc(path)
+	}
+	return nil, nil
+}

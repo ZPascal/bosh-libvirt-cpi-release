@@ -4,11 +4,11 @@ go 1.26
 
 require (
 	github.com/cloudfoundry/bosh-cpi-go v0.0.0-20260124100156-be3602218717
-	github.com/cloudfoundry/bosh-utils v0.0.594
+	github.com/cloudfoundry/bosh-utils v0.0.597
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.39.1
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.48.0
+	golang.org/x/crypto v0.49.0
 )
 
 require (
@@ -23,9 +23,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/text v0.35.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

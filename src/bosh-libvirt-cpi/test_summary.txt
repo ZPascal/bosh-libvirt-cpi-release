@@ -1,0 +1,27 @@
+ok  	bosh-libvirt-cpi/vm	(cached)	coverage: 4.7% of statements
+--- FAIL: TestStemcellImpl_ComprehensiveLifecycle (0.00s)
+    --- FAIL: TestStemcellImpl_ComprehensiveLifecycle/complete_stemcell_lifecycle (0.00s)
+        stemcell_core_operations_test.go:282: 
+            	Error Trace:	/home/zpascal/Projekte/Upstream/bosh-libvirt-cpi-release/src/bosh-libvirt-cpi/stemcell/stemcell_core_operations_test.go:282
+            	Error:      	Not equal: 
+            	            	expected: 2
+            	            	actual  : 3
+            	Test:       	TestStemcellImpl_ComprehensiveLifecycle/complete_stemcell_lifecycle
+Running Suite: Stemcell Suite
+=============================
+Random Seed: [1m1775073674[0m
+Will run [1m146[0m of [1m146[0m specs
+
+[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m[32m•[0m
+[1m[32mRan 146 of 146 Specs in 0.001 seconds[0m
+[1m[32mSUCCESS![0m -- [32m[1m146 Passed[0m | [91m[1m0 Failed[0m | [33m[1m0 Pending[0m | [36m[1m0 Skipped[0m
+FAIL
+coverage: 15.8% of statements
+FAIL	bosh-libvirt-cpi/stemcell	0.043s
+ok  	bosh-libvirt-cpi/disk	(cached)	coverage: 90.0% of statements
+ok  	bosh-libvirt-cpi/driver	(cached)	coverage: 22.3% of statements
+ok  	bosh-libvirt-cpi/cpi	(cached)	coverage: 22.9% of statements
+ok  	bosh-libvirt-cpi/main	(cached)	coverage: 42.9% of statements
+ok  	bosh-libvirt-cpi/provider	0.046s	coverage: 7.9% of statements
+ok  	bosh-libvirt-cpi/qemu	(cached)	coverage: 9.4% of statements
+FAIL
