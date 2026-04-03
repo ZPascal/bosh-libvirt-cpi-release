@@ -2,54 +2,56 @@ package mocks
 
 import (
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
+	"github.com/stretchr/testify/mock"
 
 	"bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/stemcell"
 	"bosh-libvirt-cpi/vm"
 )
 
-// MockDiskCreator is a mock implementation of disk.Creator
+// Testify mocks for disk operations
 type MockDiskCreator struct {
-	CreateFunc func(size int) (disk.Disk, error)
-}
-
-func NewMockDiskCreator() *MockDiskCreator {
-	return &MockDiskCreator{
-		CreateFunc: func(size int) (disk.Disk, error) {
-			return nil, nil
-		},
-	}
+	mock.Mock
 }
 
 func (m *MockDiskCreator) Create(size int) (disk.Disk, error) {
-	if m.CreateFunc != nil {
-		return m.CreateFunc(size)
+	args := m.Called(size)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
 	}
-	return nil, nil
+	return args.Get(0).(disk.Disk), args.Error(1)
 }
 
-// MockDiskFinder is a mock implementation of disk.Finder
 type MockDiskFinder struct {
-	FindFunc func(cid apiv1.DiskCID) (disk.Disk, error)
-}
-
-func NewMockDiskFinder() *MockDiskFinder {
-	return &MockDiskFinder{
-		FindFunc: func(cid apiv1.DiskCID) (disk.Disk, error) {
-			return nil, nil
-		},
-	}
+	mock.Mock
 }
 
 func (m *MockDiskFinder) Find(cid apiv1.DiskCID) (disk.Disk, error) {
-	if m.FindFunc != nil {
-		return m.FindFunc(cid)
+	args := m.Called(cid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
 	}
-	return nil, nil
+	return args.Get(0).(disk.Disk), args.Error(1)
 }
 
-// MockVMFinder is a mock implementation of vm.Finder
+type MockDisk struct {
+	mock.Mock
+}
+
+func (m *MockDisk) ID() apiv1.DiskCID {
+	args := m.Called()
+	return args.Get(0).(apiv1.DiskCID)
+}
+
+func (m *MockDisk) Delete() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+// MockVMFinder is a mock implementation of vm.Finder with testify support
 type MockVMFinder struct {
+	mock.Mock
+	// Fallback for functional style
 	FindFunc func(cid apiv1.VMCID) (vm.VM, error)
 }
 
@@ -62,10 +64,46 @@ func NewMockVMFinder() *MockVMFinder {
 }
 
 func (m *MockVMFinder) Find(cid apiv1.VMCID) (vm.VM, error) {
+	// First try testify mock
+	if len(m.ExpectedCalls) > 0 || len(m.Calls) > 0 {
+		args := m.Called(cid)
+		if args.Get(0) == nil {
+			return nil, args.Error(1)
+		}
+		return args.Get(0).(vm.VM), args.Error(1)
+	}
+	// Fall back to functional style
 	if m.FindFunc != nil {
 		return m.FindFunc(cid)
 	}
 	return nil, nil
+}
+
+type MockVM struct {
+	mock.Mock
+}
+
+func (m *MockVM) ID() apiv1.VMCID {
+	args := m.Called()
+	return args.Get(0).(apiv1.VMCID)
+}
+
+func (m *MockVM) AttachDisk(disk disk.Disk) error {
+	args := m.Called(disk)
+	return args.Error(0)
+}
+
+func (m *MockVM) DetachDisk(diskCID apiv1.DiskCID) error {
+	args := m.Called(diskCID)
+	return args.Error(0)
+}
+
+func (m *MockVM) GetDisks() ([]apiv1.DiskCID, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]apiv1.DiskCID), args.Error(1)
 }
 
 // MockStemcellFinder is a mock implementation of stemcell.Finder

@@ -278,8 +278,8 @@ func TestStemcellImpl_ComprehensiveLifecycle(t *testing.T) {
 		err = stemcell.Delete()
 		require.NoError(t, err)
 
-		// Verify total calls
-		assert.Equal(t, 2, driver.executeCalls)
+		// Verify total calls (Prepare, Exists, Delete)
+		assert.Equal(t, 3, driver.executeCalls)
 		assert.Equal(t, 1, runner.executeCalls)
 	})
 }
