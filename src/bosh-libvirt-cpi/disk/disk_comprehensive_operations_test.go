@@ -146,7 +146,6 @@ func TestDisk_Restore(t *testing.T) {
 
 // Test disk verification
 func TestDisk_Verify(t *testing.T) {
-	diskPath := "/var/lib/libvirt/images/disk-123.qcow2"
 	isValid := true
 	assert.True(t, isValid)
 }
