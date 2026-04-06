@@ -43,9 +43,41 @@ func (m *MockDisk) ID() apiv1.DiskCID {
 	return args.Get(0).(apiv1.DiskCID)
 }
 
+func (m *MockDisk) Path() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockDisk) VMDKPath() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockDisk) DiskPath() string {
+	args := m.Called()
+	return args.String(0)
+}
+
 func (m *MockDisk) Delete() error {
 	args := m.Called()
 	return args.Error(0)
+}
+
+func (m *MockDisk) Exists() (bool, error) {
+	args := m.Called()
+	return args.Bool(0), args.Error(1)
+}
+
+// NewSimpleMockDisk creates a simple mock disk for testing
+func NewSimpleMockDisk(diskID string) disk.Disk {
+	mockDisk := &MockDisk{}
+	mockDisk.On("ID").Return(apiv1.NewDiskCID(diskID))
+	mockDisk.On("Path").Return("/var/lib/libvirt/disks/" + diskID)
+	mockDisk.On("VMDKPath").Return("/var/lib/libvirt/disks/" + diskID + "/disk.qcow2")
+	mockDisk.On("DiskPath").Return("/var/lib/libvirt/disks/" + diskID + "/disk.qcow2")
+	mockDisk.On("Delete").Return(nil)
+	mockDisk.On("Exists").Return(true, nil)
+	return mockDisk
 }
 
 // MockVMFinder is a mock implementation of vm.Finder with testify support
