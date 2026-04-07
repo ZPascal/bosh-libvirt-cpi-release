@@ -120,9 +120,12 @@ func (m *MockVM) ID() apiv1.VMCID {
 	return args.Get(0).(apiv1.VMCID)
 }
 
-func (m *MockVM) AttachDisk(disk disk.Disk) error {
+func (m *MockVM) AttachDisk(disk disk.Disk) (apiv1.DiskHint, error) {
 	args := m.Called(disk)
-	return args.Error(0)
+	if args.Get(0) == nil {
+		return apiv1.DiskHint{}, args.Error(1)
+	}
+	return args.Get(0).(apiv1.DiskHint), args.Error(1)
 }
 
 func (m *MockVM) DetachDisk(diskCID apiv1.DiskCID) error {
@@ -136,6 +139,21 @@ func (m *MockVM) GetDisks() ([]apiv1.DiskCID, error) {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]apiv1.DiskCID), args.Error(1)
+}
+
+func (m *MockVM) Delete() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockVM) Reboot() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockVM) SetMetadata(meta apiv1.VMMeta) error {
+	args := m.Called(meta)
+	return args.Error(0)
 }
 
 // MockStemcellFinder is a mock implementation of stemcell.Finder
@@ -202,4 +220,24 @@ func (m *MockStemcellCreator) Create(imagePath string, cloudProps apiv1.Stemcell
 		return m.CreateFunc(imagePath, cloudProps)
 	}
 	return nil, nil
+}
+
+// MockStemcell is a mock implementation of stemcell.Stemcell
+type MockStemcell struct {
+	mock.Mock
+}
+
+func (m *MockStemcell) ID() apiv1.StemcellCID {
+	args := m.Called()
+	return args.Get(0).(apiv1.StemcellCID)
+}
+
+func (m *MockStemcell) ImagePath() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockStemcell) Delete() error {
+	args := m.Called()
+	return args.Error(0)
 }
