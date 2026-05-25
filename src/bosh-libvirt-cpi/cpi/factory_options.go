@@ -16,7 +16,7 @@ type FactoryOpts struct {
 	// Connection settings
 	Host       string `json:"host"`
 	Username   string `json:"username"`
-	PrivateKey string `json:"private_key"`
+	PrivateKey string `json:"private_key_path"`
 
 	// Libvirt settings
 	BinPath  string `json:"bin_path"`
@@ -30,7 +30,7 @@ type FactoryOpts struct {
 	Agent apiv1.AgentOptions `json:"agent"`
 }
 
-func (o FactoryOpts) Validate() error {
+func (o *FactoryOpts) Validate() error {
 	// Note: Defaults should be applied before calling Validate()
 	// Check if required defaults are present
 	if o.Hypervisor == "" {
@@ -66,6 +66,11 @@ func (o FactoryOpts) Validate() error {
 
 	if o.StoreDir == "" {
 		return bosherr.Error("Must provide non-empty StoreDir")
+	}
+
+	// If StorageController is not set, use default
+	if o.StorageController == "" {
+		o.StorageController = bpds.SATAController
 	}
 
 	switch o.StorageController {

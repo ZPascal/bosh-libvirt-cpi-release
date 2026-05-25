@@ -128,8 +128,8 @@ func (m *MockVM) AttachDisk(disk disk.Disk) (apiv1.DiskHint, error) {
 	return args.Get(0).(apiv1.DiskHint), args.Error(1)
 }
 
-func (m *MockVM) DetachDisk(diskCID apiv1.DiskCID) error {
-	args := m.Called(diskCID)
+func (m *MockVM) DetachDisk(disk disk.Disk) error {
+	args := m.Called(disk)
 	return args.Error(0)
 }
 
@@ -154,6 +154,29 @@ func (m *MockVM) Reboot() error {
 func (m *MockVM) SetMetadata(meta apiv1.VMMeta) error {
 	args := m.Called(meta)
 	return args.Error(0)
+}
+
+func (m *MockVM) AttachEphemeralDisk(disk disk.Disk) error {
+	args := m.Called(disk)
+	return args.Error(0)
+}
+
+func (m *MockVM) ConfigureAgent(agentID apiv1.AgentID, agentOptions apiv1.AgentOptions) error {
+	args := m.Called(agentID, agentOptions)
+	return args.Error(0)
+}
+
+func (m *MockVM) DiskIDs() ([]apiv1.DiskCID, error) {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]apiv1.DiskCID), args.Error(1)
+}
+
+func (m *MockVM) Exists() (bool, error) {
+	args := m.Called()
+	return args.Bool(0), args.Error(1)
 }
 
 // MockStemcellFinder is a mock implementation of stemcell.Finder
@@ -241,3 +264,97 @@ func (m *MockStemcell) Delete() error {
 	args := m.Called()
 	return args.Error(0)
 }
+
+func (m *MockStemcell) Exists() (bool, error) {
+	args := m.Called()
+	return args.Bool(0), args.Error(1)
+}
+
+func (m *MockStemcell) SnapshotName() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockStemcell) Prepare(dstDir string) error {
+	args := m.Called(dstDir)
+	return args.Error(0)
+}
+
+// MockPortDevices is a mock implementation of vm.PortDevices
+type MockPortDevices struct {
+	mock.Mock
+}
+
+func NewMockPortDevices() *MockPortDevices {
+	return &MockPortDevices{}
+}
+
+func (m *MockPortDevices) CDROM() interface{} {
+	args := m.Called()
+	return args.Get(0)
+}
+
+func (m *MockPortDevices) FindAvailable() (interface{}, error) {
+	args := m.Called()
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockPortDevices) Find(controller, port int) (interface{}, error) {
+	args := m.Called(controller, port)
+	return args.Get(0), args.Error(1)
+}
+
+// MockHost is a mock implementation of vm.Host
+type MockHost struct {
+	mock.Mock
+}
+
+func NewMockHost() *MockHost {
+	return &MockHost{}
+}
+
+func (m *MockHost) FindNetwork(name string) (interface{}, error) {
+	args := m.Called(name)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockHost) EnableNetworks(nets ...string) error {
+	args := m.Called(nets)
+	return args.Error(0)
+}
+
+func (m *MockHost) Name() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockHost) Description() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockHost) IsEnabled() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockHost) EnabledDescription() string {
+	args := m.Called()
+	return args.String(0)
+}
+
+func (m *MockHost) Enable() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockHost) IsDHCPEnabled() bool {
+	args := m.Called()
+	return args.Bool(0)
+}
+
+func (m *MockHost) IPNet() interface{} {
+	args := m.Called()
+	return args.Get(0)
+}
+

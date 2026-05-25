@@ -33,7 +33,7 @@ func NewConfigFromPath(path string, fs boshsys.FileSystem) (Config, error) {
 		config.BinPath = "virsh"
 	}
 
-	err = cpi.FactoryOpts(config).Validate()
+	err = (*cpi.FactoryOpts)(&config).Validate()
 	if err != nil {
 		return config, bosherr.WrapError(err, "Validating configuration")
 	}

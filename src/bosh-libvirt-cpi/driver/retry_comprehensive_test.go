@@ -248,4 +248,3 @@ var _ = Describe("Retrier Interface", func() {
 		})
 	})
 })
-

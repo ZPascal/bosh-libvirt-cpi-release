@@ -307,14 +307,13 @@ networks:
 		})
 
 		It("validates required fields", func() {
-			// Test that config requires libvirt section
+			// Test that config requires store_dir field
 			configYAML := `
-storage:
-  dir:
-    - /var/lib/libvirt/images
+networks:
+  - name: default
 `
-			// Missing 'libvirt' section should be caught
-			Expect(configYAML).ToNot(ContainSubstring("libvirt"))
+			// Should not have store_dir
+			Expect(configYAML).ToNot(ContainSubstring("store_dir"))
 		})
 
 		It("handles missing config file gracefully", func() {

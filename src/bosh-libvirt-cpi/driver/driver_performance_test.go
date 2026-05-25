@@ -128,4 +128,3 @@ func TestPerformance_Degradation(t *testing.T) {
 	degradationPercent := 5.0
 	assert.Less(t, degradationPercent, 10.0)
 }
-

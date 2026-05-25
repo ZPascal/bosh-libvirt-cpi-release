@@ -111,4 +111,3 @@ func TestSSHRunnerHandlesPrivateKeys(t *testing.T) {
 		})
 	}
 }
-

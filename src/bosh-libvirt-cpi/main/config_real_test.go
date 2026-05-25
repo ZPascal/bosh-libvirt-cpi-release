@@ -22,13 +22,16 @@ func TestNewConfigFromPath_Success(t *testing.T) {
 	configPath := tmpDir + "/config.json"
 
 	configContent := `{
-		"libvirt": {
-			"host": "qemu+unix:///system"
-		},
+		"hypervisor": "qemu",
+		"bin_path": "virsh",
 		"cpi": {
 			"host": "localhost",
 			"port": 6868,
 			"user": "vcap"
+		},
+		"store_dir": "/tmp/libvirt-store",
+		"agent": {
+			"mbus": "https://user:password@0.0.0.0:6868"
 		}
 	}`
 
@@ -84,10 +87,14 @@ func TestNewConfigFromPath_HypervisorDefault(t *testing.T) {
 	configPath := tmpDir + "/config.json"
 
 	configContent := `{
+		"bin_path": "/usr/bin/virsh",
 		"cpi": {
 			"host": "localhost"
 		},
-		"store_dir": "/tmp/libvirt-store"
+		"store_dir": "/tmp/libvirt-store",
+		"agent": {
+			"mbus": "https://user:password@0.0.0.0:6868"
+		}
 	}`
 
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -112,7 +119,10 @@ func TestNewConfigFromPath_MinimalConfig(t *testing.T) {
 	configPath := tmpDir + "/config.json"
 
 	configContent := `{
-		"store_dir": "/tmp/libvirt-store"
+		"store_dir": "/tmp/libvirt-store",
+		"agent": {
+			"mbus": "https://user:password@0.0.0.0:6868"
+		}
 	}`
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
 	assert.NoError(t, err)

@@ -127,4 +127,3 @@ func TestContainers_SecretsManagement(t *testing.T) {
 	managed := true
 	assert.True(t, managed)
 }
-

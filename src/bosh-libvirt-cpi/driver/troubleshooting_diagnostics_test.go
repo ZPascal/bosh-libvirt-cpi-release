@@ -133,4 +133,3 @@ func TestTroubleshooting_PacketLossDetection(t *testing.T) {
 	detected := true
 	assert.True(t, detected)
 }
-

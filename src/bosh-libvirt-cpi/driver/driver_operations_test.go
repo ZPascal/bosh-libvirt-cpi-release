@@ -87,7 +87,7 @@ func TestRetryLogic(t *testing.T) {
 	})
 
 	t.Run("handles exponential backoff", func(t *testing.T) {
-		backoff1 := 1000   // milliseconds
+		backoff1 := 1000 // milliseconds
 		backoff2 := 2000
 		backoff3 := 4000
 
@@ -111,4 +111,3 @@ func TestRetryLogic(t *testing.T) {
 		assert.Equal(t, 3, attempts)
 	})
 }
-

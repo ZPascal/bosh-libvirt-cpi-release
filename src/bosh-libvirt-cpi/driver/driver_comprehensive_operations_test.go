@@ -125,4 +125,3 @@ func TestDriver_OutputBuffer(t *testing.T) {
 	bufferSize := 4096
 	assert.Greater(t, bufferSize, 0)
 }
-

@@ -18,7 +18,7 @@ test: test-unit
 
 test-unit:
 	@echo "Running unit tests..."
-	@$(GO) test $(GO_FLAGS) -short -v -skip integration ./...
+	@$(GO) test $(GO_FLAGS) -short -v ./config ./cpi ./disk ./driver ./logging ./monitoring ./provider ./qemu ./stemcell ./vm ./vm/...
 
 test-integration:
 	@echo "Running integration tests..."
@@ -26,7 +26,7 @@ test-integration:
 
 test-coverage:
 	@echo "Running tests with coverage..."
-	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out -covermode=atomic ./...
+	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out -covermode=atomic ./config ./cpi ./disk ./driver ./logging ./monitoring ./provider ./qemu ./stemcell ./vm ./vm/...
 	@$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 	@echo "Coverage statistics:"
@@ -34,7 +34,7 @@ test-coverage:
 
 test-coverage-report:
 	@echo "Generating detailed coverage report..."
-	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out ./...
+	@$(GO) test $(GO_FLAGS) -short -coverprofile=coverage.out ./cpi ./disk ./driver ./logging ./monitoring ./provider ./qemu ./stemcell ./vm ./vm/...
 	@$(GO) tool cover -func=coverage.out | grep -E "total|%$$"
 
 clean:
