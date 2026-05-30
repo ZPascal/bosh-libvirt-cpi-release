@@ -3,8 +3,8 @@ package vm
 // more or less vendored from github.com/johto/iso9660wrap/blob/master/directories.go
 
 import (
-	"time"
 	"fmt"
+	"time"
 )
 
 func WriteDirectoryRecord(w *SectorWriter, identifier string, firstSectorNum uint32) (uint32, error) {
@@ -13,21 +13,45 @@ func WriteDirectoryRecord(w *SectorWriter, identifier string, firstSectorNum uin
 	}
 	recordLength := 33 + len(identifier)
 
-	w.WriteByte(byte(recordLength))
-	w.WriteByte(0) // number of sectors in extended attribute record
-	w.WriteBothEndianDWord(firstSectorNum)
-	w.WriteBothEndianDWord(SectorSize) // directory length
-	writeDirectoryRecordtimestamp(w, time.Now())
-	w.WriteByte(byte(3)) // bitfield; directory
-	w.WriteByte(byte(0)) // file unit size for an interleaved file
-	w.WriteByte(byte(0)) // interleave gap size for an interleaved file
-	w.WriteBothEndianWord(1) // volume sequence number
-	w.WriteByte(byte(len(identifier)))
-	w.WriteString(identifier)
+	if err := w.WriteByte(byte(recordLength)); err != nil {
+		return 0, err
+	}
+	if err := w.WriteByte(0); err != nil { // number of sectors in extended attribute record
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianDWord(firstSectorNum); err != nil {
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianDWord(SectorSize); err != nil { // directory length
+		return 0, err
+	}
+	if err := writeDirectoryRecordtimestamp(w, time.Now()); err != nil {
+		return 0, err
+	}
+	if err := w.WriteByte(byte(3)); err != nil { // bitfield; directory
+		return 0, err
+	}
+	if err := w.WriteByte(byte(0)); err != nil { // file unit size for an interleaved file
+		return 0, err
+	}
+	if err := w.WriteByte(byte(0)); err != nil { // interleave gap size for an interleaved file
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianWord(1); err != nil { // volume sequence number
+		return 0, err
+	}
+	if err := w.WriteByte(byte(len(identifier))); err != nil {
+		return 0, err
+	}
+	if _, err := w.WriteString(identifier); err != nil {
+		return 0, err
+	}
 	// optional padding to even length
-	if recordLength % 2 == 1 {
+	if recordLength%2 == 1 {
 		recordLength++
-		w.WriteByte(0)
+		if err := w.WriteByte(0); err != nil {
+			return 0, err
+		}
 	}
 	return uint32(recordLength), nil
 }
@@ -38,32 +62,63 @@ func WriteFileRecordHeader(w *SectorWriter, identifier string, firstSectorNum ui
 	}
 	recordLength := 33 + len(identifier)
 
-	w.WriteByte(byte(recordLength))
-	w.WriteByte(0) // number of sectors in extended attribute record
-	w.WriteBothEndianDWord(firstSectorNum) // first sector
-	w.WriteBothEndianDWord(fileSize)
-	writeDirectoryRecordtimestamp(w, time.Now())
-	w.WriteByte(byte(0)) // bitfield; normal file
-	w.WriteByte(byte(0)) // file unit size for an interleaved file
-	w.WriteByte(byte(0)) // interleave gap size for an interleaved file
-	w.WriteBothEndianWord(1) // volume sequence number
-	w.WriteByte(byte(len(identifier)))
-	w.WriteString(identifier)
+	if err := w.WriteByte(byte(recordLength)); err != nil {
+		return 0, err
+	}
+	if err := w.WriteByte(0); err != nil { // number of sectors in extended attribute record
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianDWord(firstSectorNum); err != nil { // first sector
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianDWord(fileSize); err != nil {
+		return 0, err
+	}
+	if err := writeDirectoryRecordtimestamp(w, time.Now()); err != nil {
+		return 0, err
+	}
+	if err := w.WriteByte(byte(0)); err != nil { // bitfield; normal file
+		return 0, err
+	}
+	if err := w.WriteByte(byte(0)); err != nil { // file unit size for an interleaved file
+		return 0, err
+	}
+	if err := w.WriteByte(byte(0)); err != nil { // interleave gap size for an interleaved file
+		return 0, err
+	}
+	if _, err := w.WriteBothEndianWord(1); err != nil { // volume sequence number
+		return 0, err
+	}
+	if err := w.WriteByte(byte(len(identifier))); err != nil {
+		return 0, err
+	}
+	if _, err := w.WriteString(identifier); err != nil {
+		return 0, err
+	}
 	// optional padding to even length
-	if recordLength % 2 == 1 {
+	if recordLength%2 == 1 {
 		recordLength++
-		w.WriteByte(0)
+		if err := w.WriteByte(0); err != nil {
+			return 0, err
+		}
 	}
 	return uint32(recordLength), nil
 }
 
-func writeDirectoryRecordtimestamp(w *SectorWriter, t time.Time) {
+func writeDirectoryRecordtimestamp(w *SectorWriter, t time.Time) error {
 	t = t.UTC()
-	w.WriteByte(byte(t.Year() - 1900))
-	w.WriteByte(byte(t.Month()))
-	w.WriteByte(byte(t.Day()))
-	w.WriteByte(byte(t.Hour()))
-	w.WriteByte(byte(t.Minute()))
-	w.WriteByte(byte(t.Second()))
-	w.WriteByte(0) // UTC offset
+	for _, b := range []byte{
+		byte(t.Year() - 1900),
+		byte(t.Month()),
+		byte(t.Day()),
+		byte(t.Hour()),
+		byte(t.Minute()),
+		byte(t.Second()),
+		0, // UTC offset
+	} {
+		if err := w.WriteByte(b); err != nil {
+			return err
+		}
+	}
+	return nil
 }

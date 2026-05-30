@@ -11,13 +11,10 @@ import (
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
 	bstem "bosh-libvirt-cpi/stemcell"
-	bnet "bosh-libvirt-cpi/vm/network"
-	bpds "bosh-libvirt-cpi/vm/portdevices"
 )
 
 type FactoryOpts struct {
 	DirPath            string
-	StorageController  string
 	AutoEnableNetworks bool
 }
 
@@ -27,6 +24,7 @@ type Factory struct {
 
 	driver      driver.Driver
 	runner      driver.Runner
+	domBuilder  driver.DomainBuilder
 	diskFactory bdisk.Factory
 
 	agentOptions       apiv1.AgentOptions
@@ -41,6 +39,7 @@ func NewFactory(
 	uuidGen boshuuid.Generator,
 	driver driver.Driver,
 	runner driver.Runner,
+	domBuilder driver.DomainBuilder,
 	diskFactory bdisk.Factory,
 	agentOptions apiv1.AgentOptions,
 	stemcellAPIVersion apiv1.StemcellAPIVersion,
@@ -52,6 +51,7 @@ func NewFactory(
 
 		driver:      driver,
 		runner:      runner,
+		domBuilder:  domBuilder,
 		diskFactory: diskFactory,
 
 		agentOptions:       agentOptions,
@@ -70,46 +70,33 @@ func (f Factory) Create(
 	env apiv1.VMEnv,
 ) (VM, error) {
 
-	host := Host{bnet.NewNetworks(f.driver, f.logger)}
-
 	vmProps, err := NewVMProps(props)
 	if err != nil {
 		return nil, err
 	}
 
-	vmNetworks, err := NewNetworks(networks)
+	idInternal, err := f.uuidGen.Generate()
 	if err != nil {
-		return nil, err
+		return nil, bosherr.WrapError(err, "Generating VM id")
 	}
 
-	if f.opts.AutoEnableNetworks {
-		err := host.EnableNetworks(vmNetworks)
-		if err != nil {
-			return nil, bosherr.WrapError(err, "Enabling networks")
-		}
-	}
+	vmID := "vm-" + idInternal
+	cid := apiv1.NewVMCID(vmID)
 
-	vm, err := f.newClonedVM(stemcell)
+	vm := f.newVM(cid)
+
+	// Create ephemeral disk before defining the domain so we can reference it.
+	ephemeralDisk, err := f.diskFactory.Create(vmProps.EphemeralDisk)
 	if err != nil {
-		return nil, err
+		return nil, bosherr.WrapError(err, "Creating ephemeral disk")
 	}
 
-	err = vm.SetProps(vmProps)
-	if err != nil {
-		f.cleanUpPartialCreate(vm)
-		return nil, err
-	}
-
-	err = vm.ConfigureNICs(vmNetworks, host)
-	if err != nil {
-		f.cleanUpPartialCreate(vm)
-		return nil, bosherr.WrapError(err, "Configuring NICs")
-	}
-
+	// Build initial agent env, persist for later use by the agent.
 	initialAgentEnv := apiv1.NewAgentEnvFactory().ForVM(
-		agentID, vm.ID(), vmNetworks.AsNetworks(), env, f.agentOptions)
+		agentID, vm.ID(), networks, env, f.agentOptions)
 
 	initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
+	initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
 
 	err = vm.ConfigureAgent(initialAgentEnv)
 	if err != nil {
@@ -117,19 +104,36 @@ func (f Factory) Create(
 		return nil, bosherr.WrapError(err, "Initial agent configuration")
 	}
 
-	ephemeralDisk, err := f.diskFactory.Create(vmProps.EphemeralDisk)
-	if err != nil {
-		f.cleanUpPartialCreate(vm)
-		return nil, bosherr.WrapError(err, "Creating ephemeral disk")
+	disks := driver.DomainDiskPaths{
+		RootDisk:      stemcell.ImagePath(),
+		EphemeralDisk: ephemeralDisk.ImagePath(),
 	}
 
+	domainProps := driver.VMDomainProps{
+		CPUs:     vmProps.CPUs,
+		MemoryMB: vmProps.Memory,
+	}
+
+	xml, err := f.domBuilder.BuildDomain(vmID, domainProps, disks)
+	if err != nil {
+		f.cleanUpPartialCreate(vm)
+		return nil, bosherr.WrapError(err, "Building domain XML")
+	}
+
+	err = f.driver.DefineDomain(xml)
+	if err != nil {
+		f.cleanUpPartialCreate(vm)
+		return nil, bosherr.WrapError(err, "Defining domain")
+	}
+
+	// Track ephemeral disk attachment for later DiskIDs accounting.
 	err = vm.AttachEphemeralDisk(ephemeralDisk)
 	if err != nil {
 		f.cleanUpPartialCreate(vm)
-		return nil, bosherr.WrapError(err, "Attaching ephemeral disk")
+		return nil, bosherr.WrapError(err, "Recording ephemeral disk attachment")
 	}
 
-	err = vm.Start(vmProps.GUI)
+	err = vm.Start()
 	if err != nil {
 		f.cleanUpPartialCreate(vm)
 		return nil, bosherr.WrapError(err, "Starting VM")
@@ -146,35 +150,10 @@ func (f Factory) cleanUpPartialCreate(vm VM) {
 }
 
 func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
-	pdsOpts := bpds.PortDevicesOpts{Controller: f.opts.StorageController}
-	portDevices := bpds.NewPortDevices(cid, pdsOpts, f.driver, f.logger)
 	store := NewStore(filepath.Join(f.opts.DirPath, cid.AsString()), f.runner)
-	return NewVMImpl(cid, portDevices, store, f.stemcellAPIVersion, f.driver, f.logger)
+	return NewVMImpl(cid, store, f.stemcellAPIVersion, f.driver, f.logger)
 }
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 	return f.newVM(cid), nil
-}
-
-func (f Factory) newClonedVM(stemcell bstem.Stemcell) (VMImpl, error) {
-	cloneIDInternal, err := f.uuidGen.Generate()
-	if err != nil {
-		return VMImpl{}, bosherr.WrapError(err, "Generating clone VM id")
-	}
-
-	cloneID := "vm-" + cloneIDInternal
-
-	_, err = f.driver.Execute(
-		"clonevm", stemcell.ID().AsString(),
-		"--snapshot", stemcell.SnapshotName(),
-		"--options", "link",
-		"--name", cloneID, // extra non-conflicting
-		"--uuid", cloneIDInternal,
-		"--register",
-	)
-	if err != nil {
-		return VMImpl{}, bosherr.WrapError(err, "Cloning VM")
-	}
-
-	return f.newVM(apiv1.NewVMCID(cloneID)), nil
 }

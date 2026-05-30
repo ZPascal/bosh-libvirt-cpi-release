@@ -1,12 +1,7 @@
 package stemcell
 
 import (
-	"crypto/sha1"
-	"fmt"
 	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -16,24 +11,18 @@ import (
 	boshuuid "github.com/cloudfoundry/bosh-utils/uuid"
 
 	"bosh-libvirt-cpi/driver"
-	bpds "bosh-libvirt-cpi/vm/portdevices"
-)
-
-var (
-	stemcellSuggestedName = regexp.MustCompile(`Suggested VM name "(.+?)"`)
 )
 
 type FactoryOpts struct {
-	DirPath           string
-	StorageController string // todo expose per stemcell
+	DirPath string
 }
 
 type Factory struct {
 	opts FactoryOpts
 
-	driver  driver.Driver
-	runner  driver.Runner
-	retrier driver.Retrier
+	driver     driver.Driver
+	domBuilder driver.DomainBuilder
+	runner     driver.Runner
 
 	fs         boshsys.FileSystem
 	uuidGen    boshuuid.Generator
@@ -46,8 +35,8 @@ type Factory struct {
 func NewFactory(
 	opts FactoryOpts,
 	driver driver.Driver,
+	domBuilder driver.DomainBuilder,
 	runner driver.Runner,
-	retrier driver.Retrier,
 	fs boshsys.FileSystem,
 	uuidGen boshuuid.Generator,
 	compressor boshcmd.Compressor,
@@ -56,9 +45,9 @@ func NewFactory(
 	return Factory{
 		opts: opts,
 
-		driver:  driver,
-		runner:  runner,
-		retrier: retrier,
+		driver:     driver,
+		domBuilder: domBuilder,
+		runner:     runner,
 
 		fs:         fs,
 		uuidGen:    uuidGen,
@@ -84,28 +73,15 @@ func (f Factory) ImportFromPath(imagePath string) (Stemcell, error) {
 		return nil, err
 	}
 
-	internalTmpID, err := f.importOVF(filepath.Join(stemcellPath, "image.ovf"))
-	if err != nil {
-		return nil, err
-	}
-
-	// todo remove stemcell after import?
-
-	_, err = f.driver.Execute("modifyvm", internalTmpID, "--name", id)
-	if err != nil {
-		f.cleanUpPartialImport(internalTmpID)
-		return nil, bosherr.WrapErrorf(err, "Setting stemcell name")
-	}
-
 	stemcell := f.newStemcell(apiv1.NewStemcellCID(id))
 
 	err = stemcell.Prepare()
 	if err != nil {
-		f.cleanUpPartialImport(internalTmpID)
+		f.cleanUpPartialImport(stemcell)
 		return nil, bosherr.WrapErrorf(err, "Preparing stemcell")
 	}
 
-	return stemcell, err
+	return stemcell, nil
 }
 
 func (f Factory) Find(cid apiv1.StemcellCID) (Stemcell, error) {
@@ -114,7 +90,7 @@ func (f Factory) Find(cid apiv1.StemcellCID) (Stemcell, error) {
 
 func (f Factory) newStemcell(cid apiv1.StemcellCID) StemcellImpl {
 	path := filepath.Join(f.opts.DirPath, cid.AsString())
-	return NewStemcellImpl(cid, path, f.driver, f.runner, f.logger)
+	return NewStemcellImpl(cid, path, f.driver, f.domBuilder, f.runner, f.logger)
 }
 
 func (f Factory) upload(imagePath, stemcellPath string) error {
@@ -123,7 +99,7 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		return bosherr.WrapErrorf(err, "Creating tmp stemcell directory")
 	}
 
-	defer f.fs.RemoveAll(tmpDir)
+	defer func() { _ = f.fs.RemoveAll(tmpDir) }()
 
 	err = f.compressor.DecompressFileToDir(imagePath, tmpDir, boshcmd.CompressorOptions{})
 	if err != nil {
@@ -135,177 +111,22 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
 
-	switch f.opts.StorageController {
-	case bpds.IDEController:
-		err = f.switchRootDiskToIDEController(tmpDir)
-		if err != nil {
-			return bosherr.WrapError(err, "Switching root disk to IDE Controller")
-		}
-	case bpds.SATAController:
-		err = f.switchRootDiskToSATAController(tmpDir)
-		if err != nil {
-			return bosherr.WrapError(err, "Switching root disk to SATA Controller")
-		}
-	default: // scsi
-		// do nothing
-	}
+	// The stemcell tarball is expected to contain a file named "image" that
+	// holds the disk image in the format requested by the domain builder
+	// (raw, qcow2, vmdk). We upload it under "image.<format>".
+	srcImage := filepath.Join(tmpDir, "image")
+	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
 
-	for _, fileName := range []string{"image-disk1.vmdk", "image.mf", "image.ovf"} {
-		err := f.runner.Upload(filepath.Join(tmpDir, fileName), filepath.Join(stemcellPath, fileName))
-		if err != nil {
-			return bosherr.WrapErrorf(err, "Uploading stemcell")
-		}
+	err = f.runner.Upload(srcImage, dstImage)
+	if err != nil {
+		return bosherr.WrapErrorf(err, "Uploading stemcell image")
 	}
 
 	return nil
 }
 
-func (f Factory) switchRootDiskToIDEController(tmpDir string) error {
-	var beforeSHA1, afterSHA1 string
-
-	{
-		ovfPath := filepath.Join(tmpDir, "image.ovf")
-
-		contents, err := f.fs.ReadFileString(ovfPath)
-		if err != nil {
-			return err
-		}
-
-		beforeSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(contents)))
-
-		// http://blogs.vmware.com/vapp/2009/11/virtual-hardware-in-ovf-part-1.html
-		// Parent=x references Item with InstanceID=x
-		contents = strings.Replace(
-			contents, "<rasd:Parent>3</rasd:Parent>", "<rasd:Parent>4</rasd:Parent>", 1)
-
-		afterSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(contents)))
-
-		err = f.fs.WriteFileString(ovfPath, contents)
-		if err != nil {
-			return err
-		}
-	}
-
-	{
-		mfPath := filepath.Join(tmpDir, "image.mf")
-
-		mfContents, err := f.fs.ReadFileString(mfPath)
-		if err != nil {
-			return err
-		}
-
-		mfContents = strings.Replace(mfContents, beforeSHA1, afterSHA1, 1)
-
-		err = f.fs.WriteFileString(mfPath, mfContents)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (f Factory) switchRootDiskToSATAController(tmpDir string) error {
-	var beforeSHA1, afterSHA1 string
-
-	{
-		ovfPath := filepath.Join(tmpDir, "image.ovf")
-
-		contents, err := f.fs.ReadFileString(ovfPath)
-		if err != nil {
-			return err
-		}
-
-		beforeSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(contents)))
-
-		// If it is still IDE, replace differently. New jammy stemcells are SATA and not IDE controller
-		if strings.Contains(contents, "<rasd:Description>IDE Controller</rasd:Description>") {
-			// Sata controller example found here:
-			// https://communities.vmware.com/t5/ESXi-Discussions/How-to-add-SATA-controller-in-ESXi-5-5/m-p/935069/highlight/true#M80252
-			contents = strings.Replace(
-				contents, "<rasd:Parent>3</rasd:Parent>", "<rasd:Parent>4</rasd:Parent>", 1)
-
-			contents = strings.Replace(
-				contents, "<rasd:Description>IDE Controller</rasd:Description>", "<rasd:Description>SATA Controller</rasd:Description>", 1)
-
-			contents = strings.Replace(
-				contents, "<rasd:ElementName>ideController0</rasd:ElementName>", "<rasd:ElementName>sataController0</rasd:ElementName>", 1)
-
-			contents = strings.Replace(
-				contents, "<rasd:ResourceType>5</rasd:ResourceType>", "<rasd:ResourceSubType>AHCI</rasd:ResourceSubType><rasd:ResourceType>20</rasd:ResourceType>", 1)
-
-		} else {
-			contents = strings.Replace(
-				contents, "<rasd:Parent>4</rasd:Parent>", "<rasd:Parent>3</rasd:Parent>", 1)
-		}
-
-		afterSHA1 = fmt.Sprintf("%x", sha1.Sum([]byte(contents)))
-
-		err = f.fs.WriteFileString(ovfPath, contents)
-		if err != nil {
-			return err
-		}
-	}
-
-	{
-		mfPath := filepath.Join(tmpDir, "image.mf")
-
-		mfContents, err := f.fs.ReadFileString(mfPath)
-		if err != nil {
-			return err
-		}
-
-		mfContents = strings.Replace(mfContents, beforeSHA1, afterSHA1, 1)
-
-		err = f.fs.WriteFileString(mfPath, mfContents)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (f Factory) importOVF(ovfPath string) (string, error) {
-	var internalTmpID string
-
-	actionFunc := func() error {
-		output, err := f.driver.Execute("import", ovfPath)
-		if err != nil {
-			return driver.RetryableErrorImpl{err}
-		}
-
-		matches := stemcellSuggestedName.FindStringSubmatch(output)
-		if len(matches) != 2 {
-			return driver.RetryableErrorImpl{bosherr.Errorf("Couldn't find VM name in the output:\nOutput: '%s'", output)}
-		}
-
-		suggestedName := matches[1]
-
-		output, err = f.driver.Execute("list", "vms")
-		if err != nil {
-			f.cleanUpPartialImport(suggestedName)
-			return driver.RetryableErrorImpl{bosherr.WrapError(err, "Listing VMs after an import")}
-		}
-
-		// todo regexp.MustCompile(`^"#{Regexp.escape(suggestedName)}" \{(.+?)\}$`)
-
-		for _, line := range strings.Split(output, "\n") {
-			if strings.HasPrefix(line, fmt.Sprintf(`"%s" `, suggestedName)) {
-				internalTmpID = strings.TrimSuffix(strings.SplitN(line, " {", 2)[1], "}")
-				return nil
-			}
-		}
-
-		f.cleanUpPartialImport(suggestedName)
-		return driver.RetryableErrorImpl{bosherr.Errorf("Failed to import '%s'", ovfPath)}
-	}
-
-	return internalTmpID, f.retrier.RetryComplex(actionFunc, 2, 2*time.Second)
-}
-
-func (f Factory) cleanUpPartialImport(suggestedNameOrID string) {
-	_, err := f.driver.Execute("unregistervm", suggestedNameOrID, "--delete")
+func (f Factory) cleanUpPartialImport(stemcell StemcellImpl) {
+	err := stemcell.Delete()
 	if err != nil {
 		f.logger.Error(f.logTag, "Failed to clean up partially imported stemcell: %s", err)
 	}

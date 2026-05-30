@@ -2,21 +2,17 @@ package vm
 
 import (
 	"encoding/json"
-	"fmt"
-	"strconv"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 
 	"bosh-libvirt-cpi/driver"
-	bpds "bosh-libvirt-cpi/vm/portdevices"
 )
 
 type VMImpl struct {
-	cid         apiv1.VMCID
-	portDevices bpds.PortDevices
-	store       Store
+	cid   apiv1.VMCID
+	store Store
 
 	stemcellAPIVersion apiv1.StemcellAPIVersion
 
@@ -26,7 +22,6 @@ type VMImpl struct {
 
 func NewVMImpl(
 	cid apiv1.VMCID,
-	portDevices bpds.PortDevices,
 	store Store,
 	stemcellAPIVersion apiv1.StemcellAPIVersion,
 	driver driver.Driver,
@@ -34,7 +29,6 @@ func NewVMImpl(
 ) VMImpl {
 	return VMImpl{
 		cid:                cid,
-		portDevices:        portDevices,
 		store:              store,
 		stemcellAPIVersion: stemcellAPIVersion,
 		driver:             driver,
@@ -45,45 +39,20 @@ func NewVMImpl(
 func (vm VMImpl) ID() apiv1.VMCID { return vm.cid }
 
 func (vm VMImpl) SetProps(props VMProps) error {
-	_, err := vm.driver.Execute(
-		"modifyvm", vm.cid.AsString(),
-		"--name", vm.cid.AsString(),
-		"--memory", strconv.Itoa(props.Memory),
-		"--cpus", strconv.Itoa(props.CPUs),
-		"--paravirtprovider", props.ParavirtProvider,
-		"--audio", props.Audio,
-		"--firmware", props.Firmware,
-	)
+	err := vm.driver.UpdateDomainMemory(vm.cid.AsString(), props.Memory)
 	if err != nil {
-		return err
+		return bosherr.WrapError(err, "Updating domain memory")
 	}
 
-	for index, folder := range props.SharedFolders {
-		name := fmt.Sprintf("folder-%d", index)
-
-		_, err := vm.driver.Execute(
-			"setextradata", vm.cid.AsString(),
-			"VBoxInternal2/SharedFoldersEnableSymlinksCreate/"+name, "1",
-		)
-		if err != nil {
-			return err
-		}
-
-		_, err = vm.driver.Execute(
-			"sharedfolder", "add", vm.cid.AsString(),
-			"--name", name,
-			"--hostpath", folder.HostPath,
-		)
-		if err != nil {
-			return err
-		}
+	err = vm.driver.UpdateDomainCPUs(vm.cid.AsString(), props.CPUs)
+	if err != nil {
+		return bosherr.WrapError(err, "Updating domain CPUs")
 	}
 
 	return nil
 }
 
 func (vm VMImpl) SetMetadata(meta apiv1.VMMeta) error {
-	// todo can we do better?
 	bytes, err := json.Marshal(meta)
 	if err != nil {
 		return bosherr.WrapError(err, "Marshaling VM metadata")
@@ -97,8 +66,10 @@ func (vm VMImpl) SetMetadata(meta apiv1.VMMeta) error {
 	return nil
 }
 
-func (vm VMImpl) ConfigureNICs(nets Networks, host Host) error {
-	return NICs{vm.driver, vm.ID()}.Configure(nets, host)
+func (vm VMImpl) ConfigureNICs(networks apiv1.Networks) error {
+	// libvirt domain XML already configures the NIC at definition time.
+	// No-op here; agent receives network configuration via env.
+	return nil
 }
 
 func (vm VMImpl) Delete() error {
@@ -107,15 +78,9 @@ func (vm VMImpl) Delete() error {
 		return err
 	}
 
-	// todo is this necessary?
-	err = vm.detachPersistentDisks()
-	if err != nil {
-		return err
-	}
-
-	_, err = vm.driver.Execute("unregistervm", vm.cid.AsString(), "--delete")
-	if err != nil {
-		return err
+	err = vm.driver.DestroyDomain(vm.cid.AsString())
+	if err != nil && !vm.driver.IsMissingDomainErr(err) {
+		return bosherr.WrapErrorf(err, "Destroying VM domain '%s'", vm.cid.AsString())
 	}
 
 	return vm.store.Delete()

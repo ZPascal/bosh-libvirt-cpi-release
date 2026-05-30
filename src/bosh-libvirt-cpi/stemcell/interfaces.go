@@ -18,7 +18,8 @@ var _ Finder = Factory{}
 
 type Stemcell interface {
 	ID() apiv1.StemcellCID
-	SnapshotName() string
+
+	ImagePath() string
 
 	Exists() (bool, error)
 	Delete() error

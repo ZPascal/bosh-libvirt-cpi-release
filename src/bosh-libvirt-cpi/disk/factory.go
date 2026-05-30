@@ -55,15 +55,17 @@ func (f Factory) Create(size int) (Disk, error) {
 		return nil, bosherr.WrapError(err, "Creating disk parent")
 	}
 
-	_, err = f.driver.Execute(
-		"createhd",
-		"--filename", disk.VMDKPath(),
-		"--size", strconv.Itoa(size),
-		"--format", "VMDK",
-		"--variant", "Standard",
+	// Create a sparse raw disk image of `size` MB at disk.ImagePath().
+	_, _, err = f.runner.Execute(
+		"dd",
+		"if=/dev/zero",
+		"of="+disk.ImagePath(),
+		"bs=1M",
+		"count=0",
+		"seek="+strconv.Itoa(size),
 	)
 	if err != nil {
-		return nil, bosherr.WrapError(err, "Creating disk")
+		return nil, bosherr.WrapError(err, "Creating disk image")
 	}
 
 	return disk, nil

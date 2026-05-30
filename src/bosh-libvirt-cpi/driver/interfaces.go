@@ -1,16 +1,31 @@
 package driver
 
-type ExecuteOpts struct {
-	IgnoreNonZeroExitStatus bool
-}
-
 type Driver interface {
-	Execute(args ...string) (string, error)
-	ExecuteComplex(args []string, opts ExecuteOpts) (string, error)
-	IsMissingVMErr(output string) bool
+	// Domain lifecycle
+	DefineDomain(xml string) error
+	StartDomain(id string) error
+	ShutdownDomain(id string) error
+	DestroyDomain(id string) error
+	RebootDomain(id string) error
+	LookupDomain(id string) (Domain, error)
+
+	// Domain config
+	UpdateDomainMemory(id string, memoryMB int) error
+	UpdateDomainCPUs(id string, cpus int) error
+
+	// Storage
+	CreateStorageVol(poolName, volName string, sizeMB int) (string, error)
+	DeleteStorageVol(poolName, volName string) error
+
+	// Error helpers
+	IsMissingDomainErr(err error) bool
 }
 
-var _ Driver = ExecDriver{}
+type Domain interface {
+	GetName() (string, error)
+	GetState() (int, int, error)
+	IsActive() (bool, error)
+}
 
 type Runner interface {
 	Execute(path string, args ...string) (string, int, error)

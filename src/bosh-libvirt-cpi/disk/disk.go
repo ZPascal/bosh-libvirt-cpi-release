@@ -31,17 +31,16 @@ func (d DiskImpl) ID() apiv1.DiskCID { return d.cid }
 
 func (d DiskImpl) Path() string { return d.path }
 
-func (d DiskImpl) VMDKPath() string {
-	return filepath.Join(d.path, "disk.vmdk")
+func (d DiskImpl) ImagePath() string {
+	return filepath.Join(d.path, "disk.img")
 }
 
 func (d DiskImpl) Exists() (bool, error) {
 	_, _, err := d.runner.Execute("ls", d.path)
 	if err != nil {
-		return false, bosherr.WrapErrorf(err, "Checking disk '%s'", d.path)
+		// directory does not exist
+		return false, nil
 	}
-
-	// todo check status
 
 	return true, nil
 }
