@@ -18,5 +18,4 @@ export NO_PROXY="<%= no_proxy %>"
 export no_proxy="<%= no_proxy %>"
 <% end %>
 
-platform=`uname | tr '[:upper:]' '[:lower:]'`
-exec $BOSH_PACKAGES_DIR/virtualbox_cpi/bin/cpi-${platform} -configPath $BOSH_JOBS_DIR/virtualbox_cpi/config/cpi.json
+exec $BOSH_PACKAGES_DIR/libvirt_cpi/bin/cpi -configPath $BOSH_JOBS_DIR/libvirt_cpi/config/cpi.json
