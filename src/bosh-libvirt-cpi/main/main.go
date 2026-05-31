@@ -2,17 +2,17 @@ package main
 
 import (
 	"flag"
-	"math/rand"
 	"os"
-	"time"
 
 	"github.com/cloudfoundry/bosh-cpi-go/rpc"
 	boshcmd "github.com/cloudfoundry/bosh-utils/fileutil"
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 	boshsys "github.com/cloudfoundry/bosh-utils/system"
 	boshuuid "github.com/cloudfoundry/bosh-utils/uuid"
+	libvirt "libvirt.org/go/libvirt"
 
 	"bosh-libvirt-cpi/cpi"
+	"bosh-libvirt-cpi/driver"
 )
 
 var (
@@ -20,8 +20,6 @@ var (
 )
 
 func main() {
-	rand.Seed(time.Now().UTC().UnixNano()) // todo MAC generation
-
 	logger, fs, cmdRunner, uuidGen := basicDeps()
 	defer logger.HandlePanic("Main")
 
@@ -35,8 +33,17 @@ func main() {
 
 	compressor := boshcmd.NewTarballCompressor(cmdRunner, fs)
 
-	cpiFactory := cpi.NewFactory(
-		fs, cmdRunner, uuidGen, compressor, cpi.FactoryOpts(config), logger)
+	conn, err := libvirt.NewConnect(config.BackendURI)
+	if err != nil {
+		logger.Error("main", "Connecting to libvirt: %s", err.Error())
+		os.Exit(1)
+	}
+	defer conn.Close()
+
+	libvirtConn := driver.NewLibvirtConnImpl(conn)
+
+	cpiFactory := cpi.NewFactoryWithConn(
+		libvirtConn, fs, cmdRunner, uuidGen, compressor, cpi.FactoryOpts(config), logger)
 
 	cli := rpc.NewFactory(logger).NewCLI(cpiFactory)
 

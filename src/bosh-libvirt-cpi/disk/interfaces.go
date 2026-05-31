@@ -20,7 +20,7 @@ type Disk interface {
 	ID() apiv1.DiskCID
 
 	Path() string
-	VMDKPath() string
+	ImagePath() string
 
 	Exists() (bool, error)
 	Delete() error

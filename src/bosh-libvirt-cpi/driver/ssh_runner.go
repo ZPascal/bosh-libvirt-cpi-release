@@ -201,7 +201,7 @@ func (r SSHRunner) shellJoin(args []string) string {
 }
 
 var (
-	shellEscape   = regexp.MustCompile("([^A-Za-z0-9_\\-.,:\\/@\\n])")
+	shellEscape   = regexp.MustCompile(`([^A-Za-z0-9_\-.,:\/@\n])`)
 	shellEscapeNl = regexp.MustCompile("\n")
 )
 

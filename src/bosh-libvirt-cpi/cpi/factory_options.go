@@ -1,23 +1,21 @@
 package cpi
 
 import (
-	"path/filepath"
+	"net/url"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
-
-	bpds "bosh-libvirt-cpi/vm/portdevices"
 )
 
 type FactoryOpts struct {
+	// Connection
+	BackendURI string // e.g. "vbox:///session", "lxc:///", "qemu:///system"
 	Host       string
 	Username   string
 	PrivateKey string
 
-	BinPath  string
 	StoreDir string
 
-	StorageController  string
 	AutoEnableNetworks bool
 
 	Agent apiv1.AgentOptions
@@ -28,28 +26,32 @@ func (o FactoryOpts) Validate() error {
 		if o.Username == "" {
 			return bosherr.Error("Must provide non-empty Username")
 		}
-
 		if o.PrivateKey == "" {
 			return bosherr.Error("Must provide non-empty PrivateKey")
 		}
 	}
 
-	if o.BinPath == "" {
-		return bosherr.Error("Must provide non-empty BinPath")
+	if o.BackendURI == "" {
+		return bosherr.Error("Must provide non-empty BackendURI")
+	}
+
+	u, err := url.Parse(o.BackendURI)
+	if err != nil {
+		return bosherr.WrapError(err, "Parsing BackendURI")
+	}
+
+	switch u.Scheme {
+	case "vbox", "lxc", "qemu":
+		// valid
+	default:
+		return bosherr.Errorf("Unsupported BackendURI scheme '%s': expected 'vbox', 'lxc', or 'qemu'", u.Scheme)
 	}
 
 	if o.StoreDir == "" {
 		return bosherr.Error("Must provide non-empty StoreDir")
 	}
 
-	switch o.StorageController {
-	case bpds.IDEController, bpds.SCSIController, bpds.SATAController:
-		// valid
-	default:
-		return bosherr.Error("Unexpected StorageController")
-	}
-
-	err := o.Agent.Validate()
+	err = o.Agent.Validate()
 	if err != nil {
 		return bosherr.WrapError(err, "Validating Agent configuration")
 	}
@@ -58,13 +60,13 @@ func (o FactoryOpts) Validate() error {
 }
 
 func (o FactoryOpts) StemcellsDir() string {
-	return filepath.Join(o.StoreDir, "stemcells")
+	return o.StoreDir + "/stemcells"
 }
 
 func (o FactoryOpts) VMsDir() string {
-	return filepath.Join(o.StoreDir, "vms")
+	return o.StoreDir + "/vms"
 }
 
 func (o FactoryOpts) DisksDir() string {
-	return filepath.Join(o.StoreDir, "disks")
+	return o.StoreDir + "/disks"
 }

@@ -1,14 +1,12 @@
 package vm
 
-// more or less vendored from github.com/johto/iso9660wrap/blob/master/iso9660_writer.go
-
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"strings"
 	"time"
-	"fmt"
 )
 
 const SectorSize uint32 = 2048
@@ -28,9 +26,9 @@ func (w *SectorWriter) Write(p []byte) (uint32, error) {
 	}
 	w.p += l
 	_, err := w.w.Write(p)
-		if err != nil {
-			return 0, err
-		}
+	if err != nil {
+		return 0, err
+	}
 	return l, nil
 }
 
@@ -45,7 +43,7 @@ func (w *SectorWriter) WriteUnspecifiedDateTime() (uint32, error) {
 
 func (w *SectorWriter) WriteDateTime(t time.Time) (uint32, error) {
 	f := t.UTC().Format("20060102150405")
-	f += "00" // 1/100
+	f += "00"   // 1/100
 	f += "\x00" // UTC offset
 	if len(f) != 17 {
 		return 0, fmt.Errorf("date and time field %q is of unexpected length %d", f, len(f))
@@ -65,13 +63,16 @@ func (w *SectorWriter) WritePaddedString(str string, length uint32) (uint32, err
 	if l > 32 {
 		return 0, fmt.Errorf("padded string %q exceeds length %d", str, length)
 	} else if l < 32 {
-		w.WriteString(strings.Repeat(" ", int(32 - l)))
+		if _, err := w.WriteString(strings.Repeat(" ", int(32-l))); err != nil {
+			return 0, err
+		}
 	}
 	return 32, nil
 }
 
-func (w *SectorWriter) WriteByte(b byte) (uint32, error) {
-	return w.Write([]byte{b})
+func (w *SectorWriter) WriteByte(b byte) error {
+	_, err := w.Write([]byte{b})
+	return err
 }
 
 func (w *SectorWriter) WriteWord(bo binary.ByteOrder, word uint16) (uint32, error) {
@@ -81,8 +82,12 @@ func (w *SectorWriter) WriteWord(bo binary.ByteOrder, word uint16) (uint32, erro
 }
 
 func (w *SectorWriter) WriteBothEndianWord(word uint16) (uint32, error) {
-	w.WriteWord(binary.LittleEndian, word)
-	w.WriteWord(binary.BigEndian, word)
+	if _, err := w.WriteWord(binary.LittleEndian, word); err != nil {
+		return 0, err
+	}
+	if _, err := w.WriteWord(binary.BigEndian, word); err != nil {
+		return 0, err
+	}
 	return 4, nil
 }
 
@@ -100,10 +105,14 @@ func (w *SectorWriter) WriteBigEndianDWord(dword uint32) (uint32, error) {
 	return w.WriteDWord(binary.BigEndian, dword)
 }
 
-func (w *SectorWriter) WriteBothEndianDWord(dword uint32) uint32 {
-	w.WriteLittleEndianDWord(dword)
-	w.WriteBigEndianDWord(dword)
-	return 8
+func (w *SectorWriter) WriteBothEndianDWord(dword uint32) (uint32, error) {
+	if _, err := w.WriteLittleEndianDWord(dword); err != nil {
+		return 0, err
+	}
+	if _, err := w.WriteBigEndianDWord(dword); err != nil {
+		return 0, err
+	}
+	return 8, nil
 }
 
 func (w *SectorWriter) WriteZeros(c int) (uint32, error) {
@@ -122,21 +131,22 @@ func (w *SectorWriter) Reset() {
 	w.p = 0
 }
 
-
 type ISO9660Writer struct {
-	sw *SectorWriter
+	sw        *SectorWriter
 	sectorNum uint32
 }
 
 func (w *ISO9660Writer) CurrentSector() uint32 {
-	return uint32(w.sectorNum)
+	return w.sectorNum
 }
 
 func (w *ISO9660Writer) NextSector() (*SectorWriter, error) {
 	if w.sw.RemainingSpace() == SectorSize {
 		return nil, fmt.Errorf("internal error: tried to leave sector %d empty", w.sectorNum)
 	}
-	w.sw.PadWithZeros()
+	if _, err := w.sw.PadWithZeros(); err != nil {
+		return nil, err
+	}
 	w.sw.Reset()
 	w.sectorNum++
 	return w.sw, nil
@@ -144,7 +154,7 @@ func (w *ISO9660Writer) NextSector() (*SectorWriter, error) {
 
 func (w *ISO9660Writer) Finish() {
 	if w.sw.RemainingSpace() != SectorSize {
-		w.sw.PadWithZeros()
+		_, _ = w.sw.PadWithZeros()
 	}
 	w.sw = nil
 }

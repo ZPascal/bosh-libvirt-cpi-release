@@ -51,8 +51,12 @@ func (i ISO9660) Bytes() ([]byte, error) {
 		return nil, err
 	}
 
-	i.writePathTable(w, binary.LittleEndian)
-	i.writePathTable(w, binary.BigEndian)
+	if err := i.writePathTable(w, binary.LittleEndian); err != nil {
+		return nil, err
+	}
+	if err := i.writePathTable(w, binary.BigEndian); err != nil {
+		return nil, err
+	}
 
 	err = i.writeData(w)
 	if err != nil {
@@ -81,47 +85,98 @@ func (i ISO9660) writePrimaryVolumeDescriptor(w *ISO9660Writer) error {
 		return fmt.Errorf("internal error: unexpected primary volume sector %d", w.CurrentSector())
 	}
 
-	sw.WriteByte('\x01')
-	sw.WriteString(volumeDescriptorSetMagic)
-	sw.WriteByte('\x00')
+	if err := sw.WriteByte('\x01'); err != nil {
+		return err
+	}
+	if _, err := sw.WriteString(volumeDescriptorSetMagic); err != nil {
+		return err
+	}
+	if err := sw.WriteByte('\x00'); err != nil {
+		return err
+	}
 
-	sw.WritePaddedString("", 32)
-	sw.WritePaddedString(i.FileName, 32)
+	if _, err := sw.WritePaddedString("", 32); err != nil {
+		return err
+	}
+	if _, err := sw.WritePaddedString(i.FileName, 32); err != nil {
+		return err
+	}
 
-	sw.WriteZeros(8)
-	sw.WriteBothEndianDWord(i.numTotalSectors())
-	sw.WriteZeros(32)
+	if _, err := sw.WriteZeros(8); err != nil {
+		return err
+	}
+	if _, err := sw.WriteBothEndianDWord(i.numTotalSectors()); err != nil {
+		return err
+	}
+	if _, err := sw.WriteZeros(32); err != nil {
+		return err
+	}
 
-	sw.WriteBothEndianWord(1) // volume set size
-	sw.WriteBothEndianWord(1) // volume sequence number
-	sw.WriteBothEndianWord(uint16(SectorSize))
-	sw.WriteBothEndianDWord(SectorSize) // path table length
+	if _, err := sw.WriteBothEndianWord(1); err != nil { // volume set size
+		return err
+	}
+	if _, err := sw.WriteBothEndianWord(1); err != nil { // volume sequence number
+		return err
+	}
+	if _, err := sw.WriteBothEndianWord(uint16(SectorSize)); err != nil {
+		return err
+	}
+	if _, err := sw.WriteBothEndianDWord(SectorSize); err != nil { // path table length
+		return err
+	}
 
-	sw.WriteLittleEndianDWord(littleEndianPathTableSectorNum)
-	sw.WriteLittleEndianDWord(0) // no secondary path tables
-	sw.WriteBigEndianDWord(bigEndianPathTableSectorNum)
-	sw.WriteBigEndianDWord(0) // no secondary path tables
+	if _, err := sw.WriteLittleEndianDWord(littleEndianPathTableSectorNum); err != nil {
+		return err
+	}
+	if _, err := sw.WriteLittleEndianDWord(0); err != nil { // no secondary path tables
+		return err
+	}
+	if _, err := sw.WriteBigEndianDWord(bigEndianPathTableSectorNum); err != nil {
+		return err
+	}
+	if _, err := sw.WriteBigEndianDWord(0); err != nil { // no secondary path tables
+		return err
+	}
 
-	WriteDirectoryRecord(sw, "\x00", rootDirectorySectorNum) // root directory
+	if _, err := WriteDirectoryRecord(sw, "\x00", rootDirectorySectorNum); err != nil { // root directory
+		return err
+	}
 
-	sw.WritePaddedString("", 128) // volume set identifier
-	sw.WritePaddedString("", 128) // publisher identifier
-	sw.WritePaddedString("", 128) // data preparer identifier
-	sw.WritePaddedString("", 128) // application identifier
+	for _, s := range []string{"", "", "", ""} { // volume set, publisher, data preparer, application identifiers
+		if _, err := sw.WritePaddedString(s, 128); err != nil {
+			return err
+		}
+	}
 
-	sw.WritePaddedString("", 37) // copyright file identifier
-	sw.WritePaddedString("", 37) // abstract file identifier
-	sw.WritePaddedString("", 37) // bibliographical file identifier
+	for _, s := range []string{"", "", ""} { // copyright, abstract, bibliographical file identifiers
+		if _, err := sw.WritePaddedString(s, 37); err != nil {
+			return err
+		}
+	}
 
-	sw.WriteDateTime(now)         // volume creation
-	sw.WriteDateTime(now)         // most recent modification
-	sw.WriteUnspecifiedDateTime() // expires
-	sw.WriteUnspecifiedDateTime() // is effective (?)
+	if _, err := sw.WriteDateTime(now); err != nil { // volume creation
+		return err
+	}
+	if _, err := sw.WriteDateTime(now); err != nil { // most recent modification
+		return err
+	}
+	if _, err := sw.WriteUnspecifiedDateTime(); err != nil { // expires
+		return err
+	}
+	if _, err := sw.WriteUnspecifiedDateTime(); err != nil { // is effective (?)
+		return err
+	}
 
-	sw.WriteByte('\x01') // version
-	sw.WriteByte('\x00') // reserved
+	if err := sw.WriteByte('\x01'); err != nil { // version
+		return err
+	}
+	if err := sw.WriteByte('\x00'); err != nil { // reserved
+		return err
+	}
 
-	sw.PadWithZeros() // 512 (reserved for app) + 653 (zeros)
+	if _, err := sw.PadWithZeros(); err != nil { // 512 (reserved for app) + 653 (zeros)
+		return err
+	}
 
 	return nil
 }
@@ -135,10 +190,16 @@ func (i ISO9660) writeVolumeDescriptorSetTerminator(w *ISO9660Writer) error {
 		return fmt.Errorf("internal error: unexpected volume descriptor set terminator sector %d", w.CurrentSector())
 	}
 
-	sw.WriteByte('\xFF')
-	sw.WriteString(volumeDescriptorSetMagic)
+	if err := sw.WriteByte('\xFF'); err != nil {
+		return err
+	}
+	if _, err := sw.WriteString(volumeDescriptorSetMagic); err != nil {
+		return err
+	}
 
-	sw.PadWithZeros()
+	if _, err := sw.PadWithZeros(); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -148,13 +209,27 @@ func (i ISO9660) writePathTable(w *ISO9660Writer, bo binary.ByteOrder) error {
 	if err != nil {
 		return err
 	}
-	sw.WriteByte(1) // name length
-	sw.WriteByte(0) // number of sectors in extended attribute record
-	sw.WriteDWord(bo, rootDirectorySectorNum)
-	sw.WriteWord(bo, 1) // parent directory recno (root directory)
-	sw.WriteByte(0)     // identifier (root directory)
-	sw.WriteByte(1)     // padding
-	sw.PadWithZeros()
+	if err := sw.WriteByte(1); err != nil { // name length
+		return err
+	}
+	if err := sw.WriteByte(0); err != nil { // number of sectors in extended attribute record
+		return err
+	}
+	if _, err := sw.WriteDWord(bo, rootDirectorySectorNum); err != nil {
+		return err
+	}
+	if _, err := sw.WriteWord(bo, 1); err != nil { // parent directory recno (root directory)
+		return err
+	}
+	if err := sw.WriteByte(0); err != nil { // identifier (root directory)
+		return err
+	}
+	if err := sw.WriteByte(1); err != nil { // padding
+		return err
+	}
+	if _, err := sw.PadWithZeros(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -167,9 +242,15 @@ func (i ISO9660) writeData(w *ISO9660Writer) error {
 		return fmt.Errorf("internal error: unexpected root directory sector %d", w.CurrentSector())
 	}
 
-	WriteDirectoryRecord(sw, "\x00", w.CurrentSector())
-	WriteDirectoryRecord(sw, "\x01", rootDirectorySectorNum)
-	WriteFileRecordHeader(sw, i.FileName, w.CurrentSector()+1, i.inputLen())
+	if _, err := WriteDirectoryRecord(sw, "\x00", w.CurrentSector()); err != nil {
+		return err
+	}
+	if _, err := WriteDirectoryRecord(sw, "\x01", rootDirectorySectorNum); err != nil {
+		return err
+	}
+	if _, err := WriteFileRecordHeader(sw, i.FileName, w.CurrentSector()+1, i.inputLen()); err != nil {
+		return err
+	}
 
 	inputBuf := bytes.NewBuffer(i.Contents)
 
@@ -187,7 +268,9 @@ func (i ISO9660) writeData(w *ISO9660Writer) error {
 			if err != nil {
 				return err
 			}
-			sw.Write(b[:l])
+			if _, err := sw.Write(b[:l]); err != nil {
+				return err
+			}
 			total += uint32(l)
 		}
 		if err == io.EOF {
@@ -204,8 +287,7 @@ func (i ISO9660) writeData(w *ISO9660Writer) error {
 }
 
 func (i ISO9660) numTotalSectors() uint32 {
-	var numDataSectors uint32
-	numDataSectors = (i.inputLen() + (SectorSize - 1)) / SectorSize
+	numDataSectors := (i.inputLen() + (SectorSize - 1)) / SectorSize
 	return 1 + rootDirectorySectorNum + numDataSectors
 }
 

@@ -1,55 +1,27 @@
 package vm
 
 import (
-	"regexp"
-
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
-
-	"bosh-libvirt-cpi/driver"
-)
-
-var (
-	vmStarted           = regexp.MustCompile(`VM ".+?" has been successfully started`)
-	vmStateMatch        = regexp.MustCompile(`VMState="(.+?)"`)
-	vmStateInaccessible = regexp.MustCompile(`name="<inaccessible>"`)
+	libvirt "libvirt.org/go/libvirt"
 )
 
 func (vm VMImpl) Exists() (bool, error) {
-	output, err := vm.driver.Execute("showvminfo", vm.cid.AsString(), "--machinereadable")
+	_, err := vm.driver.LookupDomain(vm.cid.AsString())
 	if err != nil {
-		if vm.driver.IsMissingVMErr(output) {
+		if vm.driver.IsMissingDomainErr(err) {
 			return false, nil
 		}
-		return false, err
+		return false, bosherr.WrapErrorf(err, "Looking up domain '%s'", vm.cid.AsString())
 	}
-
 	return true, nil
 }
 
-func (vm VMImpl) Start(gui bool) error {
-	mode := "headless"
-	if gui {
-		mode = "gui"
-	}
-
-	output, err := vm.driver.ExecuteComplex(
-		[]string{"startvm", vm.cid.AsString(), "--type", mode},
-		driver.ExecuteOpts{IgnoreNonZeroExitStatus: true},
-	)
-	if err != nil && !vmStarted.MatchString(output) {
-		return err
-	}
-
-	return nil
+func (vm VMImpl) Start() error {
+	return vm.driver.StartDomain(vm.cid.AsString())
 }
 
 func (vm VMImpl) Reboot() error {
-	err := vm.HaltIfRunning()
-	if err != nil {
-		return err
-	}
-
-	return vm.Start(false) // todo find out previous state
+	return vm.driver.RebootDomain(vm.cid.AsString())
 }
 
 func (vm VMImpl) HaltIfRunning() error {
@@ -59,38 +31,24 @@ func (vm VMImpl) HaltIfRunning() error {
 	}
 
 	if running {
-		_, err = vm.driver.Execute("controlvm", vm.cid.AsString(), "poweroff")
+		return vm.driver.ShutdownDomain(vm.cid.AsString())
 	}
-
-	return err
+	return nil
 }
 
 func (vm VMImpl) IsRunning() (bool, error) {
-	state, err := vm.State()
+	dom, err := vm.driver.LookupDomain(vm.cid.AsString())
 	if err != nil {
-		return false, err
-	}
-
-	return state == "running", nil
-}
-
-func (vm VMImpl) State() (string, error) {
-	output, err := vm.driver.Execute("showvminfo", vm.cid.AsString(), "--machinereadable")
-	if err != nil {
-		if vm.driver.IsMissingVMErr(output) {
-			return "missing", nil
+		if vm.driver.IsMissingDomainErr(err) {
+			return false, nil
 		}
-		return "", err
+		return false, bosherr.WrapErrorf(err, "Looking up domain '%s'", vm.cid.AsString())
 	}
 
-	if vmStateInaccessible.MatchString(output) {
-		return "inaccessible", nil
+	state, _, err := dom.GetState()
+	if err != nil {
+		return false, bosherr.WrapErrorf(err, "Getting domain state '%s'", vm.cid.AsString())
 	}
 
-	matches := vmStateMatch.FindStringSubmatch(output)
-	if len(matches) == 2 {
-		return matches[1], nil
-	}
-
-	return "", bosherr.Errorf("Unknown VM state:\nOutput: '%s'", output)
+	return state == int(libvirt.DOMAIN_RUNNING), nil
 }

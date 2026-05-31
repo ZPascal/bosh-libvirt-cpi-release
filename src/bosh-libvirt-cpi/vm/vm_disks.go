@@ -40,27 +40,15 @@ func (vm VMImpl) AttachEphemeralDisk(disk bdisk.Disk) error {
 }
 
 func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, error) {
-	pd, err := vm.portDevices.FindAvailable()
-	if err != nil {
-		return apiv1.DiskHint{}, err
-	}
-
-	// Actually attach the disk
-	err = vm.hotPlugIfNecessary(!ephemeral, func() error { return pd.Attach(disk.VMDKPath()) })
-	if err != nil {
-		return apiv1.DiskHint{}, err
-	}
+	hint := apiv1.NewDiskHintFromString(disk.ImagePath())
 
 	rec := diskAttachmentRecord{
 		ID:        disk.ID().AsString(),
 		Ephemeral: ephemeral,
-
-		Controller: pd.Controller(),
-		Port:       pd.Port(),
-		Device:     pd.Device(),
+		Path:      disk.ImagePath(),
 	}
 
-	err = diskAttachmentRecords{vm.store}.Save(disk.ID(), rec)
+	err := diskAttachmentRecords{vm.store}.Save(disk.ID(), rec)
 	if err != nil {
 		return apiv1.DiskHint{}, err
 	}
@@ -76,13 +64,13 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 
 		agentUpdateFunc := func(agentEnv apiv1.AgentEnv) {
 			if ephemeral {
-				agentEnv.AttachEphemeralDisk(pd.Hint())
+				agentEnv.AttachEphemeralDisk(hint)
 			} else {
-				agentEnv.AttachPersistentDisk(disk.ID(), pd.Hint())
+				agentEnv.AttachPersistentDisk(disk.ID(), hint)
 			}
 		}
 
-		err = vm.reconfigureAgent(!ephemeral, agentUpdateFunc)
+		err = vm.reconfigureAgent(agentUpdateFunc)
 		if err != nil {
 			return apiv1.DiskHint{}, bosherr.WrapErrorf(err, "Reconfiguring agent after attaching disk")
 		}
@@ -90,27 +78,11 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 		vm.logger.Debug("VMImpl", "Skipping agent reconfiguration")
 	}
 
-	return pd.Hint(), nil
+	return hint, nil
 }
 
 func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
-	rec, err := diskAttachmentRecords{vm.store}.Get(disk.ID())
-	if err != nil {
-		return err
-	}
-
-	pd, err := vm.portDevices.Find(rec.Controller, rec.Port, rec.Device)
-	if err != nil {
-		return err
-	}
-
-	// Actually detach the disk
-	err = vm.hotPlug(pd.Detach)
-	if err != nil {
-		return err
-	}
-
-	err = diskAttachmentRecords{vm.store}.Delete(disk.ID())
+	err := diskAttachmentRecords{vm.store}.Delete(disk.ID())
 	if err != nil {
 		return err
 	}
@@ -119,44 +91,9 @@ func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
 		agentEnv.DetachPersistentDisk(disk.ID())
 	}
 
-	err = vm.reconfigureAgent(false, agentUpdateFunc)
+	err = vm.reconfigureAgent(agentUpdateFunc)
 	if err != nil {
 		return bosherr.WrapErrorf(err, "Reconfiguring agent after detaching disk")
-	}
-
-	return nil
-}
-
-func (vm VMImpl) detachPersistentDisks() error {
-	recs := diskAttachmentRecords{vm.store}
-
-	ids, err := recs.List()
-	if err != nil {
-		return err
-	}
-
-	for _, id := range ids {
-		rec, err := recs.Get(id)
-		if err != nil {
-			return err
-		} else if rec.Ephemeral {
-			continue
-		}
-
-		pd, err := vm.portDevices.Find(rec.Controller, rec.Port, rec.Device)
-		if err != nil {
-			return err
-		}
-
-		err = pd.Detach()
-		if err != nil {
-			return err
-		}
-
-		err = recs.Delete(id)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -165,10 +102,7 @@ func (vm VMImpl) detachPersistentDisks() error {
 type diskAttachmentRecord struct {
 	ID        string
 	Ephemeral bool
-
-	Controller string // e.g. scsi, ide
-	Port       string // e.g. "0"
-	Device     string // e.g. "1"
+	Path      string
 }
 
 type diskAttachmentRecords struct {

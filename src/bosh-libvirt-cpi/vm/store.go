@@ -27,7 +27,14 @@ func (m Store) List() ([]string, error) {
 		return nil, err
 	}
 
-	return strings.Split(out, "\n"), nil
+	parts := strings.Split(out, "\n")
+	ids := []string{}
+	for _, p := range parts {
+		if p != "" {
+			ids = append(ids, p)
+		}
+	}
+	return ids, nil
 }
 
 func (m Store) Path(key string) string {
