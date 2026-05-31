@@ -19,6 +19,7 @@ var (
 	testSSHRunnerUsername   = os.Getenv("TEST_SSH_RUNNER_USERNAME")
 	testSSHRunnerPrivateKey = os.Getenv("TEST_SSH_RUNNER_PRIVATE_KEY")
 	testSSHRunnerHost       = os.Getenv("TEST_SSH_RUNNER_HOST")
+	testSSHRunnerHostKey    = os.Getenv("TEST_SSH_RUNNER_HOST_KEY")
 )
 
 var _ = Describe("SSHRunner", func() {
@@ -38,6 +39,7 @@ var _ = Describe("SSHRunner", func() {
 					Host:       testSSHRunnerHost,
 					Username:   testSSHRunnerUsername,
 					PrivateKey: testSSHRunnerPrivateKey,
+					HostKey:    testSSHRunnerHostKey,
 				}
 				logger := boshlog.NewLogger(boshlog.LevelNone)
 				runner := NewSSHRunner(opts, nil, logger)
