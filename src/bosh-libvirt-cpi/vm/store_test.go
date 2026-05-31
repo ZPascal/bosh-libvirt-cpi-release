@@ -74,6 +74,12 @@ var _ = Describe("Store", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid key"))
 		})
 
+		It("rejects the '.' key", func() {
+			err := store.Put(".", []byte("data"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
 		It("accepts normal keys", func() {
 			err := store.Put("metadata.json", []byte("data"))
 			Expect(err).ToNot(HaveOccurred())
@@ -83,6 +89,12 @@ var _ = Describe("Store", func() {
 	Describe("Get", func() {
 		It("rejects keys containing ..", func() {
 			_, err := store.Get("../etc/passwd")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects keys containing /", func() {
+			_, err := store.Get("sub/secret")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid key"))
 		})
@@ -97,6 +109,12 @@ var _ = Describe("Store", func() {
 	Describe("DeleteOne", func() {
 		It("rejects keys containing ..", func() {
 			err := store.DeleteOne("../../important")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects keys containing /", func() {
+			err := store.DeleteOne("sub/secret")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid key"))
 		})

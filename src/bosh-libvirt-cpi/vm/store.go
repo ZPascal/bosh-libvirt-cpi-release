@@ -19,8 +19,8 @@ func NewStore(path string, runner driver.Runner) Store {
 }
 
 func sanitizeKey(key string) error {
-	if strings.Contains(key, "..") || strings.Contains(key, "/") {
-		return bosherr.Errorf("invalid key '%s': must not contain '..' or '/'", key)
+	if key != filepath.Base(key) || key == "." || key == ".." {
+		return bosherr.Errorf("invalid key %q: must be a plain filename", key)
 	}
 	return nil
 }
@@ -47,6 +47,9 @@ func (m Store) List() ([]string, error) {
 }
 
 func (m Store) Path(key string) string {
+	if err := sanitizeKey(key); err != nil {
+		return ""
+	}
 	return filepath.Join(m.path, key)
 }
 
