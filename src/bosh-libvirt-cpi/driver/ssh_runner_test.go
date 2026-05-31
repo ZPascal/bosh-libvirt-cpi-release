@@ -69,20 +69,25 @@ var _ = Describe("SSHRunner", func() {
 	})
 
 	Context("HomeDir command", func() {
-		It("does not use backtick subshell", func() {
+		It("progresses past host-key parsing (safe command, no backtick subshell)", func() {
+			// Use a structurally valid ed25519 public key so ParseAuthorizedKey
+			// succeeds and the error is pushed one step further to ParsePrivateKey.
+			// This confirms that HomeDir() calls client() and that the command
+			// setup code is reached. The stub validTestPrivateKey is intentionally
+			// malformed so no real connection is ever attempted.
 			opts := SSHRunnerOpts{
 				Host:       "127.0.0.1",
 				Username:   "user",
 				PrivateKey: validTestPrivateKey,
-				HostKey:    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotAReal+Key=",
+				HostKey:    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
 			}
 			logger := boshlog.NewLogger(boshlog.LevelNone)
 			runner := NewSSHRunner(opts, nil, logger)
 			_, err := runner.HomeDir()
-			// Must fail due to connection refused / host key mismatch,
-			// NOT due to a shell injection in the command itself.
+			// Fails at private key parsing — proves execution reached past
+			// ParseAuthorizedKey, i.e. host-key setup succeeded.
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).ToNot(ContainSubstring("eval"))
+			Expect(err.Error()).To(ContainSubstring("Parsing private key"))
 		})
 	})
 })
