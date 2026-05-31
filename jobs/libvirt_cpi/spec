@@ -9,52 +9,65 @@ packages:
 - libvirt_cpi
 
 properties:
+  backend_uri:
+    description: >
+      Libvirt connection URI. Determines the hypervisor backend.
+      Examples: "qemu:///system" (QEMU/KVM), "lxc:///" (LXC),
+      "vbox:///session" (VirtualBox).
+    default: "qemu:///system"
+
   host:
-    description: Address where VirtualBox is running. If not set, assumes that VirtualBox CLI is accessible.
+    description: >
+      Hostname or IP of the machine running libvirtd.
+      If not set, the CPI connects to the local libvirtd via the backend_uri.
     default: ""
     example: 192.168.50.1
+
   username:
-    description: Username to use when SSH-ing into machine that's running VirtualBox
-    default: ubuntu
+    description: Username for SSH access to the libvirt host. Required when host is set.
+    default: ""
+
   private_key:
-    description: Private key to use when SSH-ing into machine that's running VirtualBox
+    description: SSH private key (PEM format) for accessing the libvirt host. Required when host is set.
+    default: ""
+
+  host_key:
+    description: >
+      SSH host public key in authorized_keys format (e.g. "ssh-ed25519 AAAA...").
+      Required when host is set. Used to verify the remote host identity.
     default: ""
 
   store_dir:
-    description: Directory path to use to store stemcells, disks, and VMs managed by VirtualBox ('~' will be expanded)
+    description: >
+      Directory on the libvirt host used to store stemcells, disks, and VM metadata.
+      The '~' prefix is expanded to the connecting user's home directory.
     default: "~/.bosh_libvirt_cpi"
 
-  storage_controller:
-    description: "For VirtualBox 6.1+ only sata works. Available: scsi, ide or sata."
-    default: sata
-  auto_enable_networks:
-    description: "Automatically enabled necessary networks on first use."
-    default: true
-
   ntp:
-    description: List of ntp server IPs. pool.ntp.org attempts to return IPs closest to your location, but you can still specify if needed.
+    description: List of NTP server addresses for the BOSH agent.
     default:
       - 0.pool.ntp.org
       - 1.pool.ntp.org
 
   agent.mbus:
-    description: Agent mbus
+    description: Agent mbus URL (NATS or HTTPS).
+
   nats.user:
-    description: Username to connect to nats with
+    description: NATS username.
     default: nats
   nats.password:
-    description: Password to connect to nats with
+    description: NATS password.
   agent.nats.address:
-    description: Address of the nats server
+    description: NATS server address (used by agent).
   nats.address:
-    description: Address of the nats server
+    description: NATS server address.
   nats.port:
-    description: Port that the nats server listens on
+    description: NATS server port.
     default: 4222
 
   env.http_proxy:
-    description: Http proxy to connect to cloud API's
+    description: HTTP proxy for outbound connections.
   env.https_proxy:
-    description: Https proxy to connect to cloud API's
+    description: HTTPS proxy for outbound connections.
   env.no_proxy:
-    description: No proxy environment variable
+    description: Comma-separated list of hosts to bypass the proxy.
