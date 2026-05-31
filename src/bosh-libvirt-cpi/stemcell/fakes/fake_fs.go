@@ -13,6 +13,8 @@ type FakeFS struct {
 	tempDirs   []string
 }
 
+var _ boshsys.FileSystem = &FakeFS{}
+
 func NewFakeFS(real boshsys.FileSystem) *FakeFS {
 	return &FakeFS{FileSystem: real}
 }

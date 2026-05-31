@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
+	libvirt "libvirt.org/go/libvirt"
 
 	"bosh-libvirt-cpi/driver"
 	"bosh-libvirt-cpi/driver/fakes"
@@ -50,6 +51,11 @@ var _ = Describe("LibvirtDriver", func() {
 	})
 
 	Describe("IsMissingDomainErr", func() {
+		It("returns true for a libvirt ERR_NO_DOMAIN error", func() {
+			err := libvirt.Error{Code: libvirt.ERR_NO_DOMAIN}
+			Expect(d.IsMissingDomainErr(err)).To(BeTrue())
+		})
+
 		It("returns false for a generic error", func() {
 			Expect(d.IsMissingDomainErr(errors.New("something else"))).To(BeFalse())
 		})
