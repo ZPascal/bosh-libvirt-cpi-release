@@ -37,16 +37,17 @@ func NewSSHRunner(opts SSHRunnerOpts, fs boshsys.FileSystem, logger boshlog.Logg
 }
 
 func (r *SSHRunner) HomeDir() (string, error) {
-	output, _, err := r.execute("sh -c 'USER= HOME= eval echo ~`whoami`'")
+	output, _, err := r.execute("getent passwd $(id -u) | cut -d: -f6")
 	if err != nil {
 		return "", err
 	}
 
-	if strings.HasPrefix(output, "~") {
-		return "", bosherr.Errorf("Failed to expand path '%s'", output)
+	result := strings.TrimSpace(output)
+	if result == "" || strings.HasPrefix(result, "~") {
+		return "", bosherr.Errorf("Failed to expand home directory, got: '%s'", result)
 	}
 
-	return strings.TrimSpace(output), nil
+	return result, nil
 }
 
 func (r *SSHRunner) Execute(path string, args ...string) (string, int, error) {

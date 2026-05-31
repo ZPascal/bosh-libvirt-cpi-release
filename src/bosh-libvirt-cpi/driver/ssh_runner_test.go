@@ -67,4 +67,22 @@ var _ = Describe("SSHRunner", func() {
 			Expect(err.Error()).To(ContainSubstring("Parsing host key"))
 		})
 	})
+
+	Context("HomeDir command", func() {
+		It("does not use backtick subshell", func() {
+			opts := SSHRunnerOpts{
+				Host:       "127.0.0.1",
+				Username:   "user",
+				PrivateKey: validTestPrivateKey,
+				HostKey:    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotAReal+Key=",
+			}
+			logger := boshlog.NewLogger(boshlog.LevelNone)
+			runner := NewSSHRunner(opts, nil, logger)
+			_, err := runner.HomeDir()
+			// Must fail due to connection refused / host key mismatch,
+			// NOT due to a shell injection in the command itself.
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).ToNot(ContainSubstring("eval"))
+		})
+	})
 })
