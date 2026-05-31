@@ -161,6 +161,11 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 		return r.existingClient, nil
 	}
 
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(r.opts.HostKey))
+	if err != nil {
+		return nil, bosherr.WrapError(err, "Parsing host key")
+	}
+
 	keySigner, err := ssh.ParsePrivateKey([]byte(r.opts.PrivateKey))
 	if err != nil {
 		return nil, bosherr.WrapError(err, "Parsing private key")
@@ -169,7 +174,7 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
 		User:            r.opts.Username,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.FixedHostKey(pubKey),
 	}
 
 	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:22", r.opts.Host), config)
