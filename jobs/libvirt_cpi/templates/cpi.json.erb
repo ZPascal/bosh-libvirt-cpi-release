@@ -1,18 +1,15 @@
 <%=
+require 'json'
 
 params = {
-  "Host" => p("host"),
-  "Username" => p("username"),
-  "PrivateKey" => p("private_key"),
-
-  "BinPath" => p("bin_path"),
-  "StoreDir" => p("store_dir"),
-
-  "StorageController" => p("storage_controller"),
-  "AutoEnableNetworks" => p("auto_enable_networks"),
-
-  "Agent" => {
-    "NTP" => p("ntp")
+  "BackendURI"  => p("backend_uri"),
+  "Host"        => p("host"),
+  "Username"    => p("username"),
+  "PrivateKey"  => p("private_key"),
+  "HostKey"     => p("host_key"),
+  "StoreDir"    => p("store_dir"),
+  "Agent"       => {
+    "ntp" => p("ntp")
   }
 }
 
@@ -24,6 +21,5 @@ end.else_if_p("nats") do
   agent_params["mbus"] = "nats://#{p("nats.user")}:#{p("nats.password")}@#{p(["agent.nats.address", "nats.address"])}:#{p("nats.port")}"
 end
 
-JSON.dump(params)
-
+JSON.pretty_generate(params)
 %>
