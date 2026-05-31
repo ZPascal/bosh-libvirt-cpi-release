@@ -92,9 +92,30 @@ var _ = Describe("FactoryOpts", func() {
 				Expect(err.Error()).To(ContainSubstring("PrivateKey"))
 			})
 
+			It("returns error when HostKey is empty", func() {
+				opts.Host = "remote.example.com"
+				opts.Username = "user"
+				opts.PrivateKey = "key"
+				opts.HostKey = ""
+
+				err := opts.Validate()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("HostKey"))
+			})
+
+			It("succeeds when Host, Username, PrivateKey, and HostKey are all set", func() {
+				opts.Host = "remote.example.com"
+				opts.Username = "user"
+				opts.PrivateKey = "key"
+				opts.HostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
+
+				Expect(opts.Validate()).ToNot(HaveOccurred())
+			})
+
 			It("succeeds when Username and PrivateKey are set", func() {
 				opts.Username = "user"
 				opts.PrivateKey = "key"
+				opts.HostKey = "key"
 
 				Expect(opts.Validate()).ToNot(HaveOccurred())
 			})

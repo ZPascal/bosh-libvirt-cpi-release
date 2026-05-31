@@ -74,6 +74,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 			Host:       f.opts.Host,
 			Username:   f.opts.Username,
 			PrivateKey: f.opts.PrivateKey,
+			HostKey:    f.opts.HostKey,
 		}
 		rawRunner = driver.NewSSHRunner(runnerOpts, f.fs, f.logger)
 	}

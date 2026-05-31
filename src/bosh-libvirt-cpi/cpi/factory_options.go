@@ -13,6 +13,7 @@ type FactoryOpts struct {
 	Host       string
 	Username   string
 	PrivateKey string
+	HostKey    string // SSH host public key in authorized_keys format; required when Host is set
 
 	StoreDir string
 
@@ -28,6 +29,9 @@ func (o FactoryOpts) Validate() error {
 		}
 		if o.PrivateKey == "" {
 			return bosherr.Error("Must provide non-empty PrivateKey")
+		}
+		if o.HostKey == "" {
+			return bosherr.Error("Must provide non-empty HostKey when Host is set")
 		}
 	}
 

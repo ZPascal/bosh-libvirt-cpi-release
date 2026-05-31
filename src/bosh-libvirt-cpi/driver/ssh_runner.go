@@ -29,6 +29,7 @@ type SSHRunnerOpts struct {
 	Host       string
 	Username   string
 	PrivateKey string
+	HostKey    string // authorized_keys format, e.g. "ssh-ed25519 AAAA..."
 }
 
 func NewSSHRunner(opts SSHRunnerOpts, fs boshsys.FileSystem, logger boshlog.Logger) *SSHRunner {
