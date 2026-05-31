@@ -1,8 +1,10 @@
 package fakes
 
-import libvirt "libvirt.org/go/libvirt"
+import (
+	"bosh-libvirt-cpi/driver"
+	libvirt "libvirt.org/go/libvirt"
+)
 
-// FakeLibvirtConn implements driver.LibvirtConn for unit testing.
 type FakeLibvirtConn struct {
 	DomainDefineXMLArg string
 	DomainDefineXMLErr error
@@ -11,6 +13,8 @@ type FakeLibvirtConn struct {
 
 	LookupStoragePoolByNameErr error
 }
+
+var _ driver.LibvirtConn = &FakeLibvirtConn{}
 
 func (c *FakeLibvirtConn) DomainDefineXML(xml string) (*libvirt.Domain, error) {
 	c.DomainDefineXMLArg = xml
