@@ -14,6 +14,16 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 - **Flexible Architecture**: Easy switching between hypervisors via configuration
 - **Remote Management**: Support for managing VMs on remote hosts via SSH
 
+## Choosing a backend
+
+| Backend | URI | Use case | Disk format |
+|---------|-----|----------|-------------|
+| QEMU/KVM | `qemu:///system` | Production workloads on KVM-capable Linux hosts | qcow2 |
+| VirtualBox | `vbox:///session` | Desktop development via libvirt-vbox | vmdk |
+| LXC | `lxc:///` | Container workloads, low overhead, shared kernel | raw |
+
+See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
+
 ## Quick Start
 
 ### Prerequisites
