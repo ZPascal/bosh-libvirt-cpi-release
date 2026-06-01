@@ -27,7 +27,7 @@ var _ = Describe("FactoryOpts", func() {
 			Expect(opts.Validate()).ToNot(HaveOccurred())
 		})
 
-		It("succeeds with vbox scheme", func() {
+		It("succeeds with vbox:///session URI", func() {
 			opts.BackendURI = "vbox:///session"
 			Expect(opts.Validate()).ToNot(HaveOccurred())
 		})

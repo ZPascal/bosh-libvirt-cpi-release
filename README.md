@@ -19,7 +19,7 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 | Backend | URI | Use case | Disk format |
 |---------|-----|----------|-------------|
 | QEMU/KVM | `qemu:///system` | Production workloads on KVM-capable Linux hosts | qcow2 |
-| VirtualBox | `vbox:///session` | Desktop development via libvirt-vbox | vmdk |
+| VirtualBox | `vbox:///session` | Desktop development on macOS or Windows (no KVM available) | vmdk |
 | LXC | `lxc:///` | Container workloads, low overhead, shared kernel | raw |
 
 See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
