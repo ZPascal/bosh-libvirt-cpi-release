@@ -17,8 +17,6 @@ type FactoryOpts struct {
 
 	StoreDir string
 
-	AutoEnableNetworks bool
-
 	Agent apiv1.AgentOptions
 }
 

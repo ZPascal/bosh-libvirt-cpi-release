@@ -7,7 +7,8 @@
 #     --var-file libvirt_private_key=<path-to-key.pem> \
 #     -v libvirt_host_key="ssh-ed25519 AAAA..." \
 #     -v director_name=bosh-qemu \
-#     -v internal_ip=<director-ip>
+#     -v internal_ip=<director-ip> \
+#     -v stemcell_url=<path-or-url-to-stemcell>
 
 name: bosh-qemu
 
@@ -23,7 +24,7 @@ resource_pools:
 - name: vms
   network: default
   stemcell:
-    url: https://bosh.io/d/stemcells/bosh-libvirt-qemu-ubuntu-jammy-go_agent
+    url: ((stemcell_url))
     version: latest
   cloud_properties:
     memory: 2048

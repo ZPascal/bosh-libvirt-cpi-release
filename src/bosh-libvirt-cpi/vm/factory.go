@@ -14,8 +14,7 @@ import (
 )
 
 type FactoryOpts struct {
-	DirPath            string
-	AutoEnableNetworks bool
+	DirPath string
 }
 
 type Factory struct {

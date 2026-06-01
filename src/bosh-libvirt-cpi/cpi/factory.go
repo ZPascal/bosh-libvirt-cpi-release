@@ -114,8 +114,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	disks := bdisk.NewFactory(f.opts.DisksDir(), f.uuidGen, d, runner, f.logger)
 
 	vmsOpts := bvm.FactoryOpts{
-		DirPath:            f.opts.VMsDir(),
-		AutoEnableNetworks: f.opts.AutoEnableNetworks,
+		DirPath: f.opts.VMsDir(),
 	}
 
 	vms := bvm.NewFactory(
