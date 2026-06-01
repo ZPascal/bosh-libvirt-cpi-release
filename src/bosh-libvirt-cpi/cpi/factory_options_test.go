@@ -45,6 +45,13 @@ var _ = Describe("FactoryOpts", func() {
 			Expect(err.Error()).To(ContainSubstring("BackendURI"))
 		})
 
+		It("returns error for qemu+ssh URI scheme (not yet supported)", func() {
+			opts.BackendURI = "qemu+ssh://user@remote/system"
+			err := opts.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Unsupported BackendURI scheme"))
+		})
+
 		It("returns error when scheme is unknown", func() {
 			opts.BackendURI = "weird:///foo"
 
