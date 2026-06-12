@@ -23,6 +23,10 @@ properties:
     default: ""
     example: 192.168.50.1
 
+  port:
+    description: SSH port for connecting to the libvirt host. Only used when host is set.
+    default: 22
+
   username:
     description: Username for SSH access to the libvirt host. Required when host is set.
     default: ""

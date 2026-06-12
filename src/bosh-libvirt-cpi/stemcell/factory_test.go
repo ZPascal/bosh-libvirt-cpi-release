@@ -10,9 +10,9 @@ import (
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 	boshsys "github.com/cloudfoundry/bosh-utils/system"
 
+	driverfakes "bosh-libvirt-cpi/driver/fakes"
 	"bosh-libvirt-cpi/stemcell"
 	stemcellfakes "bosh-libvirt-cpi/stemcell/fakes"
-	driverfakes "bosh-libvirt-cpi/driver/fakes"
 )
 
 var _ = Describe("stemcell.Factory", func() {
@@ -35,7 +35,7 @@ var _ = Describe("stemcell.Factory", func() {
 		runner = &driverfakes.FakeRunner{}
 		drv = &driverfakes.FakeDriver{}
 		builder = &driverfakes.FakeDomainBuilder{
-			DiskImageFormatResult: "qcow2",
+			DiskImageFormatResult:  "qcow2",
 			BuildStemcellDomainXML: "<domain/>",
 		}
 		factory = stemcell.NewFactory(

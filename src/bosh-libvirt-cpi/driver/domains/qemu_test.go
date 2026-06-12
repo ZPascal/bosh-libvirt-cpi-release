@@ -22,10 +22,6 @@ var _ = Describe("QEMUDomainBuilder", func() {
 		Expect(builder.DiskImageFormat()).To(Equal("qcow2"))
 	})
 
-	It("returns virtio as storage controller", func() {
-		Expect(builder.StorageController()).To(Equal("virtio"))
-	})
-
 	Describe("BuildDomain", func() {
 		It("contains domain name, bus, and disk paths", func() {
 			xml, err := builder.BuildDomain("vm-kvm-1", driver.VMDomainProps{CPUs: 4, MemoryMB: 2048},
@@ -35,6 +31,14 @@ var _ = Describe("QEMUDomainBuilder", func() {
 			Expect(xml).To(ContainSubstring("virtio"))
 			Expect(xml).To(ContainSubstring("/root.qcow2"))
 			Expect(xml).To(ContainSubstring("/eph.qcow2"))
+		})
+
+		It("includes a network interface", func() {
+			xml, err := builder.BuildDomain("vm-kvm-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.qcow2", EphemeralDisk: "/e.qcow2"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("<interface"))
+			Expect(xml).To(ContainSubstring("default"))
 		})
 
 		It("uses kvm domain type", func() {

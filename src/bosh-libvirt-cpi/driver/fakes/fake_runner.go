@@ -9,8 +9,11 @@ type FakeRunner struct {
 
 	UploadErr error
 
-	PutErr error
+	PutContents map[string][]byte // keyed by path; populated by Put calls
+	PutErr      error
 
+	// GetResult, if non-nil, is returned for every Get call regardless of path.
+	// If nil, Get returns whatever was last Put to the same path.
 	GetResult []byte
 	GetErr    error
 }
@@ -26,9 +29,21 @@ func (r *FakeRunner) Upload(srcDir, dstDir string) error {
 }
 
 func (r *FakeRunner) Put(path string, contents []byte) error {
+	if r.PutContents == nil {
+		r.PutContents = make(map[string][]byte)
+	}
+	r.PutContents[path] = contents
 	return r.PutErr
 }
 
 func (r *FakeRunner) Get(path string) ([]byte, error) {
-	return r.GetResult, r.GetErr
+	if r.GetResult != nil {
+		return r.GetResult, r.GetErr
+	}
+	if r.PutContents != nil {
+		if data, ok := r.PutContents[path]; ok {
+			return data, r.GetErr
+		}
+	}
+	return nil, r.GetErr
 }

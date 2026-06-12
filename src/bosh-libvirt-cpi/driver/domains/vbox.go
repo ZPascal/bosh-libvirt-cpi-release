@@ -10,8 +10,7 @@ var _ driver.DomainBuilder = VBoxDomainBuilder{}
 
 type VBoxDomainBuilder struct{}
 
-func (b VBoxDomainBuilder) DiskImageFormat() string   { return "vmdk" }
-func (b VBoxDomainBuilder) StorageController() string { return "ide" }
+func (b VBoxDomainBuilder) DiskImageFormat() string { return "vmdk" }
 
 func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
 	xml := fmt.Sprintf(`<domain type='vbox'>
@@ -21,7 +20,6 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
   <os><type>hvm</type></os>
   <devices>
     <disk type='file' device='disk'>
-      <driver name='vboxsf'/>
       <source file='%s'/>
       <target dev='sda' bus='ide'/>
     </disk>
@@ -29,6 +27,9 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <source file='%s'/>
       <target dev='sdb' bus='ide'/>
     </disk>
+    <interface type='network'>
+      <source network='default'/>
+    </interface>
   </devices>
 </domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
 	return xml, nil
@@ -42,7 +43,6 @@ func (b VBoxDomainBuilder) BuildStemcellDomain(id string, imagePath string) (str
   <os><type>hvm</type></os>
   <devices>
     <disk type='file' device='disk'>
-      <driver name='vboxsf'/>
       <source file='%s'/>
       <target dev='sda' bus='ide'/>
     </disk>

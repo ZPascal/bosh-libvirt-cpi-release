@@ -82,12 +82,23 @@ func (d LibvirtDriver) LookupDomain(id string) (Domain, error) {
 
 func (d LibvirtDriver) UpdateDomainMemory(id string, memoryMB int) error {
 	d.logger.Debug(d.logTag, "Updating memory for domain '%s' to %dMB", id, memoryMB)
-	return d.withDomain(id, func(dom *libvirt.Domain) error { return dom.SetMemory(uint64(memoryMB) * 1024) })
+	return d.withDomain(id, func(dom *libvirt.Domain) error {
+		kib := uint64(memoryMB) * 1024
+		if err := dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG|libvirt.DOMAIN_MEM_MAXIMUM); err != nil {
+			return err
+		}
+		return dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG)
+	})
 }
 
 func (d LibvirtDriver) UpdateDomainCPUs(id string, cpus int) error {
 	d.logger.Debug(d.logTag, "Updating CPUs for domain '%s' to %d", id, cpus)
-	return d.withDomain(id, func(dom *libvirt.Domain) error { return dom.SetVcpus(uint(cpus)) })
+	return d.withDomain(id, func(dom *libvirt.Domain) error {
+		if err := dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG|libvirt.DOMAIN_VCPU_MAXIMUM); err != nil {
+			return err
+		}
+		return dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG)
+	})
 }
 
 func (d LibvirtDriver) CreateStorageVol(poolName, volName string, sizeMB int) (string, error) {

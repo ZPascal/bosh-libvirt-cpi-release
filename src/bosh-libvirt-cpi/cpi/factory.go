@@ -72,6 +72,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	if len(f.opts.Host) > 0 {
 		runnerOpts := driver.SSHRunnerOpts{
 			Host:       f.opts.Host,
+			Port:       f.opts.Port,
 			Username:   f.opts.Username,
 			PrivateKey: f.opts.PrivateKey,
 			HostKey:    f.opts.HostKey,

@@ -65,6 +65,25 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 	})
 
+	Describe("DestroyDomain", func() {
+		It("returns error when domain not found", func() {
+			conn.LookupDomainByNameErr = errors.New("not found")
+			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+		})
+	})
+
+	Describe("DeleteStorageVol", func() {
+		It("returns nil when pool not found (idempotent)", func() {
+			conn.LookupStoragePoolByNameErr = libvirt.Error{Code: libvirt.ERR_NO_STORAGE_POOL}
+			Expect(d.DeleteStorageVol("default", "vol-1")).To(Succeed())
+		})
+
+		It("returns error for non-pool-not-found pool lookup failure", func() {
+			conn.LookupStoragePoolByNameErr = errors.New("unexpected pool error")
+			Expect(d.DeleteStorageVol("default", "vol-1")).To(HaveOccurred())
+		})
+	})
+
 	Describe("StartDomain / ShutdownDomain / RebootDomain", func() {
 		It("returns error when domain not found for Start", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")

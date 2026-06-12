@@ -48,18 +48,14 @@ sudo usermod -aG libvirt $USER
 
 ### Configuration
 
-Create a CPI configuration file (e.g., `cpi.json`):
+Create a CPI configuration file (e.g., `config/cpi.json`):
 
-**For QEMU/KVM:**
+**For QEMU/KVM (local):**
 ```json
 {
-  "hypervisor": "qemu",
-  "uri": "qemu:///system",
-  "bin_path": "virsh",
-  "store_dir": "/var/vcap/store/libvirt",
-  "storage_controller": "SATA",
-  "auto_enable_networks": true,
-  "agent": {
+  "BackendURI": "qemu:///system",
+  "StoreDir": "~/.bosh_libvirt_cpi",
+  "Agent": {
     "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
     "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
     "blobstore": {
@@ -75,27 +71,48 @@ Create a CPI configuration file (e.g., `cpi.json`):
 **For VirtualBox (via libvirt):**
 ```json
 {
-  "hypervisor": "vbox",
-  "uri": "vbox:///session",
-  ...
+  "BackendURI": "vbox:///session",
+  "StoreDir": "~/.bosh_libvirt_cpi",
+  "Agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
 }
 ```
 
 **For LXC:**
 ```json
 {
-  "hypervisor": "lxc",
-  "uri": "lxc:///",
-  ...
+  "BackendURI": "lxc:///",
+  "StoreDir": "~/.bosh_libvirt_cpi",
+  "Agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
 }
 ```
 
+For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields — see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
+
+
 ## Documentation
 
-- **[Provider Configuration Guide](docs/PROVIDER_CONFIGURATION.md)** - Detailed guide on configuring different hypervisors
+- **[Hypervisor Configuration Guide](docs/HYPERVISOR_CONFIGURATION.md)** - Per-backend installation prerequisites and known limitations
 - **Configuration Examples**:
-  - [QEMU/KVM Local](config/cpi-libvirt.json)
-  - [QEMU/KVM Remote](config/cpi-libvirt-remote.json)
+  - [QEMU/KVM Local](config/cpi-qemu.json)
+  - [QEMU/KVM Remote](config/cpi-qemu-remote.json)
   - [VirtualBox](config/cpi-vbox.json)
   - [LXC](config/cpi-lxc.json)
 
@@ -119,7 +136,7 @@ Libvirt Provider
 └─────────┘ └─────────┘ └─────────┘
 ```
 
-The `hypervisor` configuration field determines which virtualization backend libvirt uses.
+The `BackendURI` configuration field determines which virtualization backend libvirt uses.
 
 ## Supported Hypervisors
 

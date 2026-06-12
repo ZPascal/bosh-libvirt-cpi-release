@@ -16,6 +16,5 @@ type DomainDiskPaths struct {
 type DomainBuilder interface {
 	BuildDomain(id string, props VMDomainProps, disks DomainDiskPaths) (string, error)
 	BuildStemcellDomain(id string, imagePath string) (string, error)
-	DiskImageFormat() string   // "vmdk", "raw", "qcow2"
-	StorageController() string // "ide", "sata", "virtio", "lxc"
+	DiskImageFormat() string // "vmdk", "raw", "qcow2"
 }

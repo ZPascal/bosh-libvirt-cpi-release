@@ -39,7 +39,7 @@ func (r LocalRunner) HomeDir() (string, error) {
 func (r LocalRunner) Execute(path string, args ...string) (string, int, error) {
 	r.logger.Debug(r.logTag, "Execute '%s %s'", path, strings.Join(args, "' '"))
 
-	current_user, userErr := user.Current()
+	currentUser, userErr := user.Current()
 	if userErr != nil {
 		return "", -1, userErr
 	}
@@ -49,8 +49,8 @@ func (r LocalRunner) Execute(path string, args ...string) (string, int, error) {
 		Args: args,
 		Env: map[string]string{
 			"PATH":    "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-			"LOGNAME": current_user.Username,
-			"USER":    current_user.Username,
+			"LOGNAME": currentUser.Username,
+			"USER":    currentUser.Username,
 		},
 	}
 
