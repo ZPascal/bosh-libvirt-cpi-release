@@ -27,6 +27,7 @@ type SSHRunner struct {
 
 type SSHRunnerOpts struct {
 	Host       string
+	Port       int // SSH port; defaults to 22 if zero
 	Username   string
 	PrivateKey string
 	HostKey    string // authorized_keys format, e.g. "ssh-ed25519 AAAA..."
@@ -178,12 +179,19 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 		HostKeyCallback: ssh.FixedHostKey(pubKey),
 	}
 
-	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:22", r.opts.Host), config)
+	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", r.opts.Host, r.sshPort()), config)
 	if err != nil {
 		return nil, bosherr.WrapError(err, "Connecting via SSH")
 	}
 
 	return r.existingClient, nil
+}
+
+func (r *SSHRunner) sshPort() int {
+	if r.opts.Port > 0 {
+		return r.opts.Port
+	}
+	return 22
 }
 
 func (r SSHRunner) shCmd(path string, args []string, stdoutPath string) string {

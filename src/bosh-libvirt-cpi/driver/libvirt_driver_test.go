@@ -65,6 +65,25 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 	})
 
+	Describe("DestroyDomain", func() {
+		It("returns error when domain not found", func() {
+			conn.LookupDomainByNameErr = errors.New("not found")
+			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+		})
+	})
+
+	Describe("DeleteStorageVol", func() {
+		It("returns nil when pool not found (idempotent)", func() {
+			conn.LookupStoragePoolByNameErr = libvirt.Error{Code: libvirt.ERR_NO_STORAGE_POOL}
+			Expect(d.DeleteStorageVol("default", "vol-1")).To(Succeed())
+		})
+
+		It("returns error for non-pool-not-found pool lookup failure", func() {
+			conn.LookupStoragePoolByNameErr = errors.New("unexpected pool error")
+			Expect(d.DeleteStorageVol("default", "vol-1")).To(HaveOccurred())
+		})
+	})
+
 	Describe("StartDomain / ShutdownDomain / RebootDomain", func() {
 		It("returns error when domain not found for Start", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
@@ -80,6 +99,11 @@ var _ = Describe("LibvirtDriver", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
 			Expect(d.RebootDomain("vm-1")).To(HaveOccurred())
 		})
+
+		It("returns error when lookup returns nil domain with no error", func() {
+			// conn returns (nil, nil) by default — withDomain must guard against nil
+			Expect(d.StartDomain("vm-1")).To(HaveOccurred())
+		})
 	})
 
 	Describe("UpdateDomainMemory / UpdateDomainCPUs", func() {
@@ -90,6 +114,14 @@ var _ = Describe("LibvirtDriver", func() {
 
 		It("returns error when domain not found for UpdateDomainCPUs", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
+			Expect(d.UpdateDomainCPUs("vm-1", 2)).To(HaveOccurred())
+		})
+
+		It("returns error when lookup returns nil domain with no error for UpdateDomainMemory", func() {
+			Expect(d.UpdateDomainMemory("vm-1", 512)).To(HaveOccurred())
+		})
+
+		It("returns error when lookup returns nil domain with no error for UpdateDomainCPUs", func() {
 			Expect(d.UpdateDomainCPUs("vm-1", 2)).To(HaveOccurred())
 		})
 	})

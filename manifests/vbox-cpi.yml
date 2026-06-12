@@ -30,7 +30,6 @@ resource_pools:
   network: default
   stemcell:
     url: ((stemcell_url))
-    version: latest
   cloud_properties:
     memory: 1024
     cpus: 1

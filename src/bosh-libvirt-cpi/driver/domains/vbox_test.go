@@ -22,10 +22,6 @@ var _ = Describe("VBoxDomainBuilder", func() {
 		Expect(builder.DiskImageFormat()).To(Equal("vmdk"))
 	})
 
-	It("returns ide as storage controller", func() {
-		Expect(builder.StorageController()).To(Equal("ide"))
-	})
-
 	Describe("BuildDomain", func() {
 		It("contains domain name, controller, and disk paths", func() {
 			xml, err := builder.BuildDomain("vm-123", driver.VMDomainProps{CPUs: 2, MemoryMB: 1024},
@@ -35,6 +31,28 @@ var _ = Describe("VBoxDomainBuilder", func() {
 			Expect(xml).To(ContainSubstring("ide"))
 			Expect(xml).To(ContainSubstring("/root.vmdk"))
 			Expect(xml).To(ContainSubstring("/eph.vmdk"))
+		})
+
+		It("includes a network interface using the default network when Network is empty", func() {
+			xml, err := builder.BuildDomain("vm-vbox-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("<interface"))
+			Expect(xml).To(ContainSubstring("network='default'"))
+		})
+
+		It("uses the configured network name when Network is set", func() {
+			xml, err := builder.BuildDomain("vm-vbox-net2", driver.VMDomainProps{CPUs: 1, MemoryMB: 512, Network: "bosh"},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("network='bosh'"))
+		})
+
+		It("does not use vboxsf driver", func() {
+			xml, err := builder.BuildDomain("vm-vbox-drv", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
+			Expect(err).To(BeNil())
+			Expect(xml).ToNot(ContainSubstring("vboxsf"))
 		})
 
 		It("encodes memory as KiB", func() {

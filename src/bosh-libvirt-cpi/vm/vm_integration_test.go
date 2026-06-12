@@ -73,7 +73,7 @@ var _ = Describe("VM (integration)", func() {
 		vmFactory = bvm.NewFactory(
 			bvm.FactoryOpts{DirPath: tmpDir + "/vms"},
 			uuidGen, d, runner, domBuilder, diskFactory,
-			agentOpts, apiv1.NewStemcellAPIVersion(apiv1.CallContext{}),
+			agentOpts, apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
 			logger)
 	})
 
@@ -107,7 +107,10 @@ var _ = Describe("VM (integration)", func() {
 
 		hint, err := v.AttachDisk(disk)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(hint.AsString()).ToNot(BeEmpty())
+		hintJSON, err := hint.MarshalJSON()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(hintJSON)).ToNot(Equal("null"))
+		Expect(string(hintJSON)).ToNot(BeEmpty())
 
 		ids, err := v.DiskIDs()
 		Expect(err).ToNot(HaveOccurred())

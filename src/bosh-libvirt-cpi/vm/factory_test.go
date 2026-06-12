@@ -3,6 +3,7 @@ package vm_test
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -51,8 +52,6 @@ var _ = Describe("vm.Factory", func() {
 		vmUUIDGen = &stubVMUUIDGen{result: "uuid-vm-1"}
 		diskUUIDGen = &stubDiskUUIDGen{result: "disk-uuid-1"}
 		runner = &driverfakes.FakeRunner{}
-		// GetResult is read by reconfigureAgent (env.json), needs to be valid JSON.
-		runner.GetResult = []byte("{}")
 		drv = &driverfakes.FakeDriver{
 			// Make LookupDomain appear as "domain not found" so that
 			// HaltIfRunning (called by cleanUpPartialCreate → Delete) returns
@@ -80,7 +79,7 @@ var _ = Describe("vm.Factory", func() {
 			runner,
 			builder,
 			diskFactory,
-			apiv1.AgentOptions{},
+			apiv1.AgentOptions{Mbus: "nats://nats:nats-password@127.0.0.1:4222"},
 			apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
 			logger,
 		)
@@ -97,6 +96,28 @@ var _ = Describe("vm.Factory", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(v.ID().AsString()).To(Equal("vm-uuid-vm-1"))
+		})
+
+		It("propagates mbus from AgentOptions into the agent env", func() {
+			v, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(v).ToNot(BeNil())
+			// Locate the env.json write among all Put calls.
+			var envJSON []byte
+			for path, contents := range runner.PutContents {
+				if strings.HasSuffix(path, "env.json") {
+					envJSON = contents
+					break
+				}
+			}
+			Expect(envJSON).ToNot(BeNil(), "env.json was never written")
+			Expect(string(envJSON)).To(ContainSubstring("nats://nats:nats-password@127.0.0.1:4222"))
 		})
 
 		It("returns error when UUID generation fails", func() {
