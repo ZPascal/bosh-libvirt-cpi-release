@@ -4,19 +4,18 @@ BOSH_PACKAGES_DIR=${BOSH_PACKAGES_DIR:-/var/vcap/packages}
 BOSH_JOBS_DIR=${BOSH_JOBS_DIR:-/var/vcap/jobs}
 
 <% if_p('env.http_proxy') do |http_proxy| %>
-export HTTP_PROXY="<%= http_proxy %>"
-export http_proxy="<%= http_proxy %>"
+export HTTP_PROXY=<%= http_proxy.shellescape %>
+export http_proxy=<%= http_proxy.shellescape %>
 <% end %>
 
 <% if_p('env.https_proxy') do |https_proxy| %>
-export HTTPS_PROXY="<%= https_proxy %>"
-export https_proxy="<%= https_proxy %>"
+export HTTPS_PROXY=<%= https_proxy.shellescape %>
+export https_proxy=<%= https_proxy.shellescape %>
 <% end %>
 
 <% if_p('env.no_proxy') do |no_proxy| %>
-export NO_PROXY="<%= no_proxy %>"
-export no_proxy="<%= no_proxy %>"
+export NO_PROXY=<%= no_proxy.shellescape %>
+export no_proxy=<%= no_proxy.shellescape %>
 <% end %>
 
-platform=`uname | tr '[:upper:]' '[:lower:]'`
-exec $BOSH_PACKAGES_DIR/virtualbox_cpi/bin/cpi-${platform} -configPath $BOSH_JOBS_DIR/virtualbox_cpi/config/cpi.json
+exec $BOSH_PACKAGES_DIR/libvirt_cpi/bin/cpi -configPath $BOSH_JOBS_DIR/libvirt_cpi/config/cpi.json

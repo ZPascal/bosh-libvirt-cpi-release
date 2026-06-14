@@ -14,8 +14,8 @@ import (
 )
 
 type FactoryOpts struct {
-	DirPath            string
-	AutoEnableNetworks bool
+	DirPath string
+	Network string // libvirt network name; defaults to "default" if empty
 }
 
 type Factory struct {
@@ -112,6 +112,7 @@ func (f Factory) Create(
 	domainProps := driver.VMDomainProps{
 		CPUs:     vmProps.CPUs,
 		MemoryMB: vmProps.Memory,
+		Network:  f.opts.Network,
 	}
 
 	xml, err := f.domBuilder.BuildDomain(vmID, domainProps, disks)

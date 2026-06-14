@@ -1,0 +1,134 @@
+---
+# Minimal BOSH manifest for deploying the libvirt CPI against a VirtualBox host.
+# Prerequisites on the libvirt host:
+#   apt-get install -y virtualbox libvirt-daemon-driver-vbox libvirt-dev
+#   systemctl start libvirtd
+# Note: VirtualBox uses the session URI (vbox:///session) for unprivileged access.
+#
+# Usage:
+#   bosh create-env manifests/vbox-cpi.yml \
+#     -v libvirt_host=<host-ip> \
+#     -v libvirt_username=<ssh-user> \
+#     --var-file libvirt_private_key=<path-to-key.pem> \
+#     -v libvirt_host_key="ssh-ed25519 AAAA..." \
+#     -v director_name=bosh-vbox \
+#     -v internal_ip=<director-ip> \
+#     -v stemcell_url=<path-or-url-to-stemcell>
+
+name: bosh-vbox
+
+releases:
+- name: bosh
+  url: https://bosh.io/d/github.com/cloudfoundry/bosh
+  version: latest
+- name: bosh-libvirt-cpi
+  url: file://..
+  version: create
+
+resource_pools:
+- name: vms
+  network: default
+  stemcell:
+    url: ((stemcell_url))
+  cloud_properties:
+    memory: 1024
+    cpus: 1
+    ephemeral_disk: 10000
+
+disk_pools:
+- name: disks
+  disk_size: 10000
+
+networks:
+- name: default
+  type: manual
+  subnets:
+  - range: 192.168.1.0/24
+    gateway: 192.168.1.1
+    dns: [8.8.8.8]
+    static: [192.168.1.8]
+
+instance_groups:
+- name: bosh
+  instances: 1
+  jobs:
+  - name: nats
+    release: bosh
+  - name: postgres-10
+    release: bosh
+  - name: blobstore
+    release: bosh
+  - name: director
+    release: bosh
+  - name: health_monitor
+    release: bosh
+  - name: libvirt_cpi
+    release: bosh-libvirt-cpi
+  resource_pool: vms
+  disk_pool: disks
+  networks:
+  - name: default
+    static_ips: [((internal_ip))]
+  properties:
+    nats:
+      address: 127.0.0.1
+      user: nats
+      password: nats-password
+    postgres: &db
+      listen_address: 127.0.0.1
+      host: 127.0.0.1
+      user: postgres
+      password: postgres-password
+      database: bosh
+      adapter: postgres
+    blobstore:
+      address: ((internal_ip))
+      port: 25250
+      provider: dav
+      director:
+        user: director
+        password: director-password
+      agent:
+        user: agent
+        password: agent-password
+    director:
+      address: 127.0.0.1
+      name: ((director_name))
+      cpi_job: libvirt_cpi
+      max_threads: 3
+      db: *db
+      backend_port: 25556
+    hm:
+      director_account:
+        user: admin
+        password: admin-password
+      resurrector_enabled: true
+    agent:
+      mbus: nats://nats:nats-password@((internal_ip)):4222
+    libvirt_cpi:
+      backend_uri: vbox:///session
+      host: ((libvirt_host))
+      username: ((libvirt_username))
+      private_key: ((libvirt_private_key))
+      host_key: ((libvirt_host_key))
+      store_dir: ~/.bosh_libvirt_cpi
+
+cloud_provider:
+  template:
+    name: libvirt_cpi
+    release: bosh-libvirt-cpi
+  properties:
+    libvirt_cpi:
+      backend_uri: vbox:///session
+      host: ((libvirt_host))
+      username: ((libvirt_username))
+      private_key: ((libvirt_private_key))
+      host_key: ((libvirt_host_key))
+      store_dir: ~/.bosh_libvirt_cpi
+      agent:
+        mbus: https://mbus:mbus-password@0.0.0.0:6868
+        ntp: [0.pool.ntp.org, 1.pool.ntp.org]
+        blobstore:
+          provider: local
+          options:
+            blobstore_path: /var/vcap/micro_bosh/data/cache

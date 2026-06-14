@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	bosherr "github.com/cloudfoundry/bosh-utils/errors"
+
 	"bosh-libvirt-cpi/driver"
 )
 
@@ -14,6 +16,13 @@ type Store struct {
 
 func NewStore(path string, runner driver.Runner) Store {
 	return Store{path, runner}
+}
+
+func sanitizeKey(key string) error {
+	if key != filepath.Base(key) || key == "." || key == ".." {
+		return bosherr.Errorf("invalid key %q: must be a plain filename", key)
+	}
+	return nil
 }
 
 func (m Store) List() ([]string, error) {
@@ -38,10 +47,17 @@ func (m Store) List() ([]string, error) {
 }
 
 func (m Store) Path(key string) string {
+	if err := sanitizeKey(key); err != nil {
+		return ""
+	}
 	return filepath.Join(m.path, key)
 }
 
 func (m Store) Put(key string, contents []byte) error {
+	if err := sanitizeKey(key); err != nil {
+		return err
+	}
+
 	_, _, err := m.runner.Execute("mkdir", "-p", m.path)
 	if err != nil {
 		return err
@@ -51,10 +67,18 @@ func (m Store) Put(key string, contents []byte) error {
 }
 
 func (m Store) Get(key string) ([]byte, error) {
+	if err := sanitizeKey(key); err != nil {
+		return nil, err
+	}
+
 	return m.runner.Get(filepath.Join(m.path, key))
 }
 
 func (m Store) DeleteOne(key string) error {
+	if err := sanitizeKey(key); err != nil {
+		return err
+	}
+
 	_, _, err := m.runner.Execute("rm", "-rf", filepath.Join(m.path, key))
 	return err
 }

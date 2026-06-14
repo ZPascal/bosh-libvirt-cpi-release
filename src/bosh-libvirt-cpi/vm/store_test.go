@@ -60,4 +60,68 @@ var _ = Describe("Store", func() {
 			Expect(err).To(HaveOccurred())
 		})
 	})
+
+	Describe("Put", func() {
+		It("rejects keys containing ..", func() {
+			err := store.Put("../etc/passwd", []byte("data"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects keys containing /", func() {
+			err := store.Put("sub/dir", []byte("data"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects the '.' key", func() {
+			err := store.Put(".", []byte("data"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("accepts normal keys", func() {
+			err := store.Put("metadata.json", []byte("data"))
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Describe("Get", func() {
+		It("rejects keys containing ..", func() {
+			_, err := store.Get("../etc/passwd")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects keys containing /", func() {
+			_, err := store.Get("sub/secret")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("accepts normal keys", func() {
+			runner.GetResult = []byte(`{"key":"value"}`)
+			_, err := store.Get("agent.json")
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Describe("DeleteOne", func() {
+		It("rejects keys containing ..", func() {
+			err := store.DeleteOne("../../important")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("rejects keys containing /", func() {
+			err := store.DeleteOne("sub/secret")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid key"))
+		})
+
+		It("accepts normal keys", func() {
+			err := store.DeleteOne("disk-abc-disk-attachment.json")
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
 })

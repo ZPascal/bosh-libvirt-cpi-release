@@ -10,10 +10,13 @@ var _ driver.DomainBuilder = QEMUDomainBuilder{}
 
 type QEMUDomainBuilder struct{}
 
-func (b QEMUDomainBuilder) DiskImageFormat() string   { return "qcow2" }
-func (b QEMUDomainBuilder) StorageController() string { return "virtio" }
+func (b QEMUDomainBuilder) DiskImageFormat() string { return "qcow2" }
 
 func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
+	network := props.Network
+	if network == "" {
+		network = "default"
+	}
 	xml := fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -31,8 +34,12 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <source file='%s'/>
       <target dev='vdb' bus='virtio'/>
     </disk>
+    <interface type='network'>
+      <source network='%s'/>
+      <model type='virtio'/>
+    </interface>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
 	return xml, nil
 }
 

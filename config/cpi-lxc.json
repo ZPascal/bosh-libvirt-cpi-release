@@ -1,5 +1,5 @@
 {
-  "BackendURI": "qemu:///system",
+  "BackendURI": "lxc:///",
   "StoreDir": "~/.bosh_libvirt_cpi",
   "Agent": {
     "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
