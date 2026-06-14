@@ -116,6 +116,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 
 	vmsOpts := bvm.FactoryOpts{
 		DirPath: f.opts.VMsDir(),
+		Network: f.opts.Network,
 	}
 
 	vms := bvm.NewFactory(

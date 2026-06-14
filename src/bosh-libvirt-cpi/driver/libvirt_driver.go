@@ -31,6 +31,9 @@ func (d LibvirtDriver) withDomain(id string, fn func(*libvirt.Domain) error) err
 	if err != nil {
 		return err
 	}
+	if dom == nil {
+		return fmt.Errorf("domain '%s' not found", id)
+	}
 	return fn(dom)
 }
 
@@ -84,20 +87,22 @@ func (d LibvirtDriver) UpdateDomainMemory(id string, memoryMB int) error {
 	d.logger.Debug(d.logTag, "Updating memory for domain '%s' to %dMB", id, memoryMB)
 	return d.withDomain(id, func(dom *libvirt.Domain) error {
 		kib := uint64(memoryMB) * 1024
-		if err := dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG|libvirt.DOMAIN_MEM_MAXIMUM); err != nil {
+		// Lower current before max (required by libvirt when decreasing: current <= max must hold).
+		if err := dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG); err != nil {
 			return err
 		}
-		return dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG)
+		return dom.SetMemoryFlags(kib, libvirt.DOMAIN_MEM_CONFIG|libvirt.DOMAIN_MEM_MAXIMUM)
 	})
 }
 
 func (d LibvirtDriver) UpdateDomainCPUs(id string, cpus int) error {
 	d.logger.Debug(d.logTag, "Updating CPUs for domain '%s' to %d", id, cpus)
 	return d.withDomain(id, func(dom *libvirt.Domain) error {
-		if err := dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG|libvirt.DOMAIN_VCPU_MAXIMUM); err != nil {
+		// Lower current before max (required by libvirt when decreasing: current <= max must hold).
+		if err := dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG); err != nil {
 			return err
 		}
-		return dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG)
+		return dom.SetVcpusFlags(uint(cpus), libvirt.DOMAIN_VCPU_CONFIG|libvirt.DOMAIN_VCPU_MAXIMUM)
 	})
 }
 

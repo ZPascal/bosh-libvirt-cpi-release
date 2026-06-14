@@ -13,6 +13,10 @@ type VBoxDomainBuilder struct{}
 func (b VBoxDomainBuilder) DiskImageFormat() string { return "vmdk" }
 
 func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
+	network := props.Network
+	if network == "" {
+		network = "default"
+	}
 	xml := fmt.Sprintf(`<domain type='vbox'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -28,10 +32,10 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <target dev='sdb' bus='ide'/>
     </disk>
     <interface type='network'>
-      <source network='default'/>
+      <source network='%s'/>
     </interface>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
 	return xml, nil
 }
 

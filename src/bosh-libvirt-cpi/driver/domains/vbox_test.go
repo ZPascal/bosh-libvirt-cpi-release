@@ -33,12 +33,19 @@ var _ = Describe("VBoxDomainBuilder", func() {
 			Expect(xml).To(ContainSubstring("/eph.vmdk"))
 		})
 
-		It("includes a network interface", func() {
+		It("includes a network interface using the default network when Network is empty", func() {
 			xml, err := builder.BuildDomain("vm-vbox-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
 				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("<interface"))
-			Expect(xml).To(ContainSubstring("default"))
+			Expect(xml).To(ContainSubstring("network='default'"))
+		})
+
+		It("uses the configured network name when Network is set", func() {
+			xml, err := builder.BuildDomain("vm-vbox-net2", driver.VMDomainProps{CPUs: 1, MemoryMB: 512, Network: "bosh"},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("network='bosh'"))
 		})
 
 		It("does not use vboxsf driver", func() {

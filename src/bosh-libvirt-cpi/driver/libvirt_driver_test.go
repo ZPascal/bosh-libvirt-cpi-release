@@ -99,6 +99,11 @@ var _ = Describe("LibvirtDriver", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
 			Expect(d.RebootDomain("vm-1")).To(HaveOccurred())
 		})
+
+		It("returns error when lookup returns nil domain with no error", func() {
+			// conn returns (nil, nil) by default — withDomain must guard against nil
+			Expect(d.StartDomain("vm-1")).To(HaveOccurred())
+		})
 	})
 
 	Describe("UpdateDomainMemory / UpdateDomainCPUs", func() {
@@ -109,6 +114,14 @@ var _ = Describe("LibvirtDriver", func() {
 
 		It("returns error when domain not found for UpdateDomainCPUs", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
+			Expect(d.UpdateDomainCPUs("vm-1", 2)).To(HaveOccurred())
+		})
+
+		It("returns error when lookup returns nil domain with no error for UpdateDomainMemory", func() {
+			Expect(d.UpdateDomainMemory("vm-1", 512)).To(HaveOccurred())
+		})
+
+		It("returns error when lookup returns nil domain with no error for UpdateDomainCPUs", func() {
 			Expect(d.UpdateDomainCPUs("vm-1", 2)).To(HaveOccurred())
 		})
 	})

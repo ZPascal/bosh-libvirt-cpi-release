@@ -16,6 +16,9 @@ type FactoryOpts struct {
 	PrivateKey string
 	HostKey    string // SSH host public key in authorized_keys format; required when Host is set
 
+	// Network is the libvirt network name for VM interfaces. Defaults to "default" if empty.
+	Network string
+
 	StoreDir string
 
 	Agent apiv1.AgentOptions

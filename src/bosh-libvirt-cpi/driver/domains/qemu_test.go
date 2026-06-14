@@ -33,12 +33,19 @@ var _ = Describe("QEMUDomainBuilder", func() {
 			Expect(xml).To(ContainSubstring("/eph.qcow2"))
 		})
 
-		It("includes a network interface", func() {
+		It("includes a network interface using the default network when Network is empty", func() {
 			xml, err := builder.BuildDomain("vm-kvm-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
 				driver.DomainDiskPaths{RootDisk: "/r.qcow2", EphemeralDisk: "/e.qcow2"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("<interface"))
-			Expect(xml).To(ContainSubstring("default"))
+			Expect(xml).To(ContainSubstring("network='default'"))
+		})
+
+		It("uses the configured network name when Network is set", func() {
+			xml, err := builder.BuildDomain("vm-kvm-net2", driver.VMDomainProps{CPUs: 1, MemoryMB: 512, Network: "bosh"},
+				driver.DomainDiskPaths{RootDisk: "/r.qcow2", EphemeralDisk: "/e.qcow2"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("network='bosh'"))
 		})
 
 		It("uses kvm domain type", func() {
