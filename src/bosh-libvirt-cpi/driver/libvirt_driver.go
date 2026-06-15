@@ -34,6 +34,7 @@ func (d LibvirtDriver) withDomain(id string, fn func(*libvirt.Domain) error) err
 	if dom == nil {
 		return fmt.Errorf("domain '%s' not found", id)
 	}
+	defer dom.Free() //nolint // releases C-level reference per libvirt Go binding docs
 	return fn(dom)
 }
 
