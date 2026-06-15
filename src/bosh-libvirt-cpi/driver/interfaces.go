@@ -25,6 +25,7 @@ type Domain interface {
 	GetName() (string, error)
 	GetState() (int, int, error)
 	IsActive() (bool, error)
+	Free() error
 }
 
 type Runner interface {

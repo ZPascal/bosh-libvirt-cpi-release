@@ -27,8 +27,10 @@ type SSHRunner struct {
 
 type SSHRunnerOpts struct {
 	Host       string
+	Port       int // SSH port; defaults to 22 if zero
 	Username   string
 	PrivateKey string
+	HostKey    string // authorized_keys format, e.g. "ssh-ed25519 AAAA..."
 }
 
 func NewSSHRunner(opts SSHRunnerOpts, fs boshsys.FileSystem, logger boshlog.Logger) *SSHRunner {
@@ -36,16 +38,17 @@ func NewSSHRunner(opts SSHRunnerOpts, fs boshsys.FileSystem, logger boshlog.Logg
 }
 
 func (r *SSHRunner) HomeDir() (string, error) {
-	output, _, err := r.execute("sh -c 'USER= HOME= eval echo ~`whoami`'")
+	output, _, err := r.execute("getent passwd $(id -u) | cut -d: -f6")
 	if err != nil {
 		return "", err
 	}
 
-	if strings.HasPrefix(output, "~") {
-		return "", bosherr.Errorf("Failed to expand path '%s'", output)
+	result := strings.TrimSpace(output)
+	if result == "" || strings.HasPrefix(result, "~") {
+		return "", bosherr.Errorf("Failed to expand home directory, got: '%s'", result)
 	}
 
-	return strings.TrimSpace(output), nil
+	return result, nil
 }
 
 func (r *SSHRunner) Execute(path string, args ...string) (string, int, error) {
@@ -138,7 +141,7 @@ func (r *SSHRunner) Get(path string) ([]byte, error) {
 		return nil, bosherr.WrapError(err, "Getting file")
 	}
 
-	return stdout.Bytes(), err
+	return stdout.Bytes(), nil
 }
 
 func (r *SSHRunner) session() (*ssh.Session, error) {
@@ -160,6 +163,11 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 		return r.existingClient, nil
 	}
 
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(r.opts.HostKey))
+	if err != nil {
+		return nil, bosherr.WrapError(err, "Parsing host key")
+	}
+
 	keySigner, err := ssh.ParsePrivateKey([]byte(r.opts.PrivateKey))
 	if err != nil {
 		return nil, bosherr.WrapError(err, "Parsing private key")
@@ -168,15 +176,22 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 	config := &ssh.ClientConfig{
 		User:            r.opts.Username,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: ssh.FixedHostKey(pubKey),
 	}
 
-	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:22", r.opts.Host), config)
+	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", r.opts.Host, r.sshPort()), config)
 	if err != nil {
 		return nil, bosherr.WrapError(err, "Connecting via SSH")
 	}
 
 	return r.existingClient, nil
+}
+
+func (r *SSHRunner) sshPort() int {
+	if r.opts.Port > 0 {
+		return r.opts.Port
+	}
+	return 22
 }
 
 func (r SSHRunner) shCmd(path string, args []string, stdoutPath string) string {

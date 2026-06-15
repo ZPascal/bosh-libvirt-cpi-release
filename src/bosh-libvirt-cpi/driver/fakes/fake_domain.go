@@ -27,3 +27,5 @@ func (d *FakeDomain) GetState() (int, int, error) {
 func (d *FakeDomain) IsActive() (bool, error) {
 	return d.IsActiveResult, d.IsActiveErr
 }
+
+func (d *FakeDomain) Free() error { return nil }

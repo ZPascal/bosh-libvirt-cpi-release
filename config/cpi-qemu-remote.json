@@ -1,5 +1,9 @@
 {
   "BackendURI": "qemu:///system",
+  "Host": "192.168.1.10",
+  "Username": "vcap",
+  "PrivateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+  "HostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...",
   "StoreDir": "~/.bosh_libvirt_cpi",
   "Agent": {
     "mbus": "https://mbus:mbus-password@0.0.0.0:6868",

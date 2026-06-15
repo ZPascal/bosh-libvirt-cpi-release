@@ -27,7 +27,7 @@ var _ = Describe("FactoryOpts", func() {
 			Expect(opts.Validate()).ToNot(HaveOccurred())
 		})
 
-		It("succeeds with vbox scheme", func() {
+		It("succeeds with vbox:///session URI", func() {
 			opts.BackendURI = "vbox:///session"
 			Expect(opts.Validate()).ToNot(HaveOccurred())
 		})
@@ -43,6 +43,13 @@ var _ = Describe("FactoryOpts", func() {
 			err := opts.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("BackendURI"))
+		})
+
+		It("returns error for qemu+ssh URI scheme (not yet supported)", func() {
+			opts.BackendURI = "qemu+ssh://user@remote/system"
+			err := opts.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Unsupported BackendURI scheme"))
 		})
 
 		It("returns error when scheme is unknown", func() {
@@ -92,9 +99,20 @@ var _ = Describe("FactoryOpts", func() {
 				Expect(err.Error()).To(ContainSubstring("PrivateKey"))
 			})
 
-			It("succeeds when Username and PrivateKey are set", func() {
+			It("returns error when HostKey is empty", func() {
 				opts.Username = "user"
 				opts.PrivateKey = "key"
+				opts.HostKey = ""
+
+				err := opts.Validate()
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("HostKey"))
+			})
+
+			It("succeeds when Host, Username, PrivateKey, and HostKey are all set", func() {
+				opts.Username = "user"
+				opts.PrivateKey = "key"
+				opts.HostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..."
 
 				Expect(opts.Validate()).ToNot(HaveOccurred())
 			})

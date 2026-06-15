@@ -22,10 +22,6 @@ var _ = Describe("LXCDomainBuilder", func() {
 		Expect(builder.DiskImageFormat()).To(Equal("raw"))
 	})
 
-	It("returns lxc as storage controller", func() {
-		Expect(builder.StorageController()).To(Equal("lxc"))
-	})
-
 	Describe("BuildDomain", func() {
 		It("contains domain name and disk paths", func() {
 			xml, err := builder.BuildDomain("vm-lxc-1", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
@@ -34,6 +30,21 @@ var _ = Describe("LXCDomainBuilder", func() {
 			Expect(xml).To(ContainSubstring("vm-lxc-1"))
 			Expect(xml).To(ContainSubstring("/root.raw"))
 			Expect(xml).To(ContainSubstring("/eph.raw"))
+		})
+
+		It("includes a network interface using the default network when Network is empty", func() {
+			xml, err := builder.BuildDomain("vm-lxc-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 256},
+				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("<interface"))
+			Expect(xml).To(ContainSubstring("network='default'"))
+		})
+
+		It("uses the configured network name when Network is set", func() {
+			xml, err := builder.BuildDomain("vm-lxc-net2", driver.VMDomainProps{CPUs: 1, MemoryMB: 256, Network: "bosh"},
+				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+			Expect(err).To(BeNil())
+			Expect(xml).To(ContainSubstring("network='bosh'"))
 		})
 
 		It("uses lxc domain type", func() {

@@ -1,18 +1,17 @@
 <%=
+require 'json'
+require 'uri'
 
 params = {
-  "Host" => p("host"),
-  "Username" => p("username"),
-  "PrivateKey" => p("private_key"),
-
-  "BinPath" => p("bin_path"),
-  "StoreDir" => p("store_dir"),
-
-  "StorageController" => p("storage_controller"),
-  "AutoEnableNetworks" => p("auto_enable_networks"),
-
-  "Agent" => {
-    "NTP" => p("ntp")
+  "BackendURI"  => p("backend_uri"),
+  "Host"        => p("host"),
+  "Port"        => p("port"),
+  "Username"    => p("username"),
+  "PrivateKey"  => p("private_key"),
+  "HostKey"     => p("host_key"),
+  "StoreDir"    => p("store_dir"),
+  "Agent"       => {
+    "ntp" => p("ntp")
   }
 }
 
@@ -20,10 +19,13 @@ agent_params = params["Agent"]
 
 if_p("agent.mbus") do |mbus|
   agent_params["mbus"] = mbus
-end.else_if_p("nats") do
-  agent_params["mbus"] = "nats://#{p("nats.user")}:#{p("nats.password")}@#{p(["agent.nats.address", "nats.address"])}:#{p("nats.port")}"
+end.else_if_p("nats.address") do
+  user     = URI.encode_www_form_component(p("nats.user"))
+  password = URI.encode_www_form_component(p("nats.password"))
+  address  = p(["agent.nats.address", "nats.address"])
+  port     = p("nats.port")
+  agent_params["mbus"] = "nats://#{user}:#{password}@#{address}:#{port}"
 end
 
-JSON.dump(params)
-
+JSON.pretty_generate(params)
 %>
