@@ -70,6 +70,11 @@ var _ = Describe("LibvirtDriver", func() {
 			conn.LookupDomainByNameErr = errors.New("not found")
 			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
 		})
+
+		It("returns error when lookup returns nil domain with no error", func() {
+			// FakeLibvirtConn returns (nil, nil) by default
+			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+		})
 	})
 
 	Describe("DeleteStorageVol", func() {

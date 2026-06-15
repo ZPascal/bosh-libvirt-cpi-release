@@ -141,7 +141,7 @@ func (r *SSHRunner) Get(path string) ([]byte, error) {
 		return nil, bosherr.WrapError(err, "Getting file")
 	}
 
-	return stdout.Bytes(), err
+	return stdout.Bytes(), nil
 }
 
 func (r *SSHRunner) session() (*ssh.Session, error) {

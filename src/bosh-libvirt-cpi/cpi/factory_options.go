@@ -2,6 +2,7 @@ package cpi
 
 import (
 	"net/url"
+	"path/filepath"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -66,13 +67,13 @@ func (o FactoryOpts) Validate() error {
 }
 
 func (o FactoryOpts) StemcellsDir() string {
-	return o.StoreDir + "/stemcells"
+	return filepath.Join(o.StoreDir, "stemcells")
 }
 
 func (o FactoryOpts) VMsDir() string {
-	return o.StoreDir + "/vms"
+	return filepath.Join(o.StoreDir, "vms")
 }
 
 func (o FactoryOpts) DisksDir() string {
-	return o.StoreDir + "/disks"
+	return filepath.Join(o.StoreDir, "disks")
 }
