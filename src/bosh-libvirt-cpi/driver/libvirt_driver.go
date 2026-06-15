@@ -167,6 +167,8 @@ func (w *LibvirtDomainWrapper) IsActive() (bool, error) {
 	return active, err
 }
 
+func (w *LibvirtDomainWrapper) Free() error { return w.dom.Free() }
+
 func xmlEscape(s string) string {
 	var b bytes.Buffer
 	_ = xml.EscapeText(&b, []byte(s))
