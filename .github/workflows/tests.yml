@@ -36,7 +36,7 @@ jobs:
       run: make test
 
     - name: Upload coverage reports
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       with:
         files: src/bosh-libvirt-cpi/coverage.out
         flags: unittests
@@ -108,7 +108,7 @@ jobs:
       run: sudo -E go test -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v7
       with:
         files: src/bosh-libvirt-cpi/coverage.out
         flags: integration
