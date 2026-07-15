@@ -34,7 +34,7 @@ func (i ISO9660) Bytes() ([]byte, error) {
 	i.FileName = strings.ToUpper(i.FileName)
 
 	if !i.fileNameSatisfiesISOConstraints(i.FileName) {
-		return nil, fmt.Errorf("File name '%s' violates ISO9660 constraints", i.FileName)
+		return nil, fmt.Errorf("file name '%s' violates ISO9660 constraints", i.FileName)
 	}
 
 	buf := bytes.NewBuffer([]byte{})
@@ -64,7 +64,9 @@ func (i ISO9660) Bytes() ([]byte, error) {
 	}
 
 	w.Finish()
-	bufw.Flush()
+	if err := bufw.Flush(); err != nil {
+		return nil, err
+	}
 
 	reservedBytes := make([]byte, int64(16*SectorSize))
 

@@ -63,7 +63,7 @@ func (r *SSHRunner) execute(cmd string) (string, int, error) {
 		return "", 0, err
 	}
 
-	defer sess.Close()
+	defer sess.Close() //nolint:errcheck
 
 	var stderr, stdout bytes.Buffer
 	sess.Stdout = &stdout
@@ -80,7 +80,7 @@ func (r *SSHRunner) execute(cmd string) (string, int, error) {
 	case *ssh.ExitMissingError:
 		return output, 0, bosherr.WrapError(typedErr, "Missing exit info")
 	case *ssh.ExitError:
-		status := typedErr.Waitmsg.ExitStatus()
+		status := typedErr.ExitStatus()
 		return output, status, bosherr.WrapErrorf(typedErr, "Exit (Output: '%s')", output)
 	default:
 		return output, 0, bosherr.WrapErrorf(typedErr, "Unknown SSH error (Output: '%s')", output)
@@ -95,7 +95,7 @@ func (r *SSHRunner) Upload(srcPath, dstPath string) error {
 		return bosherr.WrapError(err, "Opening source file for upload")
 	}
 
-	defer file.Close()
+	defer file.Close() //nolint:errcheck
 
 	return r.putFromReader(dstPath, file)
 }
@@ -111,7 +111,7 @@ func (r *SSHRunner) putFromReader(path string, in io.Reader) error {
 		return err
 	}
 
-	defer sess.Close()
+	defer sess.Close() //nolint:errcheck
 
 	sess.Stdin = in
 
@@ -131,7 +131,7 @@ func (r *SSHRunner) Get(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	defer sess.Close()
+	defer sess.Close() //nolint:errcheck
 
 	var stdout bytes.Buffer
 	sess.Stdout = &stdout
