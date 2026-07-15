@@ -38,7 +38,7 @@ func main() {
 		logger.Error("main", "Connecting to libvirt: %s", err.Error())
 		os.Exit(1)
 	}
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck
 
 	libvirtConn := driver.NewLibvirtConnImpl(conn)
 
