@@ -3,6 +3,7 @@
 package driver_test
 
 import (
+	"net/url"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -86,6 +87,10 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 		})
 
 		It("updates CPUs on a defined (offline) domain", func() {
+			u, _ := url.Parse(uri)
+			if u != nil && u.Scheme == "lxc" {
+				Skip("virDomainSetVcpusFlags not supported by the LXC driver")
+			}
 			err := d.UpdateDomainCPUs("bosh-integration-update-test", 2)
 			Expect(err).ToNot(HaveOccurred())
 		})
