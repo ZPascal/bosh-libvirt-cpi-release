@@ -138,7 +138,7 @@ jobs:
           -v director_name=bosh-qemu-ci \
           -v internal_ip="${INTERNAL_IP}" \
           -v stemcell_url=/tmp/bosh-stemcell.tgz \
-          -v release_dir="file://$(pwd)" \
+          -v release_dir="${GITHUB_WORKSPACE}" \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml
 
@@ -165,7 +165,7 @@ jobs:
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
           -v stemcell_url=/tmp/bosh-stemcell.tgz \
-          -v release_dir="file://$(pwd)" || true
+          -v release_dir="${GITHUB_WORKSPACE}" || true
 
   integration-tests-lxc:
     name: Integration Tests (LXC)
@@ -227,7 +227,7 @@ jobs:
           -v director_name=bosh-lxc-ci \
           -v internal_ip="${INTERNAL_IP}" \
           -v stemcell_url=/tmp/bosh-stemcell.tgz \
-          -v release_dir="file://$(pwd)" \
+          -v release_dir="${GITHUB_WORKSPACE}" \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml
 
@@ -254,7 +254,7 @@ jobs:
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \
           -v stemcell_url=/tmp/bosh-stemcell.tgz \
-          -v release_dir="file://$(pwd)" || true
+          -v release_dir="${GITHUB_WORKSPACE}" || true
 
   code-quality:
     name: Code Quality

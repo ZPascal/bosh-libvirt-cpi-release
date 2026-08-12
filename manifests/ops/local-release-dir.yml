@@ -1,5 +1,6 @@
 ---
-# Removes the url from bosh-libvirt-cpi release so bosh create-env uses
-# the current working directory (repo root) to build a dev release.
-- type: remove
+# Sets bosh-libvirt-cpi release URL to an absolute local path so
+# bosh create-env builds a dev release from the repo root directory.
+- type: replace
   path: /releases/name=bosh-libvirt-cpi/url
+  value: file://((release_dir))
