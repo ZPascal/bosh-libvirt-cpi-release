@@ -1,0 +1,6 @@
+---
+# Overrides bosh-libvirt-cpi release URL with an absolute local path
+# for CI use where file://.. (relative) is not supported by bosh create-env.
+- type: replace
+  path: /releases/name=bosh-libvirt-cpi/url
+  value: ((release_dir))
