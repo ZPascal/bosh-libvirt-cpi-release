@@ -1,0 +1,14 @@
+{
+  "BackendURI": "lxc:///",
+  "StoreDir": "~/.bosh_libvirt_cpi",
+  "Agent": {
+    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
+    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
+    "blobstore": {
+      "provider": "local",
+      "options": {
+        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
+      }
+    }
+  }
+}
