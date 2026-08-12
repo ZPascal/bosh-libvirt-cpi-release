@@ -115,12 +115,8 @@ jobs:
 
     - name: Install BOSH CLI
       run: |
-        BOSH_URL=$(curl -fsSL https://api.github.com/repos/cloudfoundry/bosh-cli/releases/latest \
-          | grep -o '"browser_download_url": *"[^"]*linux-amd64[^"]*"' \
-          | grep -v sha256 \
-          | head -1 \
-          | cut -d'"' -f4)
-        curl -fsSL "${BOSH_URL}" -o /usr/local/bin/bosh
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
         bosh --version
 
@@ -204,12 +200,8 @@ jobs:
 
     - name: Install BOSH CLI
       run: |
-        BOSH_URL=$(curl -fsSL https://api.github.com/repos/cloudfoundry/bosh-cli/releases/latest \
-          | grep -o '"browser_download_url": *"[^"]*linux-amd64[^"]*"' \
-          | grep -v sha256 \
-          | head -1 \
-          | cut -d'"' -f4)
-        curl -fsSL "${BOSH_URL}" -o /usr/local/bin/bosh
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
         bosh --version
 
