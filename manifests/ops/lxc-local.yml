@@ -1,0 +1,19 @@
+---
+# Removes SSH connection fields from lxc-cpi.yml so bosh create-env
+# can run locally (lxc:///) without any SSH secrets.
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/username?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/private_key?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
+- type: remove
+  path: /cloud_provider/properties/libvirt_cpi/host?
+- type: remove
+  path: /cloud_provider/properties/libvirt_cpi/username?
+- type: remove
+  path: /cloud_provider/properties/libvirt_cpi/private_key?
+- type: remove
+  path: /cloud_provider/properties/libvirt_cpi/host_key?
