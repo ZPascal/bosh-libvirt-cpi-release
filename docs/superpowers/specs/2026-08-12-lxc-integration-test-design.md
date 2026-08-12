@@ -76,7 +76,31 @@ func domBuilderFromEnv() driver.DomainBuilder {
 
 Each `BeforeEach` in the three test files replaces `domains.QEMUDomainBuilder{}` with `domBuilderFromEnv()`. No test logic changes, no duplicate files — same suite covers QEMU and LXC based on the environment variable.
 
-The driver integration test also uses a hardcoded `kvm` domain XML. That XML block needs an LXC variant selected by the same URI check.
+The driver integration test also uses a hardcoded `<domain type='kvm'>` XML block for the define/lookup/destroy and update tests. A helper `testDomainXML(name string) string` replaces it, returning the correct XML based on the URI scheme:
+
+```go
+func testDomainXML(name string) string {
+    uri := os.Getenv("LIBVIRT_URI")
+    u, _ := url.Parse(uri)
+    if u.Scheme == "lxc" {
+        return fmt.Sprintf(`<domain type='lxc'>
+  <name>%s</name>
+  <memory unit='KiB'>65536</memory>
+  <vcpu>1</vcpu>
+  <os><type>exe</type><init>/sbin/init</init></os>
+  <devices><emulator>/usr/lib/libvirt/libvirt_lxc</emulator></devices>
+</domain>`, name)
+    }
+    return fmt.Sprintf(`<domain type='kvm'>
+  <name>%s</name>
+  <memory unit='KiB'>65536</memory>
+  <vcpu>1</vcpu>
+  <os><type arch='x86_64'>hvm</type></os>
+</domain>`, name)
+}
+```
+
+This helper lives in `driver/integration_helpers_test.go` alongside `domBuilderFromEnv()`.
 
 ## Manifests
 
