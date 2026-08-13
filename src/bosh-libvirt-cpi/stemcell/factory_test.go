@@ -68,20 +68,6 @@ var _ = Describe("stemcell.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Generating stemcell id"))
 		})
 
-		It("returns error when TempDir fails", func() {
-			fakeFS.TempDirErr = errors.New("tempdir failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Creating tmp stemcell directory"))
-		})
-
-		It("returns error when decompress fails", func() {
-			compressor.DecompressFileToDirErr = errors.New("decompress failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Unpacking stemcell"))
-		})
-
 		It("returns error when Upload fails", func() {
 			fakeFS.CopyFileErr = errors.New("upload failed")
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")

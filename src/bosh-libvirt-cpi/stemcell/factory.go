@@ -94,30 +94,14 @@ func (f Factory) newStemcell(cid apiv1.StemcellCID) StemcellImpl {
 }
 
 func (f Factory) upload(imagePath, stemcellPath string) error {
-	tmpDir, err := f.fs.TempDir("bosh-libvirt-cpi-stemcell-upload")
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Creating tmp stemcell directory")
-	}
-
-	defer func() { _ = f.fs.RemoveAll(tmpDir) }()
-
-	err = f.compressor.DecompressFileToDir(imagePath, tmpDir, boshcmd.CompressorOptions{})
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Unpacking stemcell '%s' to '%s'", imagePath, tmpDir)
-	}
-
-	err = f.fs.MkdirAll(stemcellPath, 0750)
+	err := f.fs.MkdirAll(stemcellPath, 0750)
 	if err != nil {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
 
-	// The stemcell tarball is expected to contain a file named "image" that
-	// holds the disk image in the format requested by the domain builder
-	// (raw, qcow2, vmdk). We upload it under "image.<format>".
-	srcImage := filepath.Join(tmpDir, "image")
 	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
 
-	err = f.fs.CopyFile(srcImage, dstImage)
+	err = f.fs.CopyFile(imagePath, dstImage)
 	if err != nil {
 		return bosherr.WrapErrorf(err, "Uploading stemcell image")
 	}
