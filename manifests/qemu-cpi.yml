@@ -50,7 +50,7 @@ instance_groups:
   jobs:
   - name: nats
     release: bosh
-  - name: postgres-10
+  - name: postgres
     release: bosh
   - name: blobstore
     release: bosh
