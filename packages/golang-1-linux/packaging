@@ -1,35 +1,22 @@
 #!/bin/bash
-# CI override: use the system Go already installed on the runner
-# instead of the bosh-packaged golang-1-linux blob.
+# CI: emit compile.env and runtime.env pointing at the system Go.
+# No files to copy — the bosh packaging step just writes the env scripts.
 set -e -x
 
 PACKAGE_NAME="$(basename ${BOSH_INSTALL_TARGET})"
-
-# Find Go installation — GitHub Actions runners have it under /usr/local/go
-GO_ROOT=/usr/local/go
-if [ ! -d "${GO_ROOT}" ]; then
-  GO_ROOT=$(dirname "$(which go)")/../
-fi
-
-cp -R ${GO_ROOT}/. ${BOSH_INSTALL_TARGET}/
-
-mkdir -p ${BOSH_INSTALL_TARGET}/bosh
+mkdir -p "${BOSH_INSTALL_TARGET}/bosh"
 
 cat > "${BOSH_INSTALL_TARGET}/bosh/compile.env" <<EOF
-if [ -z "\${BOSH_PACKAGES_DIR:-}" ]; then
-  export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
-else
-  export GOROOT=\$BOSH_PACKAGES_DIR/${PACKAGE_NAME}
-fi
+export GOROOT=/usr/local/go
 export GOPATH=\$PWD
-export GOCACHE=/var/vcap/data/${PACKAGE_NAME}/cache
+export GOCACHE=/tmp/go-cache
 export GOTOOLCHAIN=local
 export PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH
 EOF
 
 cat > "${BOSH_INSTALL_TARGET}/bosh/runtime.env" <<EOF
-export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
-export GOCACHE=/var/vcap/data/${PACKAGE_NAME}/cache
+export GOROOT=/usr/local/go
+export GOCACHE=/tmp/go-cache
 export GOPATH="\$PWD"
 export PATH="\$GOROOT/bin:\$GOPATH/bin:\$PATH"
 EOF
