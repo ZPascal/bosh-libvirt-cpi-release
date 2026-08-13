@@ -1,6 +1,7 @@
 package stemcell
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 
@@ -107,6 +108,23 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage).CombinedOutput()
 		if err != nil {
 			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2: %s", string(out))
+		}
+	} else if format == "raw" {
+		// The bosh-warden-boshlite image is gzip-compressed; decompress it to a
+		// plain raw filesystem image for libvirt-lxc.
+		tmpRaw := dstImage + ".tmp"
+		out, err := exec.Command("bash", "-c", "gunzip -c "+imagePath+" > "+tmpRaw).CombinedOutput()
+		if err != nil {
+			_ = os.Remove(tmpRaw)
+			// Not gzip — copy as-is (already raw).
+			if copyErr := f.fs.CopyFile(imagePath, dstImage); copyErr != nil {
+				return bosherr.WrapErrorf(copyErr, "Uploading stemcell image (gunzip failed: %s)", string(out))
+			}
+		} else {
+			if err := os.Rename(tmpRaw, dstImage); err != nil {
+				_ = os.Remove(tmpRaw)
+				return bosherr.WrapError(err, "Moving decompressed stemcell image")
+			}
 		}
 	} else {
 		err = f.fs.CopyFile(imagePath, dstImage)
