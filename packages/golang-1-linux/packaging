@@ -3,13 +3,24 @@
 # instead of the bosh-packaged golang-1-linux blob.
 set -e -x
 
-# GitHub Actions ubuntu runners have Go pre-installed at /usr/local/go.
-cp -R /usr/local/go/* "${BOSH_INSTALL_TARGET}/"
-mkdir -p "${BOSH_INSTALL_TARGET}/bosh"
-
 PACKAGE_NAME="$(basename ${BOSH_INSTALL_TARGET})"
+
+# Find Go installation — GitHub Actions runners have it under /usr/local/go
+GO_ROOT=/usr/local/go
+if [ ! -d "${GO_ROOT}" ]; then
+  GO_ROOT=$(dirname "$(which go)")/../
+fi
+
+cp -R ${GO_ROOT}/. ${BOSH_INSTALL_TARGET}/
+
+mkdir -p ${BOSH_INSTALL_TARGET}/bosh
+
 cat > "${BOSH_INSTALL_TARGET}/bosh/compile.env" <<EOF
-export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
+if [ -z "\${BOSH_PACKAGES_DIR:-}" ]; then
+  export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
+else
+  export GOROOT=\$BOSH_PACKAGES_DIR/${PACKAGE_NAME}
+fi
 export GOPATH=\$PWD
 export GOCACHE=/var/vcap/data/${PACKAGE_NAME}/cache
 export GOTOOLCHAIN=local
