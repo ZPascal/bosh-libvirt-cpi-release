@@ -10,10 +10,10 @@
 - type: remove
   path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
 - type: remove
-  path: /cloud_provider/properties/libvirt_cpi/host?
+  path: /cloud_provider/properties/host?
 - type: remove
-  path: /cloud_provider/properties/libvirt_cpi/username?
+  path: /cloud_provider/properties/username?
 - type: remove
-  path: /cloud_provider/properties/libvirt_cpi/private_key?
+  path: /cloud_provider/properties/private_key?
 - type: remove
-  path: /cloud_provider/properties/libvirt_cpi/host_key?
+  path: /cloud_provider/properties/host_key?

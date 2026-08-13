@@ -114,17 +114,12 @@ cloud_provider:
     name: libvirt_cpi
     release: bosh-libvirt-cpi
   properties:
-    libvirt_cpi:
-      backend_uri: qemu:///system
-      host: ((libvirt_host))
-      username: ((libvirt_username))
-      private_key: ((libvirt_private_key))
-      host_key: ((libvirt_host_key))
-      store_dir: ~/.bosh_libvirt_cpi
-      agent:
-        mbus: https://mbus:mbus-password@0.0.0.0:6868
-        ntp: [0.pool.ntp.org, 1.pool.ntp.org]
-        blobstore:
-          provider: local
-          options:
-            blobstore_path: /var/vcap/micro_bosh/data/cache
+    backend_uri: qemu:///system
+    host: ((libvirt_host))
+    username: ((libvirt_username))
+    private_key: ((libvirt_private_key))
+    host_key: ((libvirt_host_key))
+    store_dir: ~/.bosh_libvirt_cpi
+    agent:
+      mbus: https://mbus:mbus-password@0.0.0.0:6868
+    ntp: [0.pool.ntp.org, 1.pool.ntp.org]
