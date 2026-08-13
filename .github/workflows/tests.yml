@@ -141,6 +141,7 @@ jobs:
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-network.yml \
+          -o manifests/ops/local-store-dir.yml \
           -v director_name=bosh-qemu-ci \
           -v internal_ip="${INTERNAL_IP}" \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -167,6 +168,7 @@ jobs:
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-network.yml \
+          -o manifests/ops/local-store-dir.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
@@ -236,6 +238,7 @@ jobs:
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-network.yml \
+          -o manifests/ops/local-store-dir.yml \
           -v director_name=bosh-lxc-ci \
           -v internal_ip="${INTERNAL_IP}" \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -262,6 +265,7 @@ jobs:
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-network.yml \
+          -o manifests/ops/local-store-dir.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \
