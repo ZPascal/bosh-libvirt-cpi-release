@@ -40,6 +40,10 @@ func (f *FakeFS) CopyFile(srcPath, dstPath string) error {
 	return f.CopyFileErr
 }
 
+func (f *FakeFS) Chmod(path string, perm os.FileMode) error {
+	return nil
+}
+
 func (f *FakeFS) Cleanup() {
 	for _, d := range f.tempDirs {
 		_ = os.RemoveAll(d)

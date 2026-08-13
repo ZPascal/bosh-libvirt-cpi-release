@@ -94,7 +94,7 @@ func (f Factory) newStemcell(cid apiv1.StemcellCID) StemcellImpl {
 }
 
 func (f Factory) upload(imagePath, stemcellPath string) error {
-	err := f.fs.MkdirAll(stemcellPath, 0750)
+	err := f.fs.MkdirAll(stemcellPath, 0755)
 	if err != nil {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
@@ -104,6 +104,11 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	err = f.fs.CopyFile(imagePath, dstImage)
 	if err != nil {
 		return bosherr.WrapErrorf(err, "Uploading stemcell image")
+	}
+
+	err = f.fs.Chmod(dstImage, 0644)
+	if err != nil {
+		return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
 	}
 
 	return nil
