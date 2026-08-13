@@ -4,18 +4,9 @@
 - type: replace
   path: /networks/name=default/type
   value: dynamic
-- type: remove
-  path: /networks/name=default/subnets/0/range?
-- type: remove
-  path: /networks/name=default/subnets/0/gateway?
-- type: remove
-  path: /networks/name=default/subnets/0/dns?
-- type: remove
-  path: /networks/name=default/subnets/0/static?
 - type: replace
-  path: /networks/name=default/subnets/0
+  path: /networks/name=default/subnets
   value:
-    cloud_properties: {}
-- type: replace
+  - cloud_properties: {}
+- type: remove
   path: /instance_groups/name=bosh/networks/0/static_ips?
-  value: ~
