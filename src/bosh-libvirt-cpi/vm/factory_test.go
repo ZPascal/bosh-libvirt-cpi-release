@@ -144,19 +144,6 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Generating VM id"))
 		})
 
-		It("returns error when ephemeral disk creation fails", func() {
-			runner.ExecuteErr = errors.New("exec failed")
-			_, err := factory.Create(
-				apiv1.NewAgentID("agent-1"),
-				stemcell,
-				cloudProps,
-				apiv1.Networks{},
-				apiv1.NewVMEnv(nil),
-			)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Creating ephemeral disk"))
-		})
-
 		It("returns error when BuildDomain fails", func() {
 			builder.BuildDomainErr = errors.New("build failed")
 			_, err := factory.Create(

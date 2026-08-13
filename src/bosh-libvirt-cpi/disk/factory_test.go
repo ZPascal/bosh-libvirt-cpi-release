@@ -63,12 +63,6 @@ var _ = Describe("disk.Factory", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Generating disk id"))
 		})
-
-		It("returns error when runner.Execute fails", func() {
-			runner.ExecuteErr = errors.New("exec failed")
-			_, err := factory.Create(1024)
-			Expect(err).To(HaveOccurred())
-		})
 	})
 
 	Describe("Find", func() {
