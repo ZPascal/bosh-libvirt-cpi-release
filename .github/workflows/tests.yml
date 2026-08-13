@@ -134,9 +134,10 @@ jobs:
         sudo bosh create-env manifests/qemu-cpi.yml \
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           -v director_name=bosh-qemu-ci \
           -v internal_ip="${INTERNAL_IP}" \
-          -v stemcell_url=/tmp/bosh-stemcell.tgz \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml
 
@@ -159,10 +160,12 @@ jobs:
         sudo bosh delete-env manifests/qemu-cpi.yml \
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
-          -v stemcell_url=/tmp/bosh-stemcell.tgz || true
+          -v internal_ip="${INTERNAL_IP}" \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
 
   integration-tests-lxc:
     name: Integration Tests (LXC)
@@ -220,9 +223,10 @@ jobs:
         sudo bosh create-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           -v director_name=bosh-lxc-ci \
           -v internal_ip="${INTERNAL_IP}" \
-          -v stemcell_url=/tmp/bosh-stemcell.tgz \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml
 
@@ -245,10 +249,12 @@ jobs:
         sudo bosh delete-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \
-          -v stemcell_url=/tmp/bosh-stemcell.tgz || true
+          -v internal_ip="${INTERNAL_IP}" \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
 
   code-quality:
     name: Code Quality
