@@ -99,11 +99,19 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
 
-	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
+	format := f.domBuilder.DiskImageFormat()
+	dstImage := filepath.Join(stemcellPath, "image."+format)
 
-	err = f.fs.CopyFile(imagePath, dstImage)
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Uploading stemcell image")
+	if format == "qcow2" {
+		_, _, err = f.runner.Execute("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage)
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+		}
+	} else {
+		err = f.fs.CopyFile(imagePath, dstImage)
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Uploading stemcell image")
+		}
 	}
 
 	err = f.fs.Chmod(dstImage, 0644)

@@ -69,10 +69,10 @@ var _ = Describe("stemcell.Factory", func() {
 		})
 
 		It("returns error when Upload fails", func() {
-			fakeFS.CopyFileErr = errors.New("upload failed")
+			runner.ExecuteErr = errors.New("upload failed")
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Uploading stemcell image"))
+			Expect(err.Error()).To(ContainSubstring("Converting stemcell image to qcow2"))
 		})
 
 		It("returns error when BuildStemcellDomain fails", func() {
