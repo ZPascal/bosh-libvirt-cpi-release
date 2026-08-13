@@ -38,6 +38,8 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <source network='%s'/>
       <model type='virtio'/>
     </interface>
+    <serial type='pty'><target port='0'/></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
   </devices>
 </domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
 	return xml, nil
@@ -56,6 +58,8 @@ func (b QEMUDomainBuilder) BuildStemcellDomain(id string, imagePath string) (str
       <source file='%s'/>
       <target dev='vda' bus='virtio'/>
     </disk>
+    <serial type='pty'><target port='0'/></serial>
+    <console type='pty'><target type='serial' port='0'/></console>
   </devices>
 </domain>`, xmlEscape(id), xmlEscape(imagePath))
 	return xml, nil

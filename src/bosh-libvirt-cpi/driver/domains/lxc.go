@@ -38,6 +38,7 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     <interface type='network'>
       <source network='%s'/>
     </interface>
+    <console type='pty'/>
   </devices>
 </domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
 	return xml, nil
