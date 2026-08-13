@@ -104,12 +104,13 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	format := f.domBuilder.DiskImageFormat()
 	dstImage := filepath.Join(stemcellPath, "image."+format)
 
-	if format == "qcow2" {
+	switch format {
+	case "qcow2":
 		out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage).CombinedOutput()
 		if err != nil {
 			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2: %s", string(out))
 		}
-	} else if format == "raw" {
+	case "raw":
 		// The bosh-warden-boshlite image is gzip-compressed; decompress it to a
 		// plain raw filesystem image for libvirt-lxc.
 		tmpRaw := dstImage + ".tmp"
@@ -126,9 +127,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 				return bosherr.WrapError(err, "Moving decompressed stemcell image")
 			}
 		}
-	} else {
-		err = f.fs.CopyFile(imagePath, dstImage)
-		if err != nil {
+	default:
+		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
 			return bosherr.WrapErrorf(err, "Uploading stemcell image")
 		}
 	}
