@@ -137,7 +137,8 @@ jobs:
     - name: Bootstrap BOSH Director via QEMU (bosh-lite)
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
-        sudo chmod -R 777 /tmp/bosh_libvirt_cpi
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
         INTERNAL_IP=$(hostname -I | awk '{print $1}')
         sudo bosh create-env manifests/qemu-cpi.yml \
           -o manifests/ops/qemu-local.yml \
@@ -236,7 +237,8 @@ jobs:
     - name: Bootstrap BOSH Director via LXC (bosh-lite)
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
-        sudo chmod -R 777 /tmp/bosh_libvirt_cpi
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
         INTERNAL_IP=$(hostname -I | awk '{print $1}')
         sudo bosh create-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \

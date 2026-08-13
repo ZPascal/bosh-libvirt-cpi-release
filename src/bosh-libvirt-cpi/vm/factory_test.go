@@ -3,6 +3,8 @@ package vm_test
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -45,9 +47,14 @@ var _ = Describe("vm.Factory", func() {
 		logger      boshlog.Logger
 		stemcell    *stemcellfakes.FakeStemcell
 		cloudProps  apiv1.VMCloudProps
+		tmpDir      string
 	)
 
 	BeforeEach(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "vm-factory-test")
+		Expect(err).ToNot(HaveOccurred())
+
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		vmUUIDGen = &stubVMUUIDGen{result: "uuid-vm-1"}
 		diskUUIDGen = &stubDiskUUIDGen{result: "disk-uuid-1"}
@@ -64,7 +71,7 @@ var _ = Describe("vm.Factory", func() {
 			DiskImageFormatResult: "qcow2",
 		}
 
-		diskFactory = bdisk.NewFactory("/store/disks", diskUUIDGen, drv, runner, logger)
+		diskFactory = bdisk.NewFactory(filepath.Join(tmpDir, "disks"), diskUUIDGen, drv, runner, logger)
 
 		stemcell = stemcellfakes.NewFakeStemcell("sc-1")
 		stemcell.ImagePathResult = "/stemcells/sc-1/image.qcow2"
@@ -73,7 +80,7 @@ var _ = Describe("vm.Factory", func() {
 		cloudProps = apiv1.CloudPropsImpl{RawMessage: json.RawMessage("{}")}
 
 		factory = vm.NewFactory(
-			vm.FactoryOpts{DirPath: "/vms"},
+			vm.FactoryOpts{DirPath: filepath.Join(tmpDir, "vms")},
 			vmUUIDGen,
 			drv,
 			runner,
@@ -83,6 +90,10 @@ var _ = Describe("vm.Factory", func() {
 			apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
 			logger,
 		)
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("Create", func() {

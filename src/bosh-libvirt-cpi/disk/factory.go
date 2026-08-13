@@ -1,6 +1,7 @@
 package disk
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -50,8 +51,7 @@ func (f Factory) Create(size int) (Disk, error) {
 
 	disk := f.newDisk(apiv1.NewDiskCID(id))
 
-	_, _, err = f.runner.Execute("mkdir", "-p", disk.Path())
-	if err != nil {
+	if err := os.MkdirAll(disk.Path(), 0755); err != nil {
 		return nil, bosherr.WrapError(err, "Creating disk parent")
 	}
 
