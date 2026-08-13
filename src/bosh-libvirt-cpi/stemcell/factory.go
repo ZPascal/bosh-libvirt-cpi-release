@@ -106,7 +106,7 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		return bosherr.WrapErrorf(err, "Unpacking stemcell '%s' to '%s'", imagePath, tmpDir)
 	}
 
-	_, _, err = f.runner.Execute("mkdir", "-p", stemcellPath)
+	err = f.fs.MkdirAll(stemcellPath, 0750)
 	if err != nil {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}

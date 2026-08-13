@@ -31,6 +31,10 @@ func (f *FakeFS) TempDir(prefix string) (string, error) {
 	return dir, nil
 }
 
+func (f *FakeFS) MkdirAll(path string, perm os.FileMode) error {
+	return nil
+}
+
 func (f *FakeFS) Cleanup() {
 	for _, d := range f.tempDirs {
 		_ = os.RemoveAll(d)
