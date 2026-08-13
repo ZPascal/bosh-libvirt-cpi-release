@@ -117,7 +117,7 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	srcImage := filepath.Join(tmpDir, "image")
 	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
 
-	err = f.runner.Upload(srcImage, dstImage)
+	err = f.fs.CopyFile(srcImage, dstImage)
 	if err != nil {
 		return bosherr.WrapErrorf(err, "Uploading stemcell image")
 	}

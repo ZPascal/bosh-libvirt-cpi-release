@@ -9,8 +9,9 @@ import (
 // FakeFS wraps the real OS filesystem and overrides TempDir.
 type FakeFS struct {
 	boshsys.FileSystem
-	TempDirErr error
-	tempDirs   []string
+	TempDirErr  error
+	CopyFileErr error
+	tempDirs    []string
 }
 
 var _ boshsys.FileSystem = &FakeFS{}
@@ -33,6 +34,10 @@ func (f *FakeFS) TempDir(prefix string) (string, error) {
 
 func (f *FakeFS) MkdirAll(path string, perm os.FileMode) error {
 	return nil
+}
+
+func (f *FakeFS) CopyFile(srcPath, dstPath string) error {
+	return f.CopyFileErr
 }
 
 func (f *FakeFS) Cleanup() {

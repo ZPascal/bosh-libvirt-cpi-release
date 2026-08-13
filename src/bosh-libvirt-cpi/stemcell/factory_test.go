@@ -82,8 +82,8 @@ var _ = Describe("stemcell.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Unpacking stemcell"))
 		})
 
-		It("returns error when runner Upload fails", func() {
-			runner.UploadErr = errors.New("upload failed")
+		It("returns error when Upload fails", func() {
+			fakeFS.CopyFileErr = errors.New("upload failed")
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Uploading stemcell image"))
