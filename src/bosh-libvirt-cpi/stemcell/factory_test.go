@@ -35,7 +35,7 @@ var _ = Describe("stemcell.Factory", func() {
 		runner = &driverfakes.FakeRunner{}
 		drv = &driverfakes.FakeDriver{}
 		builder = &driverfakes.FakeDomainBuilder{
-			DiskImageFormatResult:  "qcow2",
+			DiskImageFormatResult:  "raw",
 			BuildStemcellDomainXML: "<domain/>",
 		}
 		factory = stemcell.NewFactory(
@@ -69,10 +69,10 @@ var _ = Describe("stemcell.Factory", func() {
 		})
 
 		It("returns error when Upload fails", func() {
-			runner.ExecuteErr = errors.New("upload failed")
+			fakeFS.CopyFileErr = errors.New("upload failed")
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Converting stemcell image to qcow2"))
+			Expect(err.Error()).To(ContainSubstring("Uploading stemcell image"))
 		})
 
 		It("returns error when BuildStemcellDomain fails", func() {

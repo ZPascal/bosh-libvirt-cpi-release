@@ -1,6 +1,7 @@
 package stemcell
 
 import (
+	"os/exec"
 	"path/filepath"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
@@ -103,9 +104,9 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	dstImage := filepath.Join(stemcellPath, "image."+format)
 
 	if format == "qcow2" {
-		_, _, err = f.runner.Execute("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage)
+		out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage).CombinedOutput()
 		if err != nil {
-			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2: %s", string(out))
 		}
 	} else {
 		err = f.fs.CopyFile(imagePath, dstImage)

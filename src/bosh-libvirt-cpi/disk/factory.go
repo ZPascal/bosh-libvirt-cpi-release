@@ -2,6 +2,7 @@ package disk
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 
@@ -55,17 +56,26 @@ func (f Factory) Create(size int) (Disk, error) {
 		return nil, bosherr.WrapError(err, "Creating disk parent")
 	}
 
-	// Create a sparse raw disk image of `size` MB at disk.ImagePath().
-	_, _, err = f.runner.Execute(
-		"dd",
-		"if=/dev/zero",
-		"of="+disk.ImagePath(),
-		"bs=1M",
-		"count=0",
-		"seek="+strconv.Itoa(size),
-	)
-	if err != nil {
-		return nil, bosherr.WrapError(err, "Creating disk image")
+	// Try qemu-img first (produces qcow2 for QEMU/KVM); fall back to dd (raw).
+	sizeStr := strconv.Itoa(size) + "M"
+	out, qemuErr := exec.Command("qemu-img", "create", "-f", "qcow2", disk.ImagePath(), sizeStr).CombinedOutput()
+	if qemuErr != nil {
+		// Fall back to sparse raw image via dd.
+		_, _, err = f.runner.Execute(
+			"dd",
+			"if=/dev/zero",
+			"of="+disk.ImagePath(),
+			"bs=1M",
+			"count=0",
+			"seek="+strconv.Itoa(size),
+		)
+		if err != nil {
+			return nil, bosherr.WrapErrorf(err, "Creating disk image (qemu-img failed: %s)", string(out))
+		}
+	} else {
+		if err := os.Chmod(disk.ImagePath(), 0644); err != nil {
+			return nil, bosherr.WrapError(err, "Setting disk image permissions")
+		}
 	}
 
 	return disk, nil
