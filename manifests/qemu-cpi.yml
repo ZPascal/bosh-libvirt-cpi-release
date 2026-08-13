@@ -113,6 +113,7 @@ cloud_provider:
   template:
     name: libvirt_cpi
     release: bosh-libvirt-cpi
+  mbus: https://mbus:mbus-password@((internal_ip)):6868
   properties:
     backend_uri: qemu:///system
     host: ((libvirt_host))
