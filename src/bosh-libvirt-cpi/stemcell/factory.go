@@ -1,6 +1,8 @@
 package stemcell
 
 import (
+	"compress/gzip"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +32,9 @@ type Factory struct {
 	uuidGen    boshuuid.Generator
 	compressor boshcmd.Compressor
 
+	// ConvertToQCOW2 converts a raw image to qcow2; injectable for testing.
+	ConvertToQCOW2 func(src, dst string) error
+
 	logTag string
 	logger boshlog.Logger
 }
@@ -54,6 +59,14 @@ func NewFactory(
 		fs:         fs,
 		uuidGen:    uuidGen,
 		compressor: compressor,
+
+		ConvertToQCOW2: func(src, dst string) error {
+			out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", src, dst).CombinedOutput()
+			if err != nil {
+				return bosherr.WrapErrorf(err, "qemu-img: %s", string(out))
+			}
+			return nil
+		},
 
 		logTag: "stemcell.Factory",
 		logger: logger,
@@ -106,26 +119,14 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 
 	switch format {
 	case "qcow2":
-		out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", imagePath, dstImage).CombinedOutput()
-		if err != nil {
-			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2: %s", string(out))
+		if err := f.ConvertToQCOW2(imagePath, dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
 		}
 	case "raw":
-		// The bosh-warden-boshlite image is gzip-compressed; decompress it to a
+		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
 		// plain raw filesystem image for libvirt-lxc.
-		tmpRaw := dstImage + ".tmp"
-		out, err := exec.Command("bash", "-c", "gunzip -c "+imagePath+" > "+tmpRaw).CombinedOutput()
-		if err != nil {
-			_ = os.Remove(tmpRaw)
-			// Not gzip — copy as-is (already raw).
-			if copyErr := f.fs.CopyFile(imagePath, dstImage); copyErr != nil {
-				return bosherr.WrapErrorf(copyErr, "Uploading stemcell image (gunzip failed: %s)", string(out))
-			}
-		} else {
-			if err := os.Rename(tmpRaw, dstImage); err != nil {
-				_ = os.Remove(tmpRaw)
-				return bosherr.WrapError(err, "Moving decompressed stemcell image")
-			}
+		if err := decompressOrCopy(imagePath, dstImage); err != nil {
+			return bosherr.WrapError(err, "Preparing raw stemcell image")
 		}
 	default:
 		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
@@ -146,4 +147,37 @@ func (f Factory) cleanUpPartialImport(stemcell StemcellImpl) {
 	if err != nil {
 		f.logger.Error(f.logTag, "Failed to clean up partially imported stemcell: %s", err)
 	}
+}
+
+// decompressOrCopy writes src to dst, decompressing gzip if detected.
+func decompressOrCopy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close() //nolint:errcheck
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+		if err != nil {
+			_ = os.Remove(dst)
+		}
+	}()
+
+	gr, gzErr := gzip.NewReader(in)
+	if gzErr != nil {
+		// Not gzip — rewind and copy as-is.
+		if _, err = in.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		_, err = io.Copy(out, in)
+		return err
+	}
+	defer gr.Close() //nolint:errcheck
+	_, err = io.Copy(out, gr)
+	return err
 }
