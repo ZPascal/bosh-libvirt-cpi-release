@@ -1,0 +1,24 @@
+#!/bin/bash
+# CI override: use the system Go already installed on the runner
+# instead of the bosh-packaged golang-1-linux blob.
+set -e -x
+
+# GitHub Actions ubuntu runners have Go pre-installed at /usr/local/go.
+cp -R /usr/local/go/* "${BOSH_INSTALL_TARGET}/"
+mkdir -p "${BOSH_INSTALL_TARGET}/bosh"
+
+PACKAGE_NAME="$(basename ${BOSH_INSTALL_TARGET})"
+cat > "${BOSH_INSTALL_TARGET}/bosh/compile.env" <<EOF
+export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
+export GOPATH=\$PWD
+export GOCACHE=/var/vcap/data/${PACKAGE_NAME}/cache
+export GOTOOLCHAIN=local
+export PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH
+EOF
+
+cat > "${BOSH_INSTALL_TARGET}/bosh/runtime.env" <<EOF
+export GOROOT=\$(readlink -nf /var/vcap/packages/${PACKAGE_NAME})
+export GOCACHE=/var/vcap/data/${PACKAGE_NAME}/cache
+export GOPATH="\$PWD"
+export PATH="\$GOROOT/bin:\$GOPATH/bin:\$PATH"
+EOF
