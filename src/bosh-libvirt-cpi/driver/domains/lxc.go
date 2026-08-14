@@ -17,7 +17,7 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
   <vcpu>%d</vcpu>
-  <os><type>exe</type><init>/sbin/init</init></os>
+  <os><type>exe</type><init>/usr/sbin/runsvdir-start</init></os>
   <devices>
     <filesystem type='mount'>
       <source dir='%s'/>
@@ -38,7 +38,7 @@ func (b LXCDomainBuilder) BuildStemcellDomain(id string, imagePath string) (stri
   <name>%s</name>
   <memory unit='KiB'>524288</memory>
   <vcpu>1</vcpu>
-  <os><type>exe</type><init>/sbin/init</init></os>
+  <os><type>exe</type><init>/usr/sbin/runsvdir-start</init></os>
   <devices>
     <filesystem type='mount'>
       <source dir='%s'/>
