@@ -127,8 +127,19 @@ jobs:
         sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev
         sudo systemctl start libvirtd
         sudo usermod -aG libvirt $USER
+        # Ensure default NAT network is active and virbr0 bridge is up
         sudo virsh net-start default || true
         sudo virsh net-autostart default || true
+        # Wait for bridge to come up
+        for i in $(seq 1 10); do
+          if ip link show virbr0 &>/dev/null; then
+            echo "virbr0 bridge is up"
+            break
+          fi
+          sleep 2
+        done
+        ip addr show virbr0 || echo "WARNING: virbr0 not found"
+        sudo iptables -t nat -L POSTROUTING -n || true
 
     - name: Install BOSH CLI
       run: |
@@ -178,7 +189,18 @@ jobs:
           -v internal_ip=192.168.122.10 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml
+          --vars-store /tmp/bosh-vars.yml &
+        BOSH_PID=$!
+        # Wait for VM to start and show its IP in DHCP leases
+        for i in $(seq 1 30); do
+          sleep 10
+          echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true
+          echo "=== Running domains ===" && sudo virsh list 2>/dev/null || true
+          echo "=== ARP ===" && arp -n 192.168.122.10 2>/dev/null || true
+          VM_IP=$(sudo virsh net-dhcp-leases default 2>/dev/null | grep '52:54:00:ab:cd:10' | awk '{print $5}' | cut -d/ -f1)
+          [ -n "$VM_IP" ] && echo "VM got IP: $VM_IP" && break
+        done
+        wait $BOSH_PID
 
     - name: Deploy smoke test deployment (QEMU)
       run: |
