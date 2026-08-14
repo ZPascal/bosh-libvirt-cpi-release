@@ -10,7 +10,7 @@ var _ driver.DomainBuilder = LXCDomainBuilder{}
 
 type LXCDomainBuilder struct{}
 
-func (b LXCDomainBuilder) DiskImageFormat() string { return "raw" }
+func (b LXCDomainBuilder) DiskImageFormat() string { return "dir" }
 
 func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
 	network := props.Network
@@ -23,16 +23,12 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <vcpu>%d</vcpu>
   <os><type>exe</type><init>/sbin/init</init></os>
   <devices>
-    <filesystem type='ram'>
-      <source usage='1048576'/>
+    <filesystem type='mount'>
+      <source dir='%s'/>
       <target dir='/'/>
     </filesystem>
-    <filesystem type='file'>
-      <source file='%s'/>
-      <target dir='/mnt/root'/>
-    </filesystem>
-    <filesystem type='file'>
-      <source file='%s'/>
+    <filesystem type='mount'>
+      <source dir='%s'/>
       <target dir='/mnt/ephemeral'/>
     </filesystem>
     <interface type='network'>
@@ -51,9 +47,9 @@ func (b LXCDomainBuilder) BuildStemcellDomain(id string, imagePath string) (stri
   <vcpu>1</vcpu>
   <os><type>exe</type><init>/sbin/init</init></os>
   <devices>
-    <filesystem type='file'>
-      <source file='%s'/>
-      <target dir='/mnt/root'/>
+    <filesystem type='mount'>
+      <source dir='%s'/>
+      <target dir='/'/>
     </filesystem>
   </devices>
 </domain>`, xmlEscape(id), xmlEscape(imagePath))

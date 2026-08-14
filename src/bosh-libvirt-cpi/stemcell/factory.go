@@ -128,15 +128,26 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		if err := decompressOrCopy(imagePath, dstImage); err != nil {
 			return bosherr.WrapError(err, "Preparing raw stemcell image")
 		}
+	case "dir":
+		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
+		if err := os.MkdirAll(dstImage, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating stemcell rootfs directory")
+		}
+		out, err := exec.Command("tar", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+		}
 	default:
 		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
 			return bosherr.WrapErrorf(err, "Uploading stemcell image")
 		}
 	}
 
-	err = f.fs.Chmod(dstImage, 0644)
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+	// chmod only applies to file-based images, not directory-based ones.
+	if format != "dir" {
+		if err := f.fs.Chmod(dstImage, 0644); err != nil {
+			return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+		}
 	}
 
 	return nil

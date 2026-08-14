@@ -18,23 +18,23 @@ var _ = Describe("LXCDomainBuilder", func() {
 		builder = domains.LXCDomainBuilder{}
 	})
 
-	It("returns raw as disk format", func() {
-		Expect(builder.DiskImageFormat()).To(Equal("raw"))
+	It("returns dir as disk format", func() {
+		Expect(builder.DiskImageFormat()).To(Equal("dir"))
 	})
 
 	Describe("BuildDomain", func() {
 		It("contains domain name and disk paths", func() {
 			xml, err := builder.BuildDomain("vm-lxc-1", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
-				driver.DomainDiskPaths{RootDisk: "/root.raw", EphemeralDisk: "/eph.raw"})
+				driver.DomainDiskPaths{RootDisk: "/root.dir", EphemeralDisk: "/eph.dir"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("vm-lxc-1"))
-			Expect(xml).To(ContainSubstring("/root.raw"))
-			Expect(xml).To(ContainSubstring("/eph.raw"))
+			Expect(xml).To(ContainSubstring("/root.dir"))
+			Expect(xml).To(ContainSubstring("/eph.dir"))
 		})
 
 		It("includes a network interface using the default network when Network is empty", func() {
 			xml, err := builder.BuildDomain("vm-lxc-net", driver.VMDomainProps{CPUs: 1, MemoryMB: 256},
-				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+				driver.DomainDiskPaths{RootDisk: "/r.dir", EphemeralDisk: "/e.dir"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("<interface"))
 			Expect(xml).To(ContainSubstring("network='default'"))
@@ -42,21 +42,21 @@ var _ = Describe("LXCDomainBuilder", func() {
 
 		It("uses the configured network name when Network is set", func() {
 			xml, err := builder.BuildDomain("vm-lxc-net2", driver.VMDomainProps{CPUs: 1, MemoryMB: 256, Network: "bosh"},
-				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+				driver.DomainDiskPaths{RootDisk: "/r.dir", EphemeralDisk: "/e.dir"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("network='bosh'"))
 		})
 
 		It("uses lxc domain type", func() {
 			xml, err := builder.BuildDomain("vm-lxc-2", driver.VMDomainProps{CPUs: 1, MemoryMB: 256},
-				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+				driver.DomainDiskPaths{RootDisk: "/r.dir", EphemeralDisk: "/e.dir"})
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("type='lxc'"))
 		})
 
 		It("encodes memory as KiB", func() {
 			xml, err := builder.BuildDomain("vm-lxc-3", driver.VMDomainProps{CPUs: 2, MemoryMB: 1024},
-				driver.DomainDiskPaths{RootDisk: "/r.raw", EphemeralDisk: "/e.raw"})
+				driver.DomainDiskPaths{RootDisk: "/r.dir", EphemeralDisk: "/e.dir"})
 			Expect(err).To(BeNil())
 			// 1024 MB * 1024 = 1048576 KiB
 			Expect(xml).To(ContainSubstring("1048576"))
@@ -64,11 +64,11 @@ var _ = Describe("LXCDomainBuilder", func() {
 
 		It("escapes XML special characters in id and disk paths", func() {
 			result, err := builder.BuildDomain("vm&<lxc>", driver.VMDomainProps{CPUs: 1, MemoryMB: 256},
-				driver.DomainDiskPaths{RootDisk: "/path&root.raw", EphemeralDisk: "/path&eph.raw"})
+				driver.DomainDiskPaths{RootDisk: "/path&root.dir", EphemeralDisk: "/path&eph.dir"})
 			Expect(err).To(BeNil())
 			Expect(result).To(ContainSubstring("vm&amp;&lt;lxc&gt;"))
-			Expect(result).To(ContainSubstring("/path&amp;root.raw"))
-			Expect(result).To(ContainSubstring("/path&amp;eph.raw"))
+			Expect(result).To(ContainSubstring("/path&amp;root.dir"))
+			Expect(result).To(ContainSubstring("/path&amp;eph.dir"))
 			var v interface{}
 			Expect(xml.NewDecoder(strings.NewReader(result)).Decode(&v)).To(Succeed())
 		})
@@ -76,14 +76,14 @@ var _ = Describe("LXCDomainBuilder", func() {
 
 	Describe("BuildStemcellDomain", func() {
 		It("contains stemcell name and image path", func() {
-			xml, err := builder.BuildStemcellDomain("sc-lxc-1", "/image.raw")
+			xml, err := builder.BuildStemcellDomain("sc-lxc-1", "/image.dir")
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("sc-lxc-1"))
-			Expect(xml).To(ContainSubstring("/image.raw"))
+			Expect(xml).To(ContainSubstring("/image.dir"))
 		})
 
 		It("uses lxc domain type", func() {
-			xml, err := builder.BuildStemcellDomain("sc-lxc-2", "/img.raw")
+			xml, err := builder.BuildStemcellDomain("sc-lxc-2", "/img.dir")
 			Expect(err).To(BeNil())
 			Expect(xml).To(ContainSubstring("type='lxc'"))
 		})
