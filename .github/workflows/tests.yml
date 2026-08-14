@@ -157,6 +157,13 @@ jobs:
         curl -fsSL https://storage.googleapis.com/bosh-core-stemcells/1.1330/bosh-stemcell-1.1330-openstack-kvm-ubuntu-jammy-go_agent.tgz \
           -o /tmp/bosh-stemcell.tgz
 
+    - name: Configure libvirt default network with DHCP reservation
+      run: |
+        # Reserve 192.168.122.10 for the Director VM's MAC address
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:10' ip='192.168.122.10'/>" \
+          --live --config || true
+
     - name: Bootstrap BOSH Director via QEMU (bosh-lite)
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
@@ -166,6 +173,7 @@ jobs:
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
           -v director_name=bosh-qemu-ci \
           -v internal_ip=192.168.122.10 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -187,6 +195,7 @@ jobs:
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
           -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \

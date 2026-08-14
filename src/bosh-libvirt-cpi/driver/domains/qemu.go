@@ -17,6 +17,10 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
 	if network == "" {
 		network = "default"
 	}
+	macElem := ""
+	if props.MAC != "" {
+		macElem = fmt.Sprintf("\n      <mac address='%s'/>", xmlEscape(props.MAC))
+	}
 	xml := fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -34,14 +38,14 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <source file='%s'/>
       <target dev='vdb' bus='virtio'/>
     </disk>
-    <interface type='network'>
+    <interface type='network'>%s
       <source network='%s'/>
       <model type='virtio'/>
     </interface>
     <serial type='pty'><target port='0'/></serial>
     <console type='pty'><target type='serial' port='0'/></console>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), macElem, xmlEscape(network))
 	return xml, nil
 }
 

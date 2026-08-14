@@ -113,6 +113,7 @@ func (f Factory) Create(
 		CPUs:     vmProps.CPUs,
 		MemoryMB: vmProps.Memory,
 		Network:  f.opts.Network,
+		MAC:      vmProps.MAC,
 	}
 
 	xml, err := f.domBuilder.BuildDomain(vmID, domainProps, disks)
