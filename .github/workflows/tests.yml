@@ -127,6 +127,9 @@ jobs:
         sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev
         sudo systemctl start libvirtd
         sudo usermod -aG libvirt $USER
+        # Check KVM availability
+        ls -la /dev/kvm 2>/dev/null && echo "KVM available" || echo "WARNING: KVM not available, using emulation"
+        sudo kvm-ok 2>/dev/null || true
         # Ensure default NAT network is active and virbr0 bridge is up
         sudo virsh net-start default || true
         sudo virsh net-autostart default || true
@@ -139,7 +142,6 @@ jobs:
           sleep 2
         done
         ip addr show virbr0 || echo "WARNING: virbr0 not found"
-        sudo iptables -t nat -L POSTROUTING -n || true
 
     - name: Install BOSH CLI
       run: |
@@ -200,6 +202,12 @@ jobs:
           VM_IP=$(sudo virsh net-dhcp-leases default 2>/dev/null | grep '52:54:00:ab:cd:10' | awk '{print $5}' | cut -d/ -f1)
           [ -n "$VM_IP" ] && echo "VM got IP: $VM_IP" && break
         done
+        wait $BOSH_PID || true
+        # Show VM console log for diagnosis
+        VM_NAME=$(sudo virsh list --name 2>/dev/null | grep '^vm-' | head -1)
+        [ -n "$VM_NAME" ] && sudo virsh domiflist "$VM_NAME" 2>/dev/null || true
+        [ -n "$VM_NAME" ] && sudo cat /tmp/bosh-vm-"$VM_NAME"-console.log 2>/dev/null | tail -80 || true
+        [ -n "$VM_NAME" ] && sudo cat /var/log/libvirt/qemu/"$VM_NAME".log 2>/dev/null | tail -20 || true
         wait $BOSH_PID
 
     - name: Deploy smoke test deployment (QEMU)
