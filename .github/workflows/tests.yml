@@ -198,6 +198,7 @@ jobs:
         sudo bosh create-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
           -v director_name=bosh-lxc-ci \
           -v internal_ip=127.0.0.1 \
@@ -219,6 +220,7 @@ jobs:
         sudo bosh delete-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
+          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
