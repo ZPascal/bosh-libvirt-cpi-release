@@ -113,6 +113,86 @@ jobs:
         files: src/bosh-libvirt-cpi/coverage.out
         flags: integration-qemu
 
+  e2e-qemu:
+    name: E2E bosh-lite (QEMU)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install QEMU + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install BOSH CLI
+      run: |
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Patch golang-1-linux packaging with actual GOROOT
+      run: |
+        GOROOT_PATH=$(go env GOROOT)
+        sed -i "s|GOROOT=/usr/local/go|GOROOT=${GOROOT_PATH}|g" \
+          packages/golang-1-linux/packaging
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download KVM stemcell
+      run: |
+        curl -fsSL https://storage.googleapis.com/bosh-core-stemcells/1.1330/bosh-stemcell-1.1330-openstack-kvm-ubuntu-jammy-go_agent.tgz \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Bootstrap BOSH Director via QEMU (bosh-lite)
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        sudo bosh create-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -v director_name=bosh-qemu-ci \
+          -v internal_ip=192.168.122.10 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml
+
+    - name: Deploy smoke test deployment (QEMU)
+      run: |
+        bosh alias-env qemu-ci \
+          -e "192.168.122.10" \
+          --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+        bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
+          -n --fix
+
+    - name: Clean up Director (QEMU)
+      if: always()
+      run: |
+        sudo bosh delete-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name=bosh-qemu-ci \
+          -v internal_ip=192.168.122.10 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
+
   integration-tests-lxc:
     name: Integration Tests (LXC)
     runs-on: ubuntu-latest

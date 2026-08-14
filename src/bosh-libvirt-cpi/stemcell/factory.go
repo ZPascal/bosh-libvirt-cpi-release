@@ -2,6 +2,7 @@ package stemcell
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -119,8 +120,25 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 
 	switch format {
 	case "qcow2":
-		if err := f.ConvertToQCOW2(imagePath, dstImage); err != nil {
-			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+		// Detect actual format; KVM stemcells ship a qcow2 image already.
+		fmtOut, _ := exec.Command("qemu-img", "info", "--output=json", imagePath).Output()
+		srcFmt := "raw"
+		if len(fmtOut) > 0 {
+			var info struct {
+				Format string `json:"format"`
+			}
+			if json.Unmarshal(fmtOut, &info) == nil && info.Format != "" {
+				srcFmt = info.Format
+			}
+		}
+		if srcFmt == "qcow2" {
+			if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
+				return bosherr.WrapErrorf(err, "Copying qcow2 stemcell image")
+			}
+		} else {
+			if err := f.ConvertToQCOW2(imagePath, dstImage); err != nil {
+				return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+			}
 		}
 	case "raw":
 		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
