@@ -13,10 +13,6 @@ type LXCDomainBuilder struct{}
 func (b LXCDomainBuilder) DiskImageFormat() string { return "dir" }
 
 func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
-	network := props.Network
-	if network == "" {
-		network = "default"
-	}
 	xml := fmt.Sprintf(`<domain type='lxc'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -31,12 +27,9 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
       <source dir='%s'/>
       <target dir='/mnt/ephemeral'/>
     </filesystem>
-    <interface type='network'>
-      <source network='%s'/>
-    </interface>
     <console type='pty'/>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
 	return xml, nil
 }
 

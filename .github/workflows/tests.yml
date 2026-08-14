@@ -136,13 +136,15 @@ jobs:
 
     - name: Bootstrap BOSH Director via QEMU (bosh-lite)
       run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
         sudo bosh create-env manifests/qemu-cpi.yml \
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
-          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
           -v director_name=bosh-qemu-ci \
-          -v internal_ip=127.0.0.1 \
+          -v internal_ip=192.168.122.10 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml
@@ -150,7 +152,7 @@ jobs:
     - name: Configure BOSH alias (QEMU)
       run: |
         bosh alias-env qemu-ci \
-          -e "127.0.0.1" \
+          -e "192.168.122.10" \
           --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
 
     - name: Deploy smoke test deployment (QEMU)
@@ -165,12 +167,11 @@ jobs:
         sudo bosh delete-env manifests/qemu-cpi.yml \
           -o manifests/ops/qemu-local.yml \
           -o manifests/local-release.yml \
-          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
-          -v internal_ip=127.0.0.1 \
+          -v internal_ip=192.168.122.10 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
 
   integration-tests-lxc:
