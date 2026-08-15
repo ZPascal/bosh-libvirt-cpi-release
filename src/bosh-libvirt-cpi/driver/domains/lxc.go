@@ -17,7 +17,12 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
   <vcpu>%d</vcpu>
-  <os><type>exe</type><init>/usr/sbin/runsvdir-start</init></os>
+  <os><type>exe</type><init>/var/vcap/bosh/bin/bosh-agent</init>
+    <initarg value='-C'/>
+    <initarg value='/var/vcap/bosh/agent.json'/>
+    <initarg value='-P'/>
+    <initarg value='warden'/>
+  </os>
   <devices>
     <filesystem type='mount'>
       <source dir='%s'/>
@@ -38,7 +43,12 @@ func (b LXCDomainBuilder) BuildStemcellDomain(id string, imagePath string) (stri
   <name>%s</name>
   <memory unit='KiB'>524288</memory>
   <vcpu>1</vcpu>
-  <os><type>exe</type><init>/usr/sbin/runsvdir-start</init></os>
+  <os><type>exe</type><init>/var/vcap/bosh/bin/bosh-agent</init>
+    <initarg value='-C'/>
+    <initarg value='/var/vcap/bosh/agent.json'/>
+    <initarg value='-P'/>
+    <initarg value='warden'/>
+  </os>
   <devices>
     <filesystem type='mount'>
       <source dir='%s'/>
