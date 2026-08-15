@@ -114,6 +114,7 @@ func (f Factory) Create(
 		MemoryMB: vmProps.Memory,
 		Network:  f.opts.Network,
 		MAC:      vmProps.MAC,
+		Kernel:   vmProps.Kernel,
 	}
 
 	xml, err := f.domBuilder.BuildDomain(vmID, domainProps, disks)

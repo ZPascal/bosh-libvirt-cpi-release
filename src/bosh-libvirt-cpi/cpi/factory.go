@@ -90,7 +90,13 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	case "lxc":
 		domBuilder = domains.LXCDomainBuilder{}
 	default: // "qemu"
-		domBuilder = domains.QEMUDomainBuilder{}
+		// Use QEMUKernelDomainBuilder when the URI carries ?kernel=1 to enable
+		// direct-kernel boot with a virtio-9p rootfs (for CI without a bootable disk).
+		if u.Query().Get("kernel") != "" {
+			domBuilder = domains.QEMUKernelDomainBuilder{}
+		} else {
+			domBuilder = domains.QEMUDomainBuilder{}
+		}
 	}
 
 	var libvirtConn driver.LibvirtConn

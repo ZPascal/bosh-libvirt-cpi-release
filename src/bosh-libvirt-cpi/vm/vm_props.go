@@ -9,6 +9,7 @@ type VMProps struct {
 	CPUs          int
 	EphemeralDisk int    `json:"ephemeral_disk"`
 	MAC           string `json:"mac"`
+	Kernel        string `json:"kernel"`
 }
 
 func NewVMProps(props apiv1.VMCloudProps) (VMProps, error) {
