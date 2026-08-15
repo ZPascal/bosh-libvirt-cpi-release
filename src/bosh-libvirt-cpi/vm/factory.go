@@ -137,8 +137,12 @@ func (f Factory) Create(
 		// networking via DHCP before exec'ing bosh-agent.
 		if vmProps.Kernel != "" {
 			initScript := "#!/bin/sh\n" +
-				"ip link set eth0 up 2>/dev/null || ip link set ens3 up 2>/dev/null || true\n" +
-				"dhclient eth0 2>/dev/null || dhclient ens3 2>/dev/null || true\n" +
+				"# Bring up the first non-loopback network interface and get DHCP lease\n" +
+				"IFACE=$(ip -o link show | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+				"if [ -n \"$IFACE\" ]; then\n" +
+				"  ip link set \"$IFACE\" up\n" +
+				"  udhcpc -i \"$IFACE\" -q 2>/dev/null || dhclient \"$IFACE\" 2>/dev/null || true\n" +
+				"fi\n" +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P warden\n"
 			_ = os.WriteFile(vmRootfs+"/bosh-init", []byte(initScript), 0755)
 		}
