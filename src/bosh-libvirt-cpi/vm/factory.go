@@ -2,6 +2,7 @@ package vm
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
@@ -105,24 +106,48 @@ func (f Factory) Create(
 		return nil, bosherr.WrapError(err, "Initial agent configuration")
 	}
 
-	// For container-based backends (LXC, kernel-boot QEMU) the agent reads its
-	// env from a file inside the stemcell rootfs directory before the CPI can
-	// send it via the mbus. Write it there now so the agent starts correctly.
+	// Default disk paths; overridden below for dir-format (container) backends.
+	disks := driver.DomainDiskPaths{
+		RootDisk:      stemcell.ImagePath(),
+		EphemeralDisk: ephemeralDisk.ImagePath(),
+	}
+
+	// For container-based backends (LXC, kernel-boot QEMU) copy the stemcell
+	// rootfs into the VM's own directory so each VM has a writable private copy,
+	// then inject the agent env and (for QEMU) the init wrapper.
 	if f.domBuilder.DiskImageFormat() == "dir" {
+		vmRootfs := filepath.Join(f.opts.DirPath, vmID, "rootfs")
+		out, copyErr := execCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
+		if copyErr != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", string(out))
+		}
+
 		envBytes, err := initialAgentEnv.AsBytes()
 		if err != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(err, "Marshalling agent env for rootfs injection")
 		}
-		agentEnvPath := stemcell.ImagePath() + "/var/vcap/bosh/warden-cpi-agent-env.json"
-		if err := os.MkdirAll(stemcell.ImagePath()+"/var/vcap/bosh", 0755); err == nil {
-			_ = os.WriteFile(agentEnvPath, envBytes, 0644)
+		boshDir := vmRootfs + "/var/vcap/bosh"
+		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
+			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
 		}
-	}
 
-	disks := driver.DomainDiskPaths{
-		RootDisk:      stemcell.ImagePath(),
-		EphemeralDisk: ephemeralDisk.ImagePath(),
+		// For QEMU direct-kernel-boot: write an init wrapper that configures
+		// networking via DHCP before exec'ing bosh-agent.
+		if vmProps.Kernel != "" {
+			initScript := "#!/bin/sh\n" +
+				"ip link set eth0 up 2>/dev/null || ip link set ens3 up 2>/dev/null || true\n" +
+				"dhclient eth0 2>/dev/null || dhclient ens3 2>/dev/null || true\n" +
+				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P warden\n"
+			_ = os.WriteFile(vmRootfs+"/bosh-init", []byte(initScript), 0755)
+		}
+
+		// Override disk paths to use the per-VM rootfs copy.
+		disks = driver.DomainDiskPaths{
+			RootDisk:      vmRootfs,
+			EphemeralDisk: ephemeralDisk.ImagePath(),
+		}
 	}
 
 	domainProps := driver.VMDomainProps{
@@ -171,6 +196,10 @@ func (f Factory) cleanUpPartialCreate(vm VM) {
 func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
 	store := NewStore(filepath.Join(f.opts.DirPath, cid.AsString()), f.runner)
 	return NewVMImpl(cid, store, f.stemcellAPIVersion, f.driver, f.logger)
+}
+
+func execCommand(name string, args ...string) ([]byte, error) {
+	return exec.Command(name, args...).CombinedOutput()
 }
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {

@@ -32,7 +32,7 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
   <os>
     <type arch='x86_64' machine='pc'>hvm</type>
     <kernel>%s</kernel>
-    <cmdline>root=rootfs rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L console=ttyS0 init=/var/vcap/bosh/bin/bosh-agent -- -C /var/vcap/bosh/agent.json -P warden</cmdline>
+    <cmdline>root=rootfs rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L console=ttyS0 init=/bosh-init</cmdline>
   </os>
   <features><acpi/><apic/></features>
   <devices>
