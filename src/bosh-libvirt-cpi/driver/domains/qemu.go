@@ -40,10 +40,11 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <source dir='%s'/>
       <target dir='rootfs'/>
     </filesystem>
-    <filesystem type='mount' accessmode='passthrough'>
-      <source dir='%s'/>
-      <target dir='ephemeral'/>
-    </filesystem>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='%s'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
     <interface type='network'>%s
       <source network='%s'/>
       <model type='virtio'/>
