@@ -18,10 +18,10 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <memory unit='KiB'>%d</memory>
   <vcpu>%d</vcpu>
   <os><type>exe</type><init>/var/vcap/bosh/bin/bosh-agent</init>
-    <initarg value='-C'/>
-    <initarg value='/var/vcap/bosh/agent.json'/>
-    <initarg value='-P'/>
-    <initarg value='warden'/>
+    <initarg>-C</initarg>
+    <initarg>/var/vcap/bosh/agent.json</initarg>
+    <initarg>-P</initarg>
+    <initarg>warden</initarg>
   </os>
   <devices>
     <filesystem type='mount'>
@@ -44,10 +44,10 @@ func (b LXCDomainBuilder) BuildStemcellDomain(id string, imagePath string) (stri
   <memory unit='KiB'>524288</memory>
   <vcpu>1</vcpu>
   <os><type>exe</type><init>/var/vcap/bosh/bin/bosh-agent</init>
-    <initarg value='-C'/>
-    <initarg value='/var/vcap/bosh/agent.json'/>
-    <initarg value='-P'/>
-    <initarg value='warden'/>
+    <initarg>-C</initarg>
+    <initarg>/var/vcap/bosh/agent.json</initarg>
+    <initarg>-P</initarg>
+    <initarg>warden</initarg>
   </os>
   <devices>
     <filesystem type='mount'>
