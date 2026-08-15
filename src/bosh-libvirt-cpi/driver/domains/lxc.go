@@ -17,7 +17,9 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
   <vcpu>%d</vcpu>
-  <os><type>exe</type><init>/var/vcap/bosh/bin/bosh-agent</init>
+  <os>
+    <type>exe</type>
+    <init>/var/vcap/bosh/bin/bosh-agent</init>
     <initarg>-C</initarg>
     <initarg>/var/vcap/bosh/agent.json</initarg>
     <initarg>-P</initarg>

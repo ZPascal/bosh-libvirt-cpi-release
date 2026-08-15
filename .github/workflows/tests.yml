@@ -319,12 +319,15 @@ jobs:
             echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
             VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
             if [ -n "$VMDIR" ]; then
-              echo "=== VM rootfs files ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
-              echo "=== Running agent via nspawn ===" && \
-                sudo systemd-nspawn --directory="$VMDIR/rootfs" --capability=all \
-                  /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P warden &
+              echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
+              echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true
+              # Create machine-id for nspawn
+              sudo bash -c "echo $(cat /etc/machine-id 2>/dev/null || uuidgen | tr -d -) > $VMDIR/rootfs/etc/machine-id" 2>/dev/null || true
+              echo "=== Running agent directly (chroot) ===" && \
+                sudo chroot "$VMDIR/rootfs" /var/vcap/bosh/bin/bosh-agent \
+                  -C /var/vcap/bosh/agent.json -P warden 2>&1 &
               sleep 8
-              ss -tlnp | grep 6868 && echo "Agent listening via nspawn!" || echo "Agent not listening via nspawn either"
+              ss -tlnp | grep 6868 && echo "Agent listening via chroot!" || echo "Agent not listening via chroot"
               kill %1 2>/dev/null || true
             fi
             exit 1
