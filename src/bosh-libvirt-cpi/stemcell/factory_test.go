@@ -49,6 +49,7 @@ var _ = Describe("stemcell.Factory", func() {
 			logger,
 		)
 		factory.ConvertToQCOW2 = func(src, dst string) error { return nil }
+		factory.DecompressImage = func(src, dst string) error { return nil }
 	})
 
 	AfterEach(func() {

@@ -177,6 +177,13 @@ jobs:
           "<host mac='52:54:00:ab:cd:10' ip='192.168.122.10'/>" \
           --live --config || true
 
+    - name: Inspect stemcell image format
+      run: |
+        tar -xzf /tmp/bosh-stemcell.tgz -C /tmp/ image 2>/dev/null || true
+        file /tmp/image || true
+        xxd /tmp/image 2>/dev/null | head -3 || true
+        qemu-img info /tmp/image 2>/dev/null || true
+
     - name: Bootstrap BOSH Director via QEMU (bosh-lite)
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}

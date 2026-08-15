@@ -2,7 +2,6 @@ package stemcell
 
 import (
 	"compress/gzip"
-	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -35,6 +34,8 @@ type Factory struct {
 
 	// ConvertToQCOW2 converts a raw image to qcow2; injectable for testing.
 	ConvertToQCOW2 func(src, dst string) error
+	// DecompressImage decompresses a gzip image to dst; injectable for testing.
+	DecompressImage func(src, dst string) error
 
 	logTag string
 	logger boshlog.Logger
@@ -68,6 +69,7 @@ func NewFactory(
 			}
 			return nil
 		},
+		DecompressImage: decompressOrCopy,
 
 		logTag: "stemcell.Factory",
 		logger: logger,
@@ -120,26 +122,16 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 
 	switch format {
 	case "qcow2":
-		// Detect actual format; KVM stemcells ship a qcow2 image already.
-		fmtOut, _ := exec.Command("qemu-img", "info", "--output=json", imagePath).Output()
-		srcFmt := "raw"
-		if len(fmtOut) > 0 {
-			var info struct {
-				Format string `json:"format"`
-			}
-			if json.Unmarshal(fmtOut, &info) == nil && info.Format != "" {
-				srcFmt = info.Format
-			}
+		// The stemcell image is gzip-compressed raw disk; decompress then convert to qcow2.
+		rawTmp := dstImage + ".raw"
+		if err := f.DecompressImage(imagePath, rawTmp); err != nil {
+			return bosherr.WrapError(err, "Decompressing stemcell image")
 		}
-		if srcFmt == "qcow2" {
-			if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
-				return bosherr.WrapErrorf(err, "Copying qcow2 stemcell image")
-			}
-		} else {
-			if err := f.ConvertToQCOW2(imagePath, dstImage); err != nil {
-				return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
-			}
+		if err := f.ConvertToQCOW2(rawTmp, dstImage); err != nil {
+			_ = os.Remove(rawTmp)
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
 		}
+		_ = os.Remove(rawTmp)
 	case "raw":
 		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
 		// plain raw filesystem image for libvirt-lxc.
