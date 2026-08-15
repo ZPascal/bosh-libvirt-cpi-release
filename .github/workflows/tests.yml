@@ -307,7 +307,21 @@ jobs:
           -v internal_ip=127.0.0.1 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml
+          --vars-store /tmp/bosh-vars.yml || {
+            echo "=== libvirtd journal ===" && sudo journalctl -u libvirtd --no-pager | tail -30 || true
+            echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
+            if [ -n "$VMDIR" ]; then
+              echo "=== VM rootfs files ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
+              echo "=== Running agent via nspawn ===" && \
+                sudo systemd-nspawn --directory="$VMDIR/rootfs" --capability=all \
+                  /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P warden &
+              sleep 8
+              ss -tlnp | grep 6868 && echo "Agent listening via nspawn!" || echo "Agent not listening via nspawn either"
+              kill %1 2>/dev/null || true
+            fi
+            exit 1
+          }
 
     - name: Deploy smoke test deployment (LXC)
       run: |
