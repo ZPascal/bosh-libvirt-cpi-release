@@ -304,7 +304,18 @@ jobs:
           -v internal_ip=127.0.0.1 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml
+          --vars-store /tmp/bosh-vars.yml &
+        BOSH_PID=$!
+        # Poll for 10 min showing container/port status
+        for i in $(seq 1 30); do
+          sleep 20
+          echo "=== virsh list ===" && sudo virsh -c lxc:/// list 2>/dev/null || true
+          echo "=== port 6868 ===" && ss -tlnp | grep 6868 || echo "not listening"
+          echo "=== VM rootfs warden env ===" && \
+            sudo find /tmp/bosh_libvirt_cpi/vms -name 'warden-cpi-agent-env.json' 2>/dev/null | head -3 || true
+          ss -tlnp | grep -q 6868 && echo "Agent is up!" && break
+        done
+        wait $BOSH_PID
 
     - name: Deploy smoke test deployment (LXC)
       run: |
