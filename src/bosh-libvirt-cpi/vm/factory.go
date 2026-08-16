@@ -153,6 +153,8 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+				"# Start runit supervisor so monit supervise dirs are created\n" +
+				"runsvdir /etc/sv &\n" +
 				"# Bring up network via DHCP\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
@@ -203,6 +205,8 @@ func (f Factory) Create(
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
 					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+					"# Start runit supervisor so monit supervise dirs are created\n" +
+					"runsvdir /etc/sv &\n" +
 					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 					"if [ -n \"$IFACE\" ]; then\n" +
 					"  ip link set \"$IFACE\" up\n" +
