@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -143,17 +144,22 @@ func (f Factory) Create(
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
 		}
-		// Write PATH into /etc/environment so the agent finds system tools.
-		fullPath := "PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
-		_ = os.WriteFile(vmRootfs+"/etc/environment", []byte(fullPath), 0644)
-		// Also symlink bosh tools into /usr/local/bin for exec.Command searches.
+		// Symlink bosh tools and system tools into /usr/local/bin so the agent
+		// finds them via exec.Command regardless of the inherited PATH.
 		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
-		boshBins, _ := os.ReadDir(vmRootfs + "/var/vcap/bosh/bin")
-		for _, b := range boshBins {
-			dst := vmRootfs + "/usr/local/bin/" + b.Name()
-			src := "/var/vcap/bosh/bin/" + b.Name()
-			_ = os.Remove(dst)
-			_ = os.Symlink(src, dst)
+		for _, srcDir := range []string{
+			vmRootfs + "/var/vcap/bosh/bin",
+			vmRootfs + "/usr/sbin",
+			vmRootfs + "/sbin",
+		} {
+			entries, _ := os.ReadDir(srcDir)
+			for _, e := range entries {
+				dst := vmRootfs + "/usr/local/bin/" + e.Name()
+				rel := strings.TrimPrefix(srcDir, vmRootfs)
+				src := rel + "/" + e.Name()
+				_ = os.Remove(dst)
+				_ = os.Symlink(src, dst)
+			}
 		}
 
 		// For QEMU direct-kernel-boot: write an init wrapper that configures
