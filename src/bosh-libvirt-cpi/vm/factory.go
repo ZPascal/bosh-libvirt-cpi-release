@@ -162,6 +162,11 @@ func (f Factory) Create(
 		lxcInitScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 			"runsvdir /etc/sv &\n" +
+			"# Wait for runit to create monit supervise dir before starting agent\n" +
+			"for i in $(seq 1 30); do\n" +
+			"  [ -d /etc/sv/monit/supervise ] && break\n" +
+			"  sleep 1\n" +
+			"done\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
 
@@ -174,6 +179,11 @@ func (f Factory) Create(
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 				"# Start runit supervisor so monit supervise dirs are created\n" +
 				"runsvdir /etc/sv &\n" +
+				"# Wait for runit to create monit supervise dir\n" +
+				"for i in $(seq 1 30); do\n" +
+				"  [ -d /etc/sv/monit/supervise ] && break\n" +
+				"  sleep 1\n" +
+				"done\n" +
 				"# Bring up network via DHCP\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
@@ -226,6 +236,11 @@ func (f Factory) Create(
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 					"# Start runit supervisor so monit supervise dirs are created\n" +
 					"runsvdir /etc/sv &\n" +
+					"# Wait for runit to create monit supervise dir\n" +
+					"for i in $(seq 1 30); do\n" +
+					"  [ -d /etc/sv/monit/supervise ] && break\n" +
+					"  sleep 1\n" +
+					"done\n" +
 					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 					"if [ -n \"$IFACE\" ]; then\n" +
 					"  ip link set \"$IFACE\" up\n" +
