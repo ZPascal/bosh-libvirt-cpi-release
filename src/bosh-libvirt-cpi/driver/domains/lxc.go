@@ -19,11 +19,7 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
   <vcpu>%d</vcpu>
   <os>
     <type>exe</type>
-    <init>/var/vcap/bosh/bin/bosh-agent</init>
-    <initarg>-C</initarg>
-    <initarg>/var/vcap/bosh/agent.json</initarg>
-    <initarg>-P</initarg>
-    <initarg>ubuntu</initarg>
+    <init>/bosh-lxc-init</init>
     <initenv name='PATH'>/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</initenv>
   </os>
   <devices>

@@ -146,6 +146,13 @@ func (f Factory) Create(
 
 		// For QEMU direct-kernel-boot: write an init wrapper that configures
 		// networking via DHCP before exec'ing bosh-agent.
+		// Write LXC init wrapper that starts runsvdir then execs the agent.
+		lxcInitScript := "#!/bin/sh\n" +
+			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+			"runsvdir /etc/sv &\n" +
+			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
+		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
+
 		if vmProps.Kernel != "" {
 			initScript := "#!/bin/sh\n" +
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
