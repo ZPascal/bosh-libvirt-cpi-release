@@ -32,14 +32,15 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
   <os>
     <type arch='x86_64' machine='pc'>hvm</type>
     <kernel>%s</kernel>
-    <cmdline>root=rootfs rw rootfstype=9p rootflags=trans=virtio,version=9p2000.L console=ttyS0 init=/bosh-init</cmdline>
+    <cmdline>root=/dev/vda rw console=ttyS0 init=/bosh-init</cmdline>
   </os>
   <features><acpi/><apic/></features>
   <devices>
-    <filesystem type='mount' accessmode='passthrough'>
-      <source dir='%s'/>
-      <target dir='rootfs'/>
-    </filesystem>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw'/>
+      <source file='%s'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
     <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
       <source file='%s'/>
@@ -126,9 +127,9 @@ type QEMUKernelDomainBuilder struct{}
 
 var _ driver.DomainBuilder = QEMUKernelDomainBuilder{}
 
-// DiskImageFormat returns "dir" so the stemcell factory extracts the rootfs
-// tarball into a directory instead of converting it to qcow2.
-func (b QEMUKernelDomainBuilder) DiskImageFormat() string { return "dir" }
+// DiskImageFormat returns "ext4" so the stemcell factory creates an ext4
+// disk image from the rootfs tarball that the kernel can mount as root.
+func (b QEMUKernelDomainBuilder) DiskImageFormat() string { return "ext4" }
 
 func (b QEMUKernelDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
 	return QEMUDomainBuilder{}.BuildDomain(id, props, disks)

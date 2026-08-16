@@ -112,9 +112,8 @@ func (f Factory) Create(
 		EphemeralDisk: ephemeralDisk.ImagePath(),
 	}
 
-	// For container-based backends (LXC, kernel-boot QEMU) copy the stemcell
-	// rootfs into the VM's own directory so each VM has a writable private copy,
-	// then inject the agent env and (for QEMU) the init wrapper.
+	// For container-based backends (LXC=dir, QEMU kernel-boot=ext4) copy or
+	// mount the stemcell and inject per-VM agent env + init wrapper.
 	if f.domBuilder.DiskImageFormat() == "dir" {
 		vmRootfs := filepath.Join(f.opts.DirPath, vmID, "rootfs")
 		out, copyErr := execCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
@@ -147,13 +146,53 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n" +
-				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P warden\n"
+				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P linux\n"
 			_ = os.WriteFile(vmRootfs+"/bosh-init", []byte(initScript), 0755)
 		}
 
 		// Override disk paths to use the per-VM rootfs copy.
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmRootfs,
+			EphemeralDisk: ephemeralDisk.ImagePath(),
+		}
+	} else if f.domBuilder.DiskImageFormat() == "ext4" {
+		// QEMU kernel-boot: copy the stemcell ext4 image per-VM, mount it,
+		// inject warden-cpi-agent-env.json and /bosh-init, then unmount.
+		vmExt4 := filepath.Join(f.opts.DirPath, vmID, "rootfs.img")
+		if err := os.MkdirAll(filepath.Join(f.opts.DirPath, vmID), 0755); err != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(err, "Creating VM dir")
+		}
+		if out, err := execCommand("cp", stemcell.ImagePath(), vmExt4); err != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", string(out))
+		}
+		// Mount, inject, unmount
+		mntDir := vmExt4 + ".mnt"
+		if err := os.MkdirAll(mntDir, 0755); err == nil {
+			if _, err := execCommand("mount", "-o", "loop", vmExt4, mntDir); err == nil {
+				envBytes, _ := initialAgentEnv.AsBytes()
+				boshDir := mntDir + "/var/vcap/bosh"
+				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
+					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
+				}
+				initScript := "#!/bin/sh\n" +
+					"mount -t proc proc /proc 2>/dev/null || true\n" +
+					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
+					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+					"if [ -n \"$IFACE\" ]; then\n" +
+					"  ip link set \"$IFACE\" up\n" +
+					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+					"fi\n" +
+					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P linux\n"
+				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
+				_, _ = execCommand("umount", mntDir)
+			}
+			_ = os.RemoveAll(mntDir)
+		}
+		disks = driver.DomainDiskPaths{
+			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
 		}
 	}

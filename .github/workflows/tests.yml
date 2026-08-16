@@ -130,7 +130,7 @@ jobs:
     - name: Install QEMU + libvirt
       run: |
         sudo apt-get update
-        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev linux-image-generic
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev linux-image-generic e2fsprogs
         sudo systemctl start libvirtd
         sudo usermod -aG libvirt $USER
         sudo virsh net-start default || true

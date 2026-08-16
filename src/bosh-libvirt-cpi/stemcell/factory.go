@@ -2,6 +2,7 @@ package stemcell
 
 import (
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -138,6 +139,45 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		if err := decompressOrCopy(imagePath, dstImage); err != nil {
 			return bosherr.WrapError(err, "Preparing raw stemcell image")
 		}
+	case "ext4":
+		// Extract rootfs tar into a temp dir then pack into an ext4 raw image.
+		tmpDir := dstImage + ".rootfs"
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating temp rootfs dir")
+		}
+		defer func() { _ = os.RemoveAll(tmpDir) }()
+		if out, err := exec.Command("tar", "-xzf", imagePath, "-C", tmpDir).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+		}
+		// Calculate size: du -sm gives MiB; add 20% headroom
+		duOut, _ := exec.Command("du", "-sm", tmpDir).Output()
+		sizeMB := 2048 // default 2 GiB
+		if len(duOut) > 0 {
+			var n int
+			if _, err := fmt.Sscanf(string(duOut), "%d", &n); err == nil && n > 0 {
+				sizeMB = n*120/100 + 64 // 20% headroom + 64 MB
+			}
+		}
+		sizeArg := fmt.Sprintf("%dM", sizeMB)
+		if out, err := exec.Command("dd", "if=/dev/zero", "of="+dstImage, "bs=1M",
+			"count=0", "seek="+fmt.Sprintf("%d", sizeMB)).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Creating ext4 image file: %s", string(out))
+		}
+		_ = sizeArg
+		if out, err := exec.Command("mkfs.ext4", "-F", dstImage).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Formatting ext4 image: %s", string(out))
+		}
+		mntDir := dstImage + ".mnt"
+		if err := os.MkdirAll(mntDir, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating mount point")
+		}
+		defer func() { _ = exec.Command("umount", mntDir).Run(); _ = os.RemoveAll(mntDir) }()
+		if out, err := exec.Command("mount", "-o", "loop", dstImage, mntDir).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Mounting ext4 image: %s", string(out))
+		}
+		if out, err := exec.Command("cp", "-a", tmpDir+"/.", mntDir+"/").CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 image: %s", string(out))
+		}
 	case "dir":
 		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
 		if err := os.MkdirAll(dstImage, 0755); err != nil {
@@ -153,8 +193,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	}
 
-	// chmod only applies to file-based images, not directory-based ones.
-	if format != "dir" {
+	// chmod only applies to file-based images, not directory/ext4-based ones.
+	if format != "dir" && format != "ext4" {
 		if err := f.fs.Chmod(dstImage, 0644); err != nil {
 			return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
 		}
