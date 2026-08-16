@@ -240,6 +240,12 @@ func (f Factory) Create(
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
 					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+					"# Bring up network FIRST so agent can bind mbus before bosh create-env contacts it\n" +
+					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+					"if [ -n \"$IFACE\" ]; then\n" +
+					"  ip link set \"$IFACE\" up\n" +
+					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+					"fi\n" +
 					"# Start runit supervisor so monit supervise dirs are created\n" +
 					"runsvdir /etc/sv &\n" +
 					"# Wait for runit to create monit supervise dir\n" +
@@ -247,11 +253,6 @@ func (f Factory) Create(
 					"  [ -d /etc/sv/monit/supervise ] && break\n" +
 					"  sleep 1\n" +
 					"done\n" +
-					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
-					"if [ -n \"$IFACE\" ]; then\n" +
-					"  ip link set \"$IFACE\" up\n" +
-					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
-					"fi\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				_, _ = execCommand("umount", mntDir)
