@@ -131,6 +131,16 @@ func (f Factory) Create(
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
 		}
+		// Symlink bosh tools into /usr/local/bin so the agent can find them
+		// (bosh-agent-rc, monit, etc.) regardless of PATH.
+		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
+		boshBins, _ := os.ReadDir(vmRootfs + "/var/vcap/bosh/bin")
+		for _, b := range boshBins {
+			dst := vmRootfs + "/usr/local/bin/" + b.Name()
+			src := "/var/vcap/bosh/bin/" + b.Name()
+			_ = os.Remove(dst)
+			_ = os.Symlink(src, dst)
+		}
 
 		// For QEMU direct-kernel-boot: write an init wrapper that configures
 		// networking via DHCP before exec'ing bosh-agent.
@@ -175,6 +185,15 @@ func (f Factory) Create(
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
+				}
+				// Symlink bosh tools into /usr/local/bin
+				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
+				boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
+				for _, b := range boshBins {
+					dst := mntDir + "/usr/local/bin/" + b.Name()
+					src := "/var/vcap/bosh/bin/" + b.Name()
+					_ = os.Remove(dst)
+					_ = os.Symlink(src, dst)
 				}
 				initScript := "#!/bin/sh\n" +
 					"mount -t proc proc /proc 2>/dev/null || true\n" +

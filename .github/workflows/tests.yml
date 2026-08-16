@@ -328,8 +328,8 @@ jobs:
               sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null || true
               sudo mount -t devtmpfs devtmpfs "$VMDIR/rootfs/dev" 2>/dev/null || true
               echo "=== Running agent directly (chroot) ===" && \
-                sudo chroot "$VMDIR/rootfs" /var/vcap/bosh/bin/bosh-agent \
-                  -C /var/vcap/bosh/agent.json -P ubuntu 2>&1 &
+                sudo chroot "$VMDIR/rootfs" /bin/sh -c \
+                  'PATH=/var/vcap/bosh/bin:/usr/local/bin:/usr/bin:/bin exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu' 2>&1 &
               sleep 8
               ss -tlnp | grep 6868 && echo "Agent listening via chroot!" || echo "Agent not listening via chroot"
               sudo umount "$VMDIR/rootfs/proc" "$VMDIR/rootfs/sys" "$VMDIR/rootfs/dev" 2>/dev/null || true
