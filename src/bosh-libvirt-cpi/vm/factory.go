@@ -146,7 +146,7 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n" +
-				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P linux\n"
+				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 			_ = os.WriteFile(vmRootfs+"/bosh-init", []byte(initScript), 0755)
 		}
 
@@ -185,7 +185,7 @@ func (f Factory) Create(
 					"  ip link set \"$IFACE\" up\n" +
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
-					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P linux\n"
+					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				_, _ = execCommand("umount", mntDir)
 			}
