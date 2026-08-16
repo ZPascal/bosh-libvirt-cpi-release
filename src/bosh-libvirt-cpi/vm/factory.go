@@ -131,8 +131,10 @@ func (f Factory) Create(
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
 		}
-		// Symlink bosh tools into /usr/local/bin so the agent can find them
-		// (bosh-agent-rc, monit, etc.) regardless of PATH.
+		// Write PATH into /etc/environment so the agent finds system tools.
+		fullPath := "PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
+		_ = os.WriteFile(vmRootfs+"/etc/environment", []byte(fullPath), 0644)
+		// Also symlink bosh tools into /usr/local/bin for exec.Command searches.
 		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
 		boshBins, _ := os.ReadDir(vmRootfs + "/var/vcap/bosh/bin")
 		for _, b := range boshBins {
@@ -146,6 +148,7 @@ func (f Factory) Create(
 		// networking via DHCP before exec'ing bosh-agent.
 		if vmProps.Kernel != "" {
 			initScript := "#!/bin/sh\n" +
+				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 				"# Mount essential pseudo-filesystems\n" +
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
@@ -196,6 +199,7 @@ func (f Factory) Create(
 					_ = os.Symlink(src, dst)
 				}
 				initScript := "#!/bin/sh\n" +
+					"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
 					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +

@@ -23,7 +23,8 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     <initarg>-C</initarg>
     <initarg>/var/vcap/bosh/agent.json</initarg>
     <initarg>-P</initarg>
-    <initarg>linux</initarg>
+    <initarg>ubuntu</initarg>
+    <initenv name='PATH'>/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</initenv>
   </os>
   <devices>
     <filesystem type='mount'>
