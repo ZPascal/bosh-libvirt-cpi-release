@@ -100,6 +100,18 @@ func (f Factory) Create(
 	initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
 	initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
 
+	// For container/direct-kernel backends, mark networks as preconfigured so
+	// the agent skips interface-name validation (interface is set up by init script).
+	if f.domBuilder.DiskImageFormat() == "dir" || f.domBuilder.DiskImageFormat() == "ext4" {
+		for _, net := range networks {
+			net.SetPreconfigured()
+		}
+		initialAgentEnv = apiv1.NewAgentEnvFactory().ForVM(
+			agentID, vm.ID(), networks, env, f.agentOptions)
+		initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
+		initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
+	}
+
 	err = vm.ConfigureAgent(initialAgentEnv)
 	if err != nil {
 		f.cleanUpPartialCreate(vm)
