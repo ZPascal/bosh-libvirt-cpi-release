@@ -113,7 +113,7 @@ cloud_provider:
   template:
     name: libvirt_cpi
     release: bosh-libvirt-cpi
-  mbus: http://mbus:mbus-password@((internal_ip)):6868
+  mbus: https://mbus:mbus-password@((internal_ip)):6868
   properties:
     backend_uri: qemu:///system
     host: ((libvirt_host))
@@ -122,7 +122,7 @@ cloud_provider:
     host_key: ((libvirt_host_key))
     store_dir: ~/.bosh_libvirt_cpi
     agent:
-      mbus: http://mbus:mbus-password@0.0.0.0:6868
+      mbus: https://mbus:mbus-password@0.0.0.0:6868
       blobstore:
         provider: local
         options:
