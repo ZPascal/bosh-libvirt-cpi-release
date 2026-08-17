@@ -152,6 +152,8 @@ func (f Factory) Create(
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			// Inject blobstore config into agent env (SDK ForVM doesn't include it)
 			agentEnvBytes := addBlobstoreToEnv(envBytes)
+			// Use http:// for mbus so no TLS cert is needed for bootstrap
+			agentEnvBytes = switchMbusToHTTP(agentEnvBytes)
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
 		}
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
@@ -259,7 +261,7 @@ func (f Factory) Create(
 				envBytes, _ := initialAgentEnv.AsBytes()
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-					agentEnvBytes2 := addBlobstoreToEnv(envBytes)
+					agentEnvBytes2 := switchMbusToHTTP(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
@@ -367,6 +369,24 @@ func addBlobstoreToEnv(envBytes []byte) []byte {
 		"options": map[string]interface{}{
 			"blobstore_path": "/var/vcap/micro_bosh/data/cache",
 		},
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return envBytes
+	}
+	return out
+}
+
+// switchMbusToHTTP replaces https:// with http:// in the mbus URL so the
+// bootstrap agent starts a plain HTTP listener — no TLS cert required at boot.
+// bosh create-env contacts this HTTP listener to inject the real settings.
+func switchMbusToHTTP(envBytes []byte) []byte {
+	var m map[string]interface{}
+	if err := json.Unmarshal(envBytes, &m); err != nil {
+		return envBytes
+	}
+	if mbus, ok := m["mbus"].(string); ok {
+		m["mbus"] = strings.Replace(mbus, "https://", "http://", 1)
 	}
 	out, err := json.Marshal(m)
 	if err != nil {
