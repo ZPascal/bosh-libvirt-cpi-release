@@ -167,6 +167,8 @@ func (f Factory) Create(
 		// Write LXC init wrapper that starts runsvdir then execs the agent.
 		lxcInitScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+			"# Remove stale supervise locks before starting runsv\n" +
+			"rm -rf /etc/sv/*/supervise\n" +
 			"# Start runsv directly for each service so sv commands work\n" +
 			"for svc in /etc/sv/*/; do\n" +
 			"  [ -d \"$svc\" ] && runsv \"$svc\" &\n" +
@@ -186,6 +188,8 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+				"# Remove stale supervise locks before starting runsv\n" +
+				"rm -rf /etc/sv/*/supervise\n" +
 				"# Start runsv directly for each service\n" +
 				"for svc in /etc/sv/*/; do\n" +
 				"  [ -d \"$svc\" ] && runsv \"$svc\" &\n" +
