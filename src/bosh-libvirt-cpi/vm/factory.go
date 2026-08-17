@@ -167,10 +167,11 @@ func (f Factory) Create(
 		// Write LXC init wrapper that starts runsvdir then execs the agent.
 		lxcInitScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+			"runsvdir /etc/sv &\n" +
 			"runsvdir /etc/service &\n" +
 			"# Wait for runit to create monit supervise dir before starting agent\n" +
 			"for i in $(seq 1 30); do\n" +
-			"  [ -d /etc/service/monit/supervise ] && break\n" +
+			"  [ -d /etc/sv/monit/supervise ] && break\n" +
 			"  sleep 1\n" +
 			"done\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
@@ -184,10 +185,11 @@ func (f Factory) Create(
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 				"# Start runit supervisor so monit supervise dirs are created\n" +
+				"runsvdir /etc/sv &\n" +
 				"runsvdir /etc/service &\n" +
 				"# Wait for runit to create monit supervise dir\n" +
 				"for i in $(seq 1 30); do\n" +
-				"  [ -d /etc/service/monit/supervise ] && break\n" +
+				"  [ -d /etc/sv/monit/supervise ] && break\n" +
 				"  sleep 1\n" +
 				"done\n" +
 				"# Bring up network via DHCP\n" +
@@ -247,10 +249,11 @@ func (f Factory) Create(
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
 					"# Start runit supervisor so monit supervise dirs are created\n" +
+					"runsvdir /etc/sv &\n" +
 					"runsvdir /etc/service &\n" +
 					"# Wait for runit to create monit supervise dir\n" +
 					"for i in $(seq 1 30); do\n" +
-					"  [ -d /etc/service/monit/supervise ] && break\n" +
+					"  [ -d /etc/sv/monit/supervise ] && break\n" +
 					"  sleep 1\n" +
 					"done\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
