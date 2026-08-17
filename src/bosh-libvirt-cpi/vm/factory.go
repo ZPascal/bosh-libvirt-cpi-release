@@ -135,6 +135,13 @@ func (f Factory) Create(
 			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", string(out))
 		}
 
+		// Remove stale supervise dirs from stemcell copy so runsv starts cleanly
+		if svcs, _ := os.ReadDir(vmRootfs + "/etc/sv"); svcs != nil {
+			for _, svc := range svcs {
+				_ = os.RemoveAll(vmRootfs + "/etc/sv/" + svc.Name() + "/supervise")
+			}
+		}
+
 		envBytes, err := initialAgentEnv.AsBytes()
 		if err != nil {
 			f.cleanUpPartialCreate(vm)
@@ -230,6 +237,12 @@ func (f Factory) Create(
 		mntDir := vmExt4 + ".mnt"
 		if err := os.MkdirAll(mntDir, 0755); err == nil {
 			if _, err := execCommand("mount", "-o", "loop", vmExt4, mntDir); err == nil {
+				// Remove stale supervise dirs from stemcell while we have write access
+				if svcs, _ := os.ReadDir(mntDir + "/etc/sv"); svcs != nil {
+					for _, svc := range svcs {
+						_ = os.RemoveAll(mntDir + "/etc/sv/" + svc.Name() + "/supervise")
+					}
+				}
 				envBytes, _ := initialAgentEnv.AsBytes()
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
