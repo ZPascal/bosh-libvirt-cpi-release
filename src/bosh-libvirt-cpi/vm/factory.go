@@ -167,9 +167,11 @@ func (f Factory) Create(
 		// Write LXC init wrapper that starts runsvdir then execs the agent.
 		lxcInitScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
-			"runsvdir /etc/sv &\n" +
-			"runsvdir /etc/service &\n" +
-			"# Wait for runit to create monit supervise dir before starting agent\n" +
+			"# Start runsv directly for each service so sv commands work\n" +
+			"for svc in /etc/sv/*/; do\n" +
+			"  [ -d \"$svc\" ] && runsv \"$svc\" &\n" +
+			"done\n" +
+			"# Wait for monit supervise dir\n" +
 			"for i in $(seq 1 30); do\n" +
 			"  [ -d /etc/sv/monit/supervise ] && break\n" +
 			"  sleep 1\n" +
@@ -184,10 +186,11 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
-				"# Start runit supervisor so monit supervise dirs are created\n" +
-				"runsvdir /etc/sv &\n" +
-				"runsvdir /etc/service &\n" +
-				"# Wait for runit to create monit supervise dir\n" +
+				"# Start runsv directly for each service\n" +
+				"for svc in /etc/sv/*/; do\n" +
+				"  [ -d \"$svc\" ] && runsv \"$svc\" &\n" +
+				"done\n" +
+				"# Wait for monit supervise dir\n" +
 				"for i in $(seq 1 30); do\n" +
 				"  [ -d /etc/sv/monit/supervise ] && break\n" +
 				"  sleep 1\n" +
