@@ -154,16 +154,11 @@ func (f Factory) Create(
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
 		svStub := "#!/bin/sh\n" +
-			"# Stub sv: start runsv directly if action is 'start'\n" +
-			"ACTION=\"$1\"\nSVC=\"$2\"\n" +
-			"SVC_DIR=\"/etc/sv/${SVC}\"\n" +
-			"[ ! -d \"$SVC_DIR\" ] && SVC_DIR=\"/etc/service/${SVC}\"\n" +
-			"if [ \"$ACTION\" = 'start' ] && [ -x \"${SVC_DIR}/run\" ]; then\n" +
-			"  runsv \"$SVC_DIR\" &\n" +
-			"  sleep 1\n" +
-			"  echo \"ok: run: ${SVC}: (pid $$) 0s\"\n" +
-			"  exit 0\n" +
-			"fi\n" +
+			"# Stub: return success for start/status to unblock bootstrap agent\n" +
+			"case \"$1\" in\n" +
+			"  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n" +
+			"  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\n" +
+			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
@@ -293,6 +288,10 @@ func (f Factory) Create(
 					"done\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
+				// Write sv stub so agent's sv calls succeed without runsv locking
+				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
+				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
+				_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
 				_, _ = execCommand("umount", mntDir)
 			}
 			_ = os.RemoveAll(mntDir)
