@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -149,7 +150,9 @@ func (f Factory) Create(
 		}
 		boshDir := vmRootfs + "/var/vcap/bosh"
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
+			// Inject blobstore config into agent env (SDK ForVM doesn't include it)
+			agentEnvBytes := addBlobstoreToEnv(envBytes)
+			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
 		}
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
@@ -256,7 +259,8 @@ func (f Factory) Create(
 				envBytes, _ := initialAgentEnv.AsBytes()
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
+					agentEnvBytes2 := addBlobstoreToEnv(envBytes)
+					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
@@ -352,6 +356,27 @@ func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
 
 func execCommand(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
+}
+
+// addBlobstoreToEnv injects a local blobstore config into the agent env JSON.
+// The CPI SDK ForVM factory doesn't include blobstore so the bootstrap agent
+// can't find bosh-blobstore-<provider> without it.
+func addBlobstoreToEnv(envBytes []byte) []byte {
+	var m map[string]interface{}
+	if err := json.Unmarshal(envBytes, &m); err != nil {
+		return envBytes
+	}
+	m["blobstore"] = map[string]interface{}{
+		"provider": "local",
+		"options": map[string]interface{}{
+			"blobstore_path": "/var/vcap/micro_bosh/data/cache",
+		},
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return envBytes
+	}
+	return out
 }
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
