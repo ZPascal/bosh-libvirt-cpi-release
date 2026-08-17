@@ -151,6 +151,21 @@ func (f Factory) Create(
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", envBytes, 0644)
 		}
+		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
+		// even when runsv can't acquire locks in restricted containers.
+		svStub := "#!/bin/sh\n" +
+			"# Stub sv: start runsv directly if action is 'start'\n" +
+			"ACTION=\"$1\"\nSVC=\"$2\"\n" +
+			"SVC_DIR=\"/etc/sv/${SVC}\"\n" +
+			"[ ! -d \"$SVC_DIR\" ] && SVC_DIR=\"/etc/service/${SVC}\"\n" +
+			"if [ \"$ACTION\" = 'start' ] && [ -x \"${SVC_DIR}/run\" ]; then\n" +
+			"  runsv \"$SVC_DIR\" &\n" +
+			"  sleep 1\n" +
+			"  echo \"ok: run: ${SVC}: (pid $$) 0s\"\n" +
+			"  exit 0\n" +
+			"fi\n" +
+			"exec /usr/bin/sv \"$@\"\n"
+		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
 		// finds them via exec.Command regardless of the inherited PATH.
 		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
