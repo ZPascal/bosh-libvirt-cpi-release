@@ -186,6 +186,15 @@ func (f Factory) Create(
 		// Extract static IP/gateway from the agent env and bake them in so the
 		// container has network connectivity before bosh-agent starts.
 		staticIP, staticGW := extractNetworkFromEnv(agentEnvBytes)
+		// monit stub: loop-serve minimal XML on port 2822 so the agent's
+		// waitForMonit() succeeds during bootstrap (real monit isn't running).
+		monitStub := "while true; do\n" +
+			"  echo -e 'HTTP/1.0 200 OK\\r\\nContent-Type: text/xml\\r\\n\\r\\n" +
+			"<?xml version=\"1.0\"?><monit><server><id>stub</id><incarnation>0</incarnation>" +
+			"<version>5</version><uptime>0</uptime><poll>5</poll><startdelay>0</startdelay>" +
+			"<localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile>" +
+			"</server><servicegroups/><services/></monit>' | nc -l -p 2822 -q 1 2>/dev/null\n" +
+			"done &\n"
 		var lxcInitScript string
 		if staticIP != "" {
 			lxcInitScript = "#!/bin/sh\n" +
@@ -197,6 +206,7 @@ func (f Factory) Create(
 				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  ip route add default via " + staticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"fi\n" +
+				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		} else {
 			lxcInitScript = "#!/bin/sh\n" +
@@ -207,6 +217,7 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n" +
+				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		}
 		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
@@ -293,6 +304,10 @@ func (f Factory) Create(
 					"  ip link set \"$IFACE\" up\n" +
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
+					"# Start monit stub on port 2822 so the agent's waitForMonit() succeeds\n" +
+					"while true; do\n" +
+					"  echo -e 'HTTP/1.0 200 OK\\r\\nContent-Type: text/xml\\r\\n\\r\\n<?xml version=\"1.0\"?><monit><server><id>stub</id><incarnation>0</incarnation><version>5</version><uptime>0</uptime><poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile></server><servicegroups/><services/></monit>' | nc -l -p 2822 -q 1 2>/dev/null\n" +
+					"done &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
