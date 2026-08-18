@@ -149,9 +149,8 @@ func (f Factory) Create(
 			return nil, bosherr.WrapError(err, "Marshalling agent env for rootfs injection")
 		}
 		boshDir := vmRootfs + "/var/vcap/bosh"
+		agentEnvBytes := addBlobstoreToEnv(envBytes)
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-			// Inject blobstore config into agent env (SDK ForVM doesn't include it)
-			agentEnvBytes := addBlobstoreToEnv(envBytes)
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
 		}
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
@@ -182,16 +181,32 @@ func (f Factory) Create(
 			}
 		}
 
-		// Write LXC init wrapper — bring up DHCP networking then exec bosh-agent.
+		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
-		lxcInitScript := "#!/bin/sh\n" +
-			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
-			"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
-			"if [ -n \"$IFACE\" ]; then\n" +
-			"  ip link set \"$IFACE\" up\n" +
-			"  dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
-			"fi\n" +
-			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
+		// Extract static IP/gateway from the agent env and bake them in so the
+		// container has network connectivity before bosh-agent starts.
+		staticIP, staticGW := extractNetworkFromEnv(agentEnvBytes)
+		var lxcInitScript string
+		if staticIP != "" {
+			lxcInitScript = "#!/bin/sh\n" +
+				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+				"if [ -n \"$IFACE\" ]; then\n" +
+				"  ip link set \"$IFACE\" up\n" +
+				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  ip route add default via " + staticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
+				"fi\n" +
+				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
+		} else {
+			lxcInitScript = "#!/bin/sh\n" +
+				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+				"if [ -n \"$IFACE\" ]; then\n" +
+				"  ip link set \"$IFACE\" up\n" +
+				"  dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+				"fi\n" +
+				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
+		}
 		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
 
 		if vmProps.Kernel != "" {
@@ -366,6 +381,24 @@ func addBlobstoreToEnv(envBytes []byte) []byte {
 		return envBytes
 	}
 	return out
+}
+
+// extractNetworkFromEnv returns the first non-empty static IP and gateway
+// from the agent env's networks map. Returns empty strings for dynamic networks.
+func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
+	var m map[string]interface{}
+	if err := json.Unmarshal(envBytes, &m); err != nil {
+		return "", ""
+	}
+	networks, _ := m["networks"].(map[string]interface{})
+	for _, v := range networks {
+		net, _ := v.(map[string]interface{})
+		if ipVal, _ := net["ip"].(string); ipVal != "" {
+			gwVal, _ := net["gateway"].(string)
+			return ipVal, gwVal
+		}
+	}
+	return "", ""
 }
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
