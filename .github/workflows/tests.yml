@@ -280,6 +280,8 @@ jobs:
         sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
         sudo systemctl start libvirtd
         sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
 
     - name: Install BOSH CLI
       run: |
@@ -302,6 +304,12 @@ jobs:
         curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
           -o /tmp/bosh-stemcell.tgz
 
+    - name: Configure DHCP reservation for LXC Director VM
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:11' ip='192.168.122.11'/>" \
+          --live --config || true
+
     - name: Bootstrap BOSH Director via LXC (bosh-lite)
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
@@ -310,10 +318,10 @@ jobs:
         sudo bosh create-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
-          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
           -v director_name=bosh-lxc-ci \
-          -v internal_ip=127.0.0.1 \
+          -v internal_ip=192.168.122.11 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml || {
@@ -323,19 +331,8 @@ jobs:
             if [ -n "$VMDIR" ]; then
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
               echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true
-              # Create machine-id for nspawn
-              sudo bash -c "echo $(cat /etc/machine-id 2>/dev/null || uuidgen | tr -d -) > $VMDIR/rootfs/etc/machine-id" 2>/dev/null || true
-              # Mount pseudo-filesystems for chroot
-              sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null || true
-              sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null || true
-              sudo mount -t devtmpfs devtmpfs "$VMDIR/rootfs/dev" 2>/dev/null || true
-              echo "=== Running agent directly (chroot) ===" && \
-                sudo chroot "$VMDIR/rootfs" /bin/sh -c \
-                  'PATH=/var/vcap/bosh/bin:/usr/local/bin:/usr/bin:/bin exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu' 2>&1 &
-              sleep 8
-              ss -tlnp | grep 6868 && echo "Agent listening via chroot!" || echo "Agent not listening via chroot"
-              sudo umount "$VMDIR/rootfs/proc" "$VMDIR/rootfs/sys" "$VMDIR/rootfs/dev" 2>/dev/null || true
-              kill %1 2>/dev/null || true
+              echo "=== bosh-lxc-init ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null || true
+              echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true
             fi
             exit 1
           }
@@ -343,7 +340,7 @@ jobs:
     - name: Deploy smoke test deployment (LXC)
       run: |
         bosh alias-env lxc-ci \
-          -e "127.0.0.1" \
+          -e "192.168.122.11" \
           --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
         bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           -n --fix
@@ -354,12 +351,12 @@ jobs:
         sudo bosh delete-env manifests/lxc-cpi.yml \
           -o manifests/ops/lxc-local.yml \
           -o manifests/local-release.yml \
-          -o manifests/ops/local-network.yml \
           -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \
-          -v internal_ip=127.0.0.1 \
+          -v internal_ip=192.168.122.11 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
 
   code-quality:

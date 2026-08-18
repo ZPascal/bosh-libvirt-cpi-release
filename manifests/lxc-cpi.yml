@@ -43,10 +43,10 @@ networks:
 - name: default
   type: manual
   subnets:
-  - range: 192.168.1.0/24
-    gateway: 192.168.1.1
+  - range: 192.168.122.0/24
+    gateway: 192.168.122.1
     dns: [8.8.8.8]
-    static: [192.168.1.7]
+    static: [192.168.122.11]
 
 instance_groups:
 - name: bosh

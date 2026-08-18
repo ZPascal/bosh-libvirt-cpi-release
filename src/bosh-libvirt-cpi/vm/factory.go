@@ -182,10 +182,15 @@ func (f Factory) Create(
 			}
 		}
 
-		// Write LXC init wrapper — exec bosh-agent directly; sv stub handles
-		// any "sv start monit" calls without needing runsv/runsvdir.
+		// Write LXC init wrapper — bring up DHCP networking then exec bosh-agent.
+		// sv stub handles "sv start monit" without needing runsv.
 		lxcInitScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+			"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+			"if [ -n \"$IFACE\" ]; then\n" +
+			"  ip link set \"$IFACE\" up\n" +
+			"  dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+			"fi\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
 

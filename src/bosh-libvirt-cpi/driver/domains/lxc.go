@@ -13,6 +13,16 @@ type LXCDomainBuilder struct{}
 func (b LXCDomainBuilder) DiskImageFormat() string { return "dir" }
 
 func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
+	ifaceXML := ""
+	featuresXML := ""
+	if props.MAC != "" {
+		featuresXML = "\n  <features><privnet/></features>"
+		ifaceXML = fmt.Sprintf(`
+    <interface type='network'>
+      <mac address='%s'/>
+      <source network='default'/>
+    </interface>`, xmlEscape(props.MAC))
+	}
 	xml := fmt.Sprintf(`<domain type='lxc'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -21,8 +31,8 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     <type>exe</type>
     <init>/bosh-lxc-init</init>
     <initenv name='PATH'>/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</initenv>
-  </os>
-  <devices>
+  </os>%s
+  <devices>%s
     <filesystem type='mount'>
       <source dir='%s'/>
       <target dir='/'/>
@@ -33,7 +43,7 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     </filesystem>
     <console type='pty'/>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, featuresXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
 	return xml, nil
 }
 
