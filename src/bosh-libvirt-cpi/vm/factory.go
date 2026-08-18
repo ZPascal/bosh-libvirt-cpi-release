@@ -197,7 +197,7 @@ func (f Factory) Create(
 		// monit stub: persistent HTTP server on port 2822 returning valid monit XML
 		// so the agent's waitForMonit() and subsequent incarnation checks succeed.
 		monitStub := "python3 -c \"\n" +
-			"import http.server, socketserver\n" +
+			"import http.server, socketserver, socket, sys\n" +
 			"XML = b'<?xml version=\\\"1.0\\\"?><monit><server><id>stub</id>" +
 			"<incarnation>1</incarnation><version>5</version><uptime>1</uptime>" +
 			"<poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname>" +
@@ -205,13 +205,22 @@ func (f Factory) Create(
 			"<servicegroups/><services/></monit>'\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
+			"    sys.stderr.write('monit stub: GET %s\\\\n' % self.path)\n" +
+			"    sys.stderr.flush()\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Type','text/xml')\n" +
+			"    self.send_header('Content-Length', str(len(XML)))\n" +
 			"    self.end_headers()\n" +
 			"    self.wfile.write(XML)\n" +
 			"  def log_message(self, *a): pass\n" +
-			"socketserver.TCPServer(('127.0.0.1',2822),H).serve_forever()\n" +
-			"\" &\n"
+			"sys.stderr.write('Starting monit stub on 127.0.0.1:2822\\\\n')\n" +
+			"sys.stderr.flush()\n" +
+			"srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
+			"srv.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n" +
+			"sys.stderr.write('Monit stub listening\\\\n')\n" +
+			"sys.stderr.flush()\n" +
+			"srv.serve_forever()\n" +
+			"\" >/tmp/monit-stub.log 2>&1 &\n"
 		var lxcInitScript string
 		if staticIP != "" {
 			lxcInitScript = "#!/bin/sh\n" +
@@ -322,7 +331,7 @@ func (f Factory) Create(
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
 					"python3 -c \"\n" +
-					"import http.server, socketserver\n" +
+					"import http.server, socketserver, socket, sys\n" +
 					"XML = b'<?xml version=\\\"1.0\\\"?><monit><server><id>stub</id>" +
 					"<incarnation>1</incarnation><version>5</version><uptime>1</uptime>" +
 					"<poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname>" +
@@ -330,13 +339,22 @@ func (f Factory) Create(
 					"<servicegroups/><services/></monit>'\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
+					"    sys.stderr.write('monit stub: GET %s\\\\n' % self.path)\n" +
+					"    sys.stderr.flush()\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Type','text/xml')\n" +
+					"    self.send_header('Content-Length', str(len(XML)))\n" +
 					"    self.end_headers()\n" +
 					"    self.wfile.write(XML)\n" +
 					"  def log_message(self, *a): pass\n" +
-					"socketserver.TCPServer(('127.0.0.1',2822),H).serve_forever()\n" +
-					"\" &\n" +
+					"sys.stderr.write('Starting monit stub on 127.0.0.1:2822\\\\n')\n" +
+					"sys.stderr.flush()\n" +
+					"srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
+					"srv.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n" +
+					"sys.stderr.write('Monit stub listening\\\\n')\n" +
+					"sys.stderr.flush()\n" +
+					"srv.serve_forever()\n" +
+					"\" >/tmp/monit-stub.log 2>&1 &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
