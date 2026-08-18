@@ -1,11 +1,19 @@
 package vm
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -149,7 +157,7 @@ func (f Factory) Create(
 			return nil, bosherr.WrapError(err, "Marshalling agent env for rootfs injection")
 		}
 		boshDir := vmRootfs + "/var/vcap/bosh"
-		agentEnvBytes := addBlobstoreToEnv(envBytes)
+		agentEnvBytes := injectMbusCert(addBlobstoreToEnv(envBytes))
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
 		}
@@ -280,7 +288,7 @@ func (f Factory) Create(
 				envBytes, _ := initialAgentEnv.AsBytes()
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-					agentEnvBytes2 := addBlobstoreToEnv(envBytes)
+					agentEnvBytes2 := injectMbusCert(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
@@ -413,6 +421,59 @@ func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
 		}
 	}
 	return "", ""
+}
+
+// injectMbusCert generates a self-signed TLS cert and injects it into
+// env.bosh.mbus.cert so the agent can start its HTTPS mbus listener.
+// bosh create-env will later overwrite this with its own cert via update_settings.
+func injectMbusCert(envBytes []byte) []byte {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return envBytes
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "bosh-bootstrap"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return envBytes
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return envBytes
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	var m map[string]interface{}
+	if err := json.Unmarshal(envBytes, &m); err != nil {
+		return envBytes
+	}
+	env, _ := m["env"].(map[string]interface{})
+	if env == nil {
+		env = map[string]interface{}{}
+	}
+	bosh, _ := env["bosh"].(map[string]interface{})
+	if bosh == nil {
+		bosh = map[string]interface{}{}
+	}
+	bosh["mbus"] = map[string]interface{}{
+		"cert": map[string]interface{}{
+			"ca":          string(certPEM),
+			"certificate": string(certPEM),
+			"private_key": string(keyPEM),
+		},
+	}
+	env["bosh"] = bosh
+	m["env"] = env
+	out, err := json.Marshal(m)
+	if err != nil {
+		return envBytes
+	}
+	return out
 }
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
