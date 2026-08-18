@@ -188,10 +188,10 @@ jobs:
           -v kernel_path="${KERNEL_PATH}" \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml || {
-            echo "=== QEMU VM console log ===" && \
-              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -v '^\[' | tail -30 || true
-            echo "=== QEMU VM console kernel ===" && \
-              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
+            echo "=== QEMU VM console (agent output) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -v '^\[' | grep -E 'ERROR|App|main|mbus|cert|monit|sv|bosh-agent|agent|FAIL|error' | tail -50 || true
+            echo "=== QEMU VM console (last 50 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -50 || true
             echo "=== DHCP log ===" && \
               sudo find /tmp/bosh_libvirt_cpi -name dhclient.log 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
             echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true

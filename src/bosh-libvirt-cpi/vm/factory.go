@@ -284,11 +284,7 @@ func (f Factory) Create(
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
 					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
-					"# Write sv stub at runtime so it always takes priority\n" +
-					"mkdir -p /usr/local/bin\n" +
-					"cat > /usr/local/bin/sv << 'SVEOF'\n#!/bin/sh\ncase \"$1\" in\n  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\nSVEOF\n" +
-					"chmod +x /usr/local/bin/sv\n" +
-					"# Bring up network FIRST so agent can bind mbus before bosh create-env contacts it\n" +
+					"# Bring up network via DHCP\n" +
 					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 					"if [ -n \"$IFACE\" ]; then\n" +
 					"  ip link set \"$IFACE\" up\n" +
@@ -296,7 +292,7 @@ func (f Factory) Create(
 					"fi\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
-				// Write sv stub so agent's sv calls succeed without runsv locking
+				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
 				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
