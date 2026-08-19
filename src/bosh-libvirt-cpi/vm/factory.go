@@ -199,11 +199,7 @@ func (f Factory) Create(
 		monitStub := "python3 -c \"\n" +
 			"import http.server, socketserver, socket, sys, time\n" +
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
-			"XML = b\\\"<?xml version='1.0'?><monit><server><id>stub</id>\\\" + \\\n" +
-			"      b\\\"<incarnation>1</incarnation><version>5</version><uptime>1</uptime>\\\" + \\\n" +
-			"      b\\\"<poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname>\\\" + \\\n" +
-			"      b\\\"<controlfile>/etc/monit/monitrc</controlfile></server>\\\" + \\\n" +
-			"      b\\\"<servicegroups/><services/></monit>\\\"\n" +
+			"XML = b'<?xml version=\\\"1.0\\\"?><monit><server><id>stub</id><incarnation>1</incarnation><version>5</version><uptime>1</uptime><poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile></server><servicegroups/><services/></monit>'\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
 			"    self.send_response(200)\n" +
@@ -337,11 +333,7 @@ func (f Factory) Create(
 					"python3 -c \"\n" +
 					"import http.server, socketserver, socket, sys, time\n" +
 					"socketserver.TCPServer.allow_reuse_address = True\n" +
-					"XML = b\\\"<?xml version='1.0'?><monit><server><id>stub</id>\\\" + \\\n" +
-					"      b\\\"<incarnation>1</incarnation><version>5</version><uptime>1</uptime>\\\" + \\\n" +
-					"      b\\\"<poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname>\\\" + \\\n" +
-					"      b\\\"<controlfile>/etc/monit/monitrc</controlfile></server>\\\" + \\\n" +
-					"      b\\\"<servicegroups/><services/></monit>\\\"\n" +
+					"XML = b'<?xml version=\\\"1.0\\\"?><monit><server><id>stub</id><incarnation>1</incarnation><version>5</version><uptime>1</uptime><poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile></server><servicegroups/><services/></monit>'\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
 					"    self.send_response(200)\n" +
