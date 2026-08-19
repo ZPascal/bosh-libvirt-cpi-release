@@ -221,7 +221,10 @@ func (f Factory) Create(
 			"  sys.stderr.write('monit stub error: %s\\\\n' % str(e))\n" +
 			"  sys.stderr.flush()\n" +
 			"\" >/tmp/monit-stub.log 2>&1 &\n" +
-			"sleep 1\n"
+			"for i in $(seq 1 30); do\n" +
+			"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
+			"  sleep 0.2\n" +
+			"done\n"
 		var lxcInitScript string
 		if staticIP != "" {
 			lxcInitScript = "#!/bin/sh\n" +
@@ -356,7 +359,10 @@ func (f Factory) Create(
 					"  sys.stderr.write('monit stub error: %s\\\\n' % str(e))\n" +
 					"  sys.stderr.flush()\n" +
 					"\" >/tmp/monit-stub.log 2>&1 &\n" +
-					"sleep 1\n" +
+					"for i in $(seq 1 30); do\n" +
+					"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
+					"  sleep 0.2\n" +
+					"done\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
