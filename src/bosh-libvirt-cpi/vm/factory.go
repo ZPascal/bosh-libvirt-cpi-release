@@ -239,6 +239,7 @@ func (f Factory) Create(
 		if staticIP != "" {
 			lxcInitScript = "#!/bin/sh\n" +
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+				"exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
@@ -251,6 +252,7 @@ func (f Factory) Create(
 		} else {
 			lxcInitScript = "#!/bin/sh\n" +
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+				"exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +

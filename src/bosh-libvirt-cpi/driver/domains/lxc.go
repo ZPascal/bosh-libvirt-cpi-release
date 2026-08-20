@@ -41,12 +41,9 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
       <source dir='%s'/>
       <target dir='/mnt/ephemeral'/>
     </filesystem>
-    <console type='file'>
-      <source path='/tmp/bosh-lxc-%s-console.log'/>
-      <target type='lxc' port='0'/>
-    </console>
+    <console type='pty'/>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, featuresXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(id))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, featuresXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
 	return xml, nil
 }
 

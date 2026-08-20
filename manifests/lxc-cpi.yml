@@ -105,6 +105,11 @@ instance_groups:
       agent:
         user: agent
         password: agent-password
+      tls:
+        cert:
+          ca: ((blobstore_server_tls.ca))
+          certificate: ((blobstore_server_tls.certificate))
+          private_key: ((blobstore_server_tls.private_key))
     director:
       address: 127.0.0.1
       name: ((director_name))
@@ -166,9 +171,14 @@ variables:
     ca: nats_ca
     common_name: default.director.bosh-internal
     extended_key_usage: [client_auth]
-- name: nats_clients_hm_tls
+- name: blobstore_ca
   type: certificate
   options:
-    ca: nats_ca
-    common_name: default.hm.bosh-internal
-    extended_key_usage: [client_auth]
+    is_ca: true
+    common_name: default.blobstore-ca.bosh-internal
+- name: blobstore_server_tls
+  type: certificate
+  options:
+    ca: blobstore_ca
+    common_name: ((internal_ip))
+    alternative_names: [((internal_ip))]
