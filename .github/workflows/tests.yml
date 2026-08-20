@@ -327,6 +327,7 @@ jobs:
           --vars-store /tmp/bosh-vars.yml || {
             echo "=== libvirtd journal ===" && sudo journalctl -u libvirtd --no-pager | tail -30 || true
             echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
+            echo "=== LXC VM console log ===" && sudo find /tmp -name 'bosh-lxc-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -80 || true
             VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
             if [ -n "$VMDIR" ]; then
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
