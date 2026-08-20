@@ -199,14 +199,15 @@ func (f Factory) Create(
 		// monit stub: persistent HTTP server on port 2822 returning valid monit XML.
 		// bosh-agent parses incarnation as an XML *attribute* on the root <monit> element
 		// (xml:"incarnation,attr" in status.go) and hits /_status2?format=xml.
-		// It also POSTs to service URLs; we return 200 for those.
-		// On each POST (reload signal) we increment the incarnation so Reload() completes.
+		// Real monit uses time(...) as incarnation ID. We do the same: int(time.time())
+		// advances every second, so incarnationChanged() returns true after one
+		// DelayBetweenCheckTries sleep without needing any signal from sv kill/start.
 		monitStub := "python3 -c \"\n" +
-			"import http.server, socketserver, sys\n" +
+			"import http.server, socketserver, sys, time\n" +
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
-			"inc = [1]\n" +
 			"def xml():\n" +
-			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + str(inc[0]) + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
+			"  inc = str(int(time.time()))\n" +
+			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
 			"    body = xml()\n" +
@@ -217,7 +218,6 @@ func (f Factory) Create(
 			"    self.wfile.write(body)\n" +
 			"  def do_POST(self):\n" +
 			"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
-			"    inc[0] += 1\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Length','0')\n" +
 			"    self.end_headers()\n" +
@@ -345,11 +345,11 @@ func (f Factory) Create(
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
 					"python3 -c \"\n" +
-					"import http.server, socketserver, sys\n" +
+					"import http.server, socketserver, sys, time\n" +
 					"socketserver.TCPServer.allow_reuse_address = True\n" +
-					"inc = [1]\n" +
 					"def xml():\n" +
-					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + str(inc[0]) + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
+					"  inc = str(int(time.time()))\n" +
+					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
 					"    body = xml()\n" +
@@ -360,7 +360,6 @@ func (f Factory) Create(
 					"    self.wfile.write(body)\n" +
 					"  def do_POST(self):\n" +
 					"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
-					"    inc[0] += 1\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Length','0')\n" +
 					"    self.end_headers()\n" +
