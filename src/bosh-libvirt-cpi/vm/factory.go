@@ -194,19 +194,31 @@ func (f Factory) Create(
 		// Extract static IP/gateway from the agent env and bake them in so the
 		// container has network connectivity before bosh-agent starts.
 		staticIP, staticGW := extractNetworkFromEnv(agentEnvBytes)
-		// monit stub: persistent HTTP server on port 2822 returning valid monit XML
-		// so the agent's waitForMonit() and subsequent incarnation checks succeed.
+		// monit stub: persistent HTTP server on port 2822 returning valid monit XML.
+		// bosh-agent parses incarnation as an XML *attribute* on the root <monit> element
+		// (xml:"incarnation,attr" in status.go) and hits /_status2?format=xml.
+		// It also POSTs to service URLs; we return 200 for those.
+		// On each POST (reload signal) we increment the incarnation so Reload() completes.
 		monitStub := "python3 -c \"\n" +
-			"import http.server, socketserver, socket, sys, time\n" +
+			"import http.server, socketserver, sys\n" +
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
-			"XML = b\\\"<?xml version='1.0'?><monit><server><id>stub</id><incarnation>1</incarnation><version>5</version><uptime>1</uptime><poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile></server><servicegroups/><services/></monit>\\\"\n" +
+			"inc = [1]\n" +
+			"def xml():\n" +
+			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + str(inc[0]) + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
+			"    body = xml()\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Type','text/xml')\n" +
-			"    self.send_header('Content-Length', str(len(XML)))\n" +
+			"    self.send_header('Content-Length', str(len(body)))\n" +
 			"    self.end_headers()\n" +
-			"    self.wfile.write(XML)\n" +
+			"    self.wfile.write(body)\n" +
+			"  def do_POST(self):\n" +
+			"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
+			"    inc[0] += 1\n" +
+			"    self.send_response(200)\n" +
+			"    self.send_header('Content-Length','0')\n" +
+			"    self.end_headers()\n" +
 			"  def log_message(self, *a): pass\n" +
 			"try:\n" +
 			"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
@@ -331,16 +343,25 @@ func (f Factory) Create(
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
 					"python3 -c \"\n" +
-					"import http.server, socketserver, socket, sys, time\n" +
+					"import http.server, socketserver, sys\n" +
 					"socketserver.TCPServer.allow_reuse_address = True\n" +
-					"XML = b\\\"<?xml version='1.0'?><monit><server><id>stub</id><incarnation>1</incarnation><version>5</version><uptime>1</uptime><poll>5</poll><startdelay>0</startdelay><localhostname>bosh</localhostname><controlfile>/etc/monit/monitrc</controlfile></server><servicegroups/><services/></monit>\\\"\n" +
+					"inc = [1]\n" +
+					"def xml():\n" +
+					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + str(inc[0]) + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
+					"    body = xml()\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Type','text/xml')\n" +
-					"    self.send_header('Content-Length', str(len(XML)))\n" +
+					"    self.send_header('Content-Length', str(len(body)))\n" +
 					"    self.end_headers()\n" +
-					"    self.wfile.write(XML)\n" +
+					"    self.wfile.write(body)\n" +
+					"  def do_POST(self):\n" +
+					"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
+					"    inc[0] += 1\n" +
+					"    self.send_response(200)\n" +
+					"    self.send_header('Content-Length','0')\n" +
+					"    self.end_headers()\n" +
 					"  def log_message(self, *a): pass\n" +
 					"try:\n" +
 					"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
