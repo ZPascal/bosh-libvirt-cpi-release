@@ -164,10 +164,12 @@ func (f Factory) Create(
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
 		svStub := "#!/bin/sh\n" +
-			"# Stub: return success for start/status to unblock bootstrap agent\n" +
+			"# Stub: intercept all sv verbs so the monit stub is never killed.\n" +
 			"case \"$1\" in\n" +
-			"  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n" +
-			"  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\n" +
+			"  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n" +
+			"  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n" +
+			"  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n" +
+			"  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\n" +
 			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
@@ -380,7 +382,7 @@ func (f Factory) Create(
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
-				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start) echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  status) echo \"run: $2: (pid 0) 1s\"; exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
+				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
 				_, _ = execCommand("umount", mntDir)
 			}
