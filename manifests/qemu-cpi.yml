@@ -113,10 +113,14 @@ instance_groups:
       max_threads: 3
       db: *db
       backend_port: 25556
+      ssl:
+        cert: ((director_ssl.certificate))
+        key: ((director_ssl.private_key))
     hm:
       director_account:
         user: admin
         password: admin-password
+        ca_cert: ((director_ssl.ca))
       resurrector_enabled: true
     agent:
       mbus: nats://nats:nats-password@((internal_ip)):4222
@@ -149,6 +153,17 @@ cloud_provider:
     ntp: [0.pool.ntp.org, 1.pool.ntp.org]
 
 variables:
+- name: director_ssl
+  type: certificate
+  options:
+    ca: default_ca
+    common_name: ((internal_ip))
+    alternative_names: [((internal_ip))]
+- name: default_ca
+  type: certificate
+  options:
+    is_ca: true
+    common_name: ca
 - name: nats_ca
   type: certificate
   options:
