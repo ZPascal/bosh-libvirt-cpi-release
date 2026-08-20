@@ -171,6 +171,12 @@ variables:
     ca: nats_ca
     common_name: default.director.bosh-internal
     extended_key_usage: [client_auth]
+- name: nats_clients_hm_tls
+  type: certificate
+  options:
+    ca: nats_ca
+    common_name: default.hm.bosh-internal
+    extended_key_usage: [client_auth]
 - name: blobstore_ca
   type: certificate
   options:
