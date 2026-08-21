@@ -124,6 +124,9 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 		DirPath: f.opts.VMsDir(),
 		Network: f.opts.Network,
 	}
+	vmsOpts.MbusBootstrapSSL.CA = f.opts.MbusBootstrapSSL.CA
+	vmsOpts.MbusBootstrapSSL.Certificate = f.opts.MbusBootstrapSSL.Certificate
+	vmsOpts.MbusBootstrapSSL.PrivateKey = f.opts.MbusBootstrapSSL.PrivateKey
 
 	vms := bvm.NewFactory(
 		vmsOpts, f.uuidGen, d, runner, domBuilder, disks,

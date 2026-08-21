@@ -29,6 +29,16 @@ import (
 type FactoryOpts struct {
 	DirPath string
 	Network string // libvirt network name; defaults to "default" if empty
+
+	// MbusBootstrapSSL is the cert/key to inject into the agent env for the
+	// mbus bootstrap TLS listener. When set (from cloud_provider.properties.
+	// mbus_bootstrap_ssl), bosh create-env can verify the mbus via
+	// cloud_provider.cert: ((mbus_bootstrap_ssl)).
+	MbusBootstrapSSL struct {
+		CA          string
+		Certificate string
+		PrivateKey  string
+	}
 }
 
 type Factory struct {
@@ -158,7 +168,7 @@ func (f Factory) Create(
 			return nil, bosherr.WrapError(err, "Marshalling agent env for rootfs injection")
 		}
 		boshDir := vmRootfs + "/var/vcap/bosh"
-		agentEnvBytes := injectMbusCert(addBlobstoreToEnv(envBytes))
+		agentEnvBytes := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
 		}
@@ -325,7 +335,7 @@ func (f Factory) Create(
 				envBytes, _ := initialAgentEnv.AsBytes()
 				boshDir := mntDir + "/var/vcap/bosh"
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-					agentEnvBytes2 := injectMbusCert(addBlobstoreToEnv(envBytes))
+					agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
@@ -489,12 +499,13 @@ func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
 	return "", ""
 }
 
-// injectMbusCert generates a self-signed TLS cert (with IP SAN) and injects
-// it into env.bosh.mbus.cert so the agent can start its HTTPS mbus listener.
-// If a cert is already present (set by bosh create-env via mbus_bootstrap_ssl),
-// it is preserved so bosh-cli can verify it.
-func injectMbusCert(envBytes []byte) []byte {
-	// Check if cert already provided by bosh create-env
+// injectMbusCert injects a TLS cert into env.bosh.mbus.cert so the agent can
+// start its HTTPS mbus listener. If MbusBootstrapSSL is configured in FactoryOpts
+// (from cloud_provider.properties.mbus_bootstrap_ssl in the manifest), that cert
+// is used directly so bosh create-env can verify it via cloud_provider.cert.
+// Otherwise a self-signed cert with an IP SAN is generated as a fallback.
+func (f Factory) injectMbusCert(envBytes []byte) []byte {
+	// If a cert is already in the env (from bosh create-env), preserve it.
 	var m map[string]interface{}
 	if err := json.Unmarshal(envBytes, &m); err == nil {
 		if env, _ := m["env"].(map[string]interface{}); env != nil {
@@ -510,8 +521,14 @@ func injectMbusCert(envBytes []byte) []byte {
 		}
 	}
 
-	ip, _ := extractNetworkFromEnv(envBytes)
+	// Use the manifest-provided mbus_bootstrap_ssl cert when available.
+	ssl := f.opts.MbusBootstrapSSL
+	if ssl.CA != "" && ssl.Certificate != "" && ssl.PrivateKey != "" {
+		return injectCert(envBytes, ssl.CA, ssl.Certificate, ssl.PrivateKey)
+	}
 
+	// Fallback: generate a self-signed cert with the director's IP SAN.
+	ip, _ := extractNetworkFromEnv(envBytes)
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return envBytes
@@ -535,7 +552,11 @@ func injectMbusCert(envBytes []byte) []byte {
 		return envBytes
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return injectCert(envBytes, string(certPEM), string(certPEM), string(keyPEM))
+}
 
+func injectCert(envBytes []byte, ca, cert, key string) []byte {
+	var m map[string]interface{}
 	if err := json.Unmarshal(envBytes, &m); err != nil {
 		return envBytes
 	}
@@ -549,9 +570,9 @@ func injectMbusCert(envBytes []byte) []byte {
 	}
 	bosh["mbus"] = map[string]interface{}{
 		"cert": map[string]interface{}{
-			"ca":          string(certPEM),
-			"certificate": string(certPEM),
-			"private_key": string(keyPEM),
+			"ca":          ca,
+			"certificate": cert,
+			"private_key": key,
 		},
 	}
 	env["bosh"] = bosh

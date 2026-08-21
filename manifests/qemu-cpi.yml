@@ -145,6 +145,7 @@ cloud_provider:
     private_key: ((libvirt_private_key))
     host_key: ((libvirt_host_key))
     store_dir: ~/.bosh_libvirt_cpi
+    mbus_bootstrap_ssl: ((mbus_bootstrap_ssl))
     agent:
       mbus: https://mbus:mbus-password@0.0.0.0:6868
       blobstore:

@@ -22,6 +22,16 @@ type FactoryOpts struct {
 
 	StoreDir string
 
+	// MbusBootstrapSSL is the TLS cert/key for the agent mbus bootstrap listener.
+	// When provided (via cloud_provider.properties.mbus_bootstrap_ssl in the manifest),
+	// it is injected into the agent env so bosh create-env can verify the mbus endpoint
+	// using cloud_provider.cert: ((mbus_bootstrap_ssl)).
+	MbusBootstrapSSL struct {
+		CA          string `json:"ca"`
+		Certificate string `json:"certificate"`
+		PrivateKey  string `json:"private_key"`
+	} `json:"mbus_bootstrap_ssl"`
+
 	Agent apiv1.AgentOptions
 }
 
