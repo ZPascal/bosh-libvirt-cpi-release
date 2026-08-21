@@ -170,8 +170,6 @@ variables:
     ca: default_ca
     common_name: ((internal_ip))
     alternative_names: [((internal_ip))]
-    key_length: 256
-    key_type: "ec"
 - name: director_ssl
   type: certificate
   options:
