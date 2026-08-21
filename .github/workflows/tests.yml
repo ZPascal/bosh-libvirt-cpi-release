@@ -147,13 +147,15 @@ jobs:
       run: |
         GO_VERSION=$(go env GOVERSION | sed 's/go//')
         GOROOT_PATH=$(go env GOROOT)
-        # Write the golang packaging script using printf to avoid YAML heredoc issues
-        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh"\n' > packages/golang-1-linux/packaging
-        printf 'if [ ! -f /usr/local/go/bin/go ]; then\n' >> packages/golang-1-linux/packaging
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
         printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
-        printf '  sudo rm -rf /usr/local/go\n  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
-        printf 'printf "export GOROOT=/usr/local/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
-        printf 'printf "export GOROOT=/usr/local/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
 
@@ -311,13 +313,15 @@ jobs:
       run: |
         GO_VERSION=$(go env GOVERSION | sed 's/go//')
         GOROOT_PATH=$(go env GOROOT)
-        # Write the golang packaging script using printf to avoid YAML heredoc issues
-        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh"\n' > packages/golang-1-linux/packaging
-        printf 'if [ ! -f /usr/local/go/bin/go ]; then\n' >> packages/golang-1-linux/packaging
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
         printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
-        printf '  sudo rm -rf /usr/local/go\n  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
-        printf 'printf "export GOROOT=/usr/local/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
-        printf 'printf "export GOROOT=/usr/local/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
 
@@ -357,7 +361,7 @@ jobs:
             echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
             VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
             if [ -n "$VMDIR" ]; then
-              echo "=== bosh-agent-init.log (first 20 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | head -20 || true
+              echo "=== bosh-agent-init.log (first 40 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | head -40 || true
               echo "=== bosh-agent-init.log (last 80 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -80 || true
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
               echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true

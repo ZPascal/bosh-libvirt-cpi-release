@@ -252,7 +252,7 @@ func (f Factory) Create(
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 				"exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
-				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
 				"  ip link set \"$IFACE\" up\n" +
 				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
