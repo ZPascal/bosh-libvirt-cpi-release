@@ -121,6 +121,13 @@ func (f Factory) Create(
 	initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
 	initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
 
+	// For QEMU kernel-boot (ext4), the ephemeral disk is attached as /dev/vdb inside
+	// the VM. Override the hint so bosh-agent finds the actual device instead of the
+	// host file path (which doesn't exist inside the VM, causing fallback to root disk).
+	if f.domBuilder.DiskImageFormat() == "ext4" {
+		initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString("/dev/vdb"))
+	}
+
 	// For container/direct-kernel backends, mark networks as preconfigured so
 	// the agent skips interface-name validation (interface is set up by init script).
 	if f.domBuilder.DiskImageFormat() == "dir" || f.domBuilder.DiskImageFormat() == "ext4" {
