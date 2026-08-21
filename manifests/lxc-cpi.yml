@@ -141,6 +141,7 @@ cloud_provider:
     name: libvirt_cpi
     release: bosh-libvirt-cpi
   mbus: https://mbus:mbus-password@((internal_ip)):6868
+  cert: ((mbus_bootstrap_ssl))
   properties:
     backend_uri: lxc:///
     host: ((libvirt_host))
@@ -173,6 +174,8 @@ variables:
     ca: default_ca
     common_name: ((internal_ip))
     alternative_names: [((internal_ip))]
+    key_length: 256
+    key_type: "ec"
 - name: director_ssl
   type: certificate
   options:
