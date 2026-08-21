@@ -10,6 +10,11 @@ params = {
   "PrivateKey"  => p("private_key"),
   "HostKey"     => p("host_key"),
   "StoreDir"    => p("store_dir"),
+  "MbusBootstrapSSL" => {
+    "ca"          => p("mbus_bootstrap_ssl.ca"),
+    "certificate" => p("mbus_bootstrap_ssl.certificate"),
+    "private_key" => p("mbus_bootstrap_ssl.private_key")
+  },
   "Agent"       => {
     "ntp" => p("ntp")
   }
