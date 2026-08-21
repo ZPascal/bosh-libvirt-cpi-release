@@ -154,6 +154,10 @@ cloud_provider:
         provider: local
         options:
           blobstore_path: /var/vcap/micro_bosh/data/cache
+      env:
+        bosh:
+          mbus:
+            cert: ((mbus_bootstrap_ssl))
     ntp: [0.pool.ntp.org, 1.pool.ntp.org]
 
 variables:
@@ -162,6 +166,12 @@ variables:
   options:
     is_ca: true
     common_name: ca
+- name: mbus_bootstrap_ssl
+  type: certificate
+  options:
+    ca: default_ca
+    common_name: ((internal_ip))
+    alternative_names: [((internal_ip))]
 - name: director_ssl
   type: certificate
   options:
