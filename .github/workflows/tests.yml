@@ -318,6 +318,9 @@ jobs:
         sudo virsh net-update default add ip-dhcp-host \
           "<host mac='52:54:00:ab:cd:11' ip='192.168.122.11'/>" \
           --live --config || true
+        # Add a static ARP entry so the host bridge can reach the container's
+        # static IP immediately, without waiting for an ARP reply from inside.
+        sudo arp -s 192.168.122.11 52:54:00:ab:cd:11 2>/dev/null || true
 
     - name: Bootstrap BOSH Director via LXC (bosh-lite)
       run: |
