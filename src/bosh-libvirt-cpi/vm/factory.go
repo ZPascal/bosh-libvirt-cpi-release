@@ -247,6 +247,8 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  ip route add default via " + staticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  # Gratuitous ARP so the host bridge learns our MAC/IP immediately.\n" +
+				"  arping -c 3 -U -I \"$IFACE\" " + staticIP + " 2>/dev/null || true\n" +
 				"fi\n" +
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
@@ -487,11 +489,27 @@ func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
 	return "", ""
 }
 
-// injectMbusCert generates a self-signed TLS cert and injects it into
-// env.bosh.mbus.cert so the agent can start its HTTPS mbus listener.
-// The IP SAN is required so bosh create-env can verify the cert when it
-// uploads blobs to https://<ip>:6868/blobs/...
+// injectMbusCert generates a self-signed TLS cert (with IP SAN) and injects
+// it into env.bosh.mbus.cert so the agent can start its HTTPS mbus listener.
+// If a cert is already present (set by bosh create-env via mbus_bootstrap_ssl),
+// it is preserved so bosh-cli can verify it.
 func injectMbusCert(envBytes []byte) []byte {
+	// Check if cert already provided by bosh create-env
+	var m map[string]interface{}
+	if err := json.Unmarshal(envBytes, &m); err == nil {
+		if env, _ := m["env"].(map[string]interface{}); env != nil {
+			if bosh, _ := env["bosh"].(map[string]interface{}); bosh != nil {
+				if mbus, _ := bosh["mbus"].(map[string]interface{}); mbus != nil {
+					if cert, _ := mbus["cert"].(map[string]interface{}); cert != nil {
+						if ca, _ := cert["ca"].(string); ca != "" {
+							return envBytes
+						}
+					}
+				}
+			}
+		}
+	}
+
 	ip, _ := extractNetworkFromEnv(envBytes)
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -518,7 +536,6 @@ func injectMbusCert(envBytes []byte) []byte {
 	}
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
-	var m map[string]interface{}
 	if err := json.Unmarshal(envBytes, &m); err != nil {
 		return envBytes
 	}
