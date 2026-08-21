@@ -29,7 +29,7 @@ resource_pools:
   cloud_properties:
     memory: 4096
     cpus: 2
-    ephemeral_disk: 65536
+    ephemeral_disk: 102400
 
 disk_pools:
 - name: disks
@@ -110,7 +110,7 @@ instance_groups:
       address: 127.0.0.1
       name: ((director_name))
       cpi_job: libvirt_cpi
-      max_threads: 3
+      max_threads: 1
       db: *db
       backend_port: 25556
       ssl:
