@@ -30,7 +30,7 @@ type FactoryOpts struct {
 		CA          string `json:"ca"`
 		Certificate string `json:"certificate"`
 		PrivateKey  string `json:"private_key"`
-	} `json:"mbus_bootstrap_ssl"`
+	}
 
 	Agent apiv1.AgentOptions
 }
