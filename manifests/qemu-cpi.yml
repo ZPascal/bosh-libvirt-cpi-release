@@ -29,7 +29,7 @@ resource_pools:
   cloud_properties:
     memory: 4096
     cpus: 2
-    ephemeral_disk: 114688
+    ephemeral_disk: 204800
 
 disk_pools:
 - name: disks

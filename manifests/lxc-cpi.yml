@@ -31,8 +31,8 @@ resource_pools:
   stemcell:
     url: ((stemcell_url))
   cloud_properties:
-    memory: 1024
-    cpus: 1
+    memory: 2048
+    cpus: 2
     ephemeral_disk: 30000
 
 disk_pools:
