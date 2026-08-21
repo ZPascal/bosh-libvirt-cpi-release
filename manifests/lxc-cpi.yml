@@ -33,11 +33,11 @@ resource_pools:
   cloud_properties:
     memory: 1024
     cpus: 1
-    ephemeral_disk: 10000
+    ephemeral_disk: 30000
 
 disk_pools:
 - name: disks
-  disk_size: 10000
+  disk_size: 30000
 
 networks:
 - name: default

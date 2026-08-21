@@ -119,6 +119,15 @@ jobs:
     needs: build
 
     steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
     - uses: actions/checkout@v7
 
     - name: Set up Go
@@ -273,6 +282,15 @@ jobs:
     needs: build
 
     steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
     - uses: actions/checkout@v7
 
     - name: Set up Go
