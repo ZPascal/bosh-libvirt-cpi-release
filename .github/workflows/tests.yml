@@ -280,11 +280,14 @@ jobs:
         sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
         # Mask libvirtd sockets so systemd does not stop libvirtd when CPI clients disconnect.
         sudo systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket 2>/dev/null || true
-        # Disable libvirtd idle shutdown (default is 120s); without this libvirtd stops
-        # 120s after the last CPI client disconnects, tearing down LXC container veth interfaces.
-        sudo sed -i 's/^#*\s*shutdown_timeout\s*=.*/shutdown_timeout = 0/' /etc/libvirt/libvirtd.conf
-        echo 'shutdown_timeout = 0' | sudo tee -a /etc/libvirt/libvirtd.conf
+        # Disable libvirtd idle shutdown. libvirtd has a default shutdown_timeout of 120s:
+        # it exits cleanly 120s after all clients disconnect, tearing down LXC veth interfaces.
+        # Append with high priority so it overrides any existing value in the file.
+        printf '\nshutdown_timeout = 0\n' | sudo tee -a /etc/libvirt/libvirtd.conf > /dev/null
         sudo systemctl start libvirtd
+        # Keep a persistent libvirt connection open so libvirtd never becomes idle.
+        sudo virsh -c lxc:/// list --all &>/dev/null &
+        sudo nohup sh -c 'while true; do virsh -c lxc:/// list --all &>/dev/null; sleep 30; done' &>/dev/null &
         sudo usermod -aG libvirt $USER
         sudo virsh net-start default || true
         sudo virsh net-autostart default || true

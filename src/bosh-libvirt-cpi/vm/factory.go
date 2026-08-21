@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -488,8 +489,11 @@ func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
 
 // injectMbusCert generates a self-signed TLS cert and injects it into
 // env.bosh.mbus.cert so the agent can start its HTTPS mbus listener.
-// bosh create-env will later overwrite this with its own cert via update_settings.
+// The IP SAN is required so bosh create-env can verify the cert when it
+// uploads blobs to https://<ip>:6868/blobs/...
 func injectMbusCert(envBytes []byte) []byte {
+	ip, _ := extractNetworkFromEnv(envBytes)
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return envBytes
@@ -499,6 +503,9 @@ func injectMbusCert(envBytes []byte) []byte {
 		Subject:      pkix.Name{CommonName: "bosh-bootstrap"},
 		NotBefore:    time.Now().Add(-time.Minute),
 		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	if parsed := net.ParseIP(ip); parsed != nil {
+		tmpl.IPAddresses = []net.IP{parsed}
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
