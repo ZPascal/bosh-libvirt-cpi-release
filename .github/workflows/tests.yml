@@ -146,35 +146,15 @@ jobs:
     - name: Patch golang-1-linux packaging with actual GOROOT
       run: |
         GO_VERSION=$(go env GOVERSION | sed 's/go//')
-        # Write a packaging script that downloads Go at compile time inside the VM.
-        # This avoids bundling large Go binaries in the release tarball.
-        cat > packages/golang-1-linux/packaging << SCRIPT
-#!/bin/bash
-set -e -x
-mkdir -p "\${BOSH_INSTALL_TARGET}/bosh"
-# Download Go if not already present
-if [ ! -f /usr/local/go/bin/go ]; then
-  curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/golang.tar.gz
-  sudo rm -rf /usr/local/go
-  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz
-  rm -f /tmp/golang.tar.gz
-fi
-cat > "\${BOSH_INSTALL_TARGET}/bosh/compile.env" << 'EOF'
-export GOROOT=/usr/local/go
-export GOPATH=\$PWD
-export GOCACHE=/tmp/go-cache
-export GOTOOLCHAIN=local
-export PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH
-EOF
-cat > "\${BOSH_INSTALL_TARGET}/bosh/runtime.env" << 'EOF'
-export GOROOT=/usr/local/go
-export GOCACHE=/tmp/go-cache
-export GOPATH="\$PWD"
-export PATH="\$GOROOT/bin:\$GOPATH/bin:\$PATH"
-EOF
-SCRIPT
+        GOROOT_PATH=$(go env GOROOT)
+        # Write the golang packaging script using printf to avoid YAML heredoc issues
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f /usr/local/go/bin/go ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  sudo rm -rf /usr/local/go\n  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=/usr/local/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=/usr/local/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
-        # Reset spec to no files (Go is downloaded at compile time)
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
 
     - name: Build CPI release tarball
@@ -330,35 +310,15 @@ SCRIPT
     - name: Patch golang-1-linux packaging with actual GOROOT
       run: |
         GO_VERSION=$(go env GOVERSION | sed 's/go//')
-        # Write a packaging script that downloads Go at compile time inside the VM.
-        # This avoids bundling large Go binaries in the release tarball.
-        cat > packages/golang-1-linux/packaging << SCRIPT
-#!/bin/bash
-set -e -x
-mkdir -p "\${BOSH_INSTALL_TARGET}/bosh"
-# Download Go if not already present
-if [ ! -f /usr/local/go/bin/go ]; then
-  curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/golang.tar.gz
-  sudo rm -rf /usr/local/go
-  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz
-  rm -f /tmp/golang.tar.gz
-fi
-cat > "\${BOSH_INSTALL_TARGET}/bosh/compile.env" << 'EOF'
-export GOROOT=/usr/local/go
-export GOPATH=\$PWD
-export GOCACHE=/tmp/go-cache
-export GOTOOLCHAIN=local
-export PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH
-EOF
-cat > "\${BOSH_INSTALL_TARGET}/bosh/runtime.env" << 'EOF'
-export GOROOT=/usr/local/go
-export GOCACHE=/tmp/go-cache
-export GOPATH="\$PWD"
-export PATH="\$GOROOT/bin:\$GOPATH/bin:\$PATH"
-EOF
-SCRIPT
+        GOROOT_PATH=$(go env GOROOT)
+        # Write the golang packaging script using printf to avoid YAML heredoc issues
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f /usr/local/go/bin/go ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  sudo rm -rf /usr/local/go\n  sudo tar -C /usr/local -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=/usr/local/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=/usr/local/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
-        # Reset spec to no files (Go is downloaded at compile time)
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
 
     - name: Build CPI release tarball
