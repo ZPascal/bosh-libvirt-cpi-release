@@ -216,8 +216,13 @@ func (f Factory) Create(
 		}
 		// Write wrappers AFTER the symlink loop so they override any symlinks to the
 		// real binaries. su: bypass PAM for postgres initdb. sysctl: always exit 0.
+		// bosh-agent pre-start PATH is hardcoded to /usr/sbin:/usr/bin:/sbin:/bin
+		// (see agent/script/pathenv/pathenv.go) -- /usr/local/bin is NOT searched.
+		// Place wrappers in /usr/sbin (first in that PATH) so they take priority.
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/su", []byte(suWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
+		_ = os.WriteFile(vmRootfs+"/usr/sbin/su", []byte(suWrapper), 0755)
+		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
@@ -388,11 +393,12 @@ func (f Factory) Create(
 					"shift  # skip '-c'\n" +
 					"exec /bin/sh -c \"$@\"\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
-				// Write a 'sysctl' wrapper that always exits 0.
-				// postgres pre-start calls 'sysctl -w kernel.shmmax=...' with set -eu;
-				// if sysctl fails the script dies silently. The value is set in bosh-init.
+				_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
+				// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
+				// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
 				sysctlWrapper := "#!/bin/sh\n/sbin/sysctl \"$@\" 2>/dev/null; exit 0\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
+				_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
 				initScript := "#!/bin/sh\n" +
 					"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
