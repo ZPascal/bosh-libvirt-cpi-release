@@ -162,12 +162,26 @@ func (f Factory) Create(
 			}
 		}
 
-		// Pre-create /var/vcap/store so BOSH jobs (postgres) can write their data.
-		// Without a persistent disk mounted, bosh-agent leaves this dir absent.
-		// uid 1000 = vcap user in the warden-boshlite stemcell.
-		storeDir := vmRootfs + "/var/vcap/store"
-		if mkErr := os.MkdirAll(storeDir, 0700); mkErr == nil {
-			_ = os.Chown(storeDir, 1000, 1000)
+		// Pre-create /var/vcap/store and /var/vcap/data so BOSH jobs can write their
+		// data. With SkipDiskSetup:true bosh-agent never mounts/formats an ephemeral or
+		// persistent disk — it expects these dirs to already exist on the rootfs.
+		// /var/vcap/data is where job templates are unpacked (symlinked from /var/vcap/jobs);
+		// if it's missing, all job symlinks are dangling and pre-start scripts can't run.
+		// uid/gid 1000 = vcap user in the warden-boshlite stemcell.
+		for _, d := range []struct {
+			path string
+			perm os.FileMode
+			uid  int
+		}{
+			{vmRootfs + "/var/vcap/data", 0755, 0},
+			{vmRootfs + "/var/vcap/data/jobs", 0750, 0},
+			{vmRootfs + "/var/vcap/data/packages", 0755, 0},
+			{vmRootfs + "/var/vcap/data/tmp", 0755, 1000},
+			{vmRootfs + "/var/vcap/store", 0700, 1000},
+		} {
+			if mkErr := os.MkdirAll(d.path, d.perm); mkErr == nil && d.uid != 0 {
+				_ = os.Chown(d.path, d.uid, d.uid)
+			}
 		}
 
 		envBytes, err := initialAgentEnv.AsBytes()
@@ -382,6 +396,17 @@ func (f Factory) Create(
 					src := "/var/vcap/bosh/bin/" + b.Name()
 					_ = os.Remove(dst)
 					_ = os.Symlink(src, dst)
+				}
+				// Pre-create /var/vcap/data so job symlinks resolve and pre-start can run.
+				// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk — it
+				// expects this tree to already exist on the root filesystem.
+				for _, dd := range []string{
+					mntDir + "/var/vcap/data",
+					mntDir + "/var/vcap/data/jobs",
+					mntDir + "/var/vcap/data/packages",
+					mntDir + "/var/vcap/data/tmp",
+				} {
+					_ = os.MkdirAll(dd, 0755)
 				}
 				// Inject a 'su' wrapper that runs the command directly as root.
 				// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
