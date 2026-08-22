@@ -192,15 +192,11 @@ func (f Factory) Create(
 			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
-		// Write a 'su' wrapper that runs commands directly without user-switching.
-		// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which fails
-		// in LXC containers (PAM not configured, or SYS_ADMIN restrictions).
-		// Since PATH has /usr/local/bin first, this wrapper takes priority over /bin/su.
 		suWrapper := "#!/bin/sh\n# Skip user switching; run command directly.\n" +
 			"while [ \"$1\" != '-c' ] && [ $# -gt 0 ]; do shift; done\n" +
 			"shift  # skip '-c'\n" +
 			"exec /bin/sh -c \"$@\"\n"
-		_ = os.WriteFile(vmRootfs+"/usr/local/bin/su", []byte(suWrapper), 0755)
+		sysctlWrapper := "#!/bin/sh\n/sbin/sysctl \"$@\" 2>/dev/null; exit 0\n"
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
 		// finds them via exec.Command regardless of the inherited PATH.
 		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
@@ -218,6 +214,10 @@ func (f Factory) Create(
 				_ = os.Symlink(src, dst)
 			}
 		}
+		// Write wrappers AFTER the symlink loop so they override any symlinks to the
+		// real binaries. su: bypass PAM for postgres initdb. sysctl: always exit 0.
+		_ = os.WriteFile(vmRootfs+"/usr/local/bin/su", []byte(suWrapper), 0755)
+		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
@@ -388,6 +388,11 @@ func (f Factory) Create(
 					"shift  # skip '-c'\n" +
 					"exec /bin/sh -c \"$@\"\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
+				// Write a 'sysctl' wrapper that always exits 0.
+				// postgres pre-start calls 'sysctl -w kernel.shmmax=...' with set -eu;
+				// if sysctl fails the script dies silently. The value is set in bosh-init.
+				sysctlWrapper := "#!/bin/sh\n/sbin/sysctl \"$@\" 2>/dev/null; exit 0\n"
+				_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 				initScript := "#!/bin/sh\n" +
 					"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
