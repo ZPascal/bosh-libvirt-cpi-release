@@ -14,9 +14,11 @@ func (b LXCDomainBuilder) DiskImageFormat() string { return "dir" }
 
 func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
 	ifaceXML := ""
-	featuresXML := ""
+	// Always enable SYS_ADMIN so containers can run sysctl (required by BOSH postgres pre-start).
+	// Also enable privnet for proper network namespace isolation when a MAC address is provided.
+	privnetXML := ""
 	if props.MAC != "" {
-		featuresXML = "\n  <features><privnet/></features>"
+		privnetXML = "\n      <privnet/>"
 		ifaceXML = fmt.Sprintf(`
     <interface type='network'>
       <mac address='%s'/>
@@ -31,7 +33,12 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     <type>exe</type>
     <init>/bosh-lxc-init</init>
     <initenv name='PATH'>/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</initenv>
-  </os>%s
+  </os>
+  <features>%s
+    <capabilities policy='default'>
+      <sys_admin state='on'/>
+    </capabilities>
+  </features>
   <devices>%s
     <filesystem type='mount'>
       <source dir='%s'/>
@@ -43,7 +50,7 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
     </filesystem>
     <console type='pty'/>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, featuresXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, privnetXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
 	return xml, nil
 }
 
