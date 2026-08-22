@@ -344,6 +344,31 @@ func (f Factory) Create(
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 					agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
+					// Override agent.json to enable ephemeral disk setup.
+					// The warden-boshlite stemcell ships with SkipDiskSetup:true which
+					// prevents bosh-agent from formatting and mounting /dev/vdb.
+					// With SkipDiskSetup:false, bosh-agent uses the hint from
+					// warden-cpi-agent-env.json ("disks.ephemeral": "/dev/vdb") to
+					// format and mount the 65GB virtio disk as /var/vcap/data.
+					agentJSON := []byte(`{
+  "Platform": {
+    "Linux": {
+      "UseDefaultTmpDir": true,
+      "UsePreformattedPersistentDisk": true,
+      "BindMountPersistentDisk": true,
+      "SkipDiskSetup": false,
+      "DevicePathResolutionType": "virtio"
+    }
+  },
+  "Infrastructure": {
+    "Settings": {
+      "Sources": [{"Type": "File", "SettingsPath": "/var/vcap/bosh/warden-cpi-agent-env.json"}],
+      "UseServerName": false,
+      "UseRegistry": false
+    }
+  }
+}`)
+					_ = os.WriteFile(boshDir+"/agent.json", agentJSON, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
