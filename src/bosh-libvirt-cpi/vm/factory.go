@@ -356,8 +356,7 @@ func (f Factory) Create(
       "UseDefaultTmpDir": true,
       "UsePreformattedPersistentDisk": true,
       "BindMountPersistentDisk": true,
-      "SkipDiskSetup": false,
-      "DevicePathResolutionType": "virtio"
+      "SkipDiskSetup": false
     }
   },
   "Infrastructure": {
