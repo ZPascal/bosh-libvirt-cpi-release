@@ -399,6 +399,8 @@ func (f Factory) Create(
 					"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
 					"  sleep 0.2\n" +
 					"done\n" +
+					"# Log disk usage periodically so we can see what fills up\n" +
+					"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv

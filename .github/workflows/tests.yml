@@ -211,6 +211,8 @@ jobs:
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -v '^\[' | grep -E 'ERROR|App|main|mbus|cert|monit|sv|bosh-agent|agent|FAIL|error' | tail -50 || true
             echo "=== QEMU VM console (last 50 lines) ===" && \
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -50 || true
+            echo "=== QEMU VM disk usage (df /var/vcap/data) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -E 'df |Filesystem|/dev/|vcap/data' | tail -10 || true
             echo "=== DHCP log ===" && \
               sudo find /tmp/bosh_libvirt_cpi -name dhclient.log 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
             echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true
