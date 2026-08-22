@@ -121,13 +121,6 @@ func (f Factory) Create(
 	initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
 	initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
 
-	// For QEMU kernel-boot (ext4), the ephemeral disk is attached as /dev/vdb inside
-	// the VM. Override the hint so bosh-agent finds the actual device instead of the
-	// host file path (which doesn't exist inside the VM, causing fallback to root disk).
-	if f.domBuilder.DiskImageFormat() == "ext4" {
-		initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString("/dev/vdb"))
-	}
-
 	// For container/direct-kernel backends, mark networks as preconfigured so
 	// the agent skips interface-name validation (interface is set up by init script).
 	if f.domBuilder.DiskImageFormat() == "dir" || f.domBuilder.DiskImageFormat() == "ext4" {
@@ -329,6 +322,20 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", string(out))
 		}
+		// Grow the root ext4 image so /var/vcap/data has enough space for BOSH package
+		// compilation. The stemcell ships a small image (~2GB); we need 60GB+ for all
+		// BOSH director packages. qemu-img resize expands the file, then resize2fs grows
+		// the filesystem to fill the new space.
+		if out, err := execCommand("qemu-img", "resize", vmExt4, "65G"); err != nil {
+			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, string(out))
+		} else {
+			if out2, err2 := execCommand("e2fsck", "-f", "-y", vmExt4); err2 != nil {
+				f.logger.Info(f.logTag, "e2fsck failed (non-fatal): %s %s", err2, string(out2))
+			}
+			if out3, err3 := execCommand("resize2fs", vmExt4); err3 != nil {
+				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, string(out3))
+			}
+		}
 		// Mount, inject, unmount
 		mntDir := vmExt4 + ".mnt"
 		if err := os.MkdirAll(mntDir, 0755); err == nil {
@@ -344,30 +351,6 @@ func (f Factory) Create(
 				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 					agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
-					// Override agent.json to enable ephemeral disk setup.
-					// The warden-boshlite stemcell ships with SkipDiskSetup:true which
-					// prevents bosh-agent from formatting and mounting /dev/vdb.
-					// With SkipDiskSetup:false, bosh-agent uses the hint from
-					// warden-cpi-agent-env.json ("disks.ephemeral": "/dev/vdb") to
-					// format and mount the 65GB virtio disk as /var/vcap/data.
-					agentJSON := []byte(`{
-  "Platform": {
-    "Linux": {
-      "UseDefaultTmpDir": true,
-      "UsePreformattedPersistentDisk": true,
-      "BindMountPersistentDisk": true,
-      "SkipDiskSetup": false
-    }
-  },
-  "Infrastructure": {
-    "Settings": {
-      "Sources": [{"Type": "File", "SettingsPath": "/var/vcap/bosh/warden-cpi-agent-env.json"}],
-      "UseServerName": false,
-      "UseRegistry": false
-    }
-  }
-}`)
-					_ = os.WriteFile(boshDir+"/agent.json", agentJSON, 0644)
 				}
 				// Symlink bosh tools into /usr/local/bin
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
