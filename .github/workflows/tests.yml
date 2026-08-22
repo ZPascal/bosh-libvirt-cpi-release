@@ -211,6 +211,15 @@ jobs:
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -v '^\[' | grep -E 'ERROR|App|main|mbus|cert|monit|sv|bosh-agent|agent|FAIL|error' | tail -50 || true
             echo "=== QEMU VM console (last 50 lines) ===" && \
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -50 || true
+            echo "=== QEMU postgres pre-start log ===" && \
+              sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            echo "=== QEMU /usr/sbin wrappers ===" && \
+              MNTIMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1) && \
+              [ -n "$MNTIMG" ] && sudo mount -o loop,ro "$MNTIMG" /mnt 2>/dev/null && \
+              sudo ls -la /mnt/usr/sbin/sysctl /mnt/usr/sbin/su 2>/dev/null && \
+              sudo cat /mnt/usr/sbin/sysctl 2>/dev/null && \
+              sudo cat /mnt/usr/sbin/su 2>/dev/null && \
+              sudo umount /mnt 2>/dev/null || true
             echo "=== QEMU VM disk usage (df /var/vcap/data) ===" && \
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -E 'df |Filesystem|/dev/|vcap/data' | tail -10 || true
             echo "=== DHCP log ===" && \
@@ -392,6 +401,11 @@ jobs:
               echo "=== postgres pre-start stdout ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stdout.log" 2>/dev/null | tail -30 || true
               echo "=== postgres job logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/postgres/" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -40 || true
               echo "=== bosh agent log postgres ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -i "postgres\|pre-start\|Error\|exit" | tail -20 || true
+              echo "=== bosh agent log pre-start full ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -A5 -B2 "pre-start\|run_script\|GenericScript\|RunScript" | tail -40 || true
+              echo "=== /usr/sbin wrappers ===" && sudo ls -la "$VMDIR/rootfs/usr/sbin/su" "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
+              echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
+              echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
+              echo "=== pre-start script ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/postgres/bin/pre-start" 2>/dev/null | head -20 || true
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
               echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true
               echo "=== bosh-lxc-init ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null || true
