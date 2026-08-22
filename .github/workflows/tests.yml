@@ -385,6 +385,8 @@ jobs:
               echo "=== bosh-agent-init.log (last 80 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -80 || true
               echo "=== postgres pre-start log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stderr.log" 2>/dev/null | tail -30 || true
               echo "=== postgres pre-start stdout ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stdout.log" 2>/dev/null | tail -30 || true
+              echo "=== postgres job logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/postgres/" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -40 || true
+              echo "=== bosh agent log postgres ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -i "postgres\|pre-start\|Error\|exit" | tail -20 || true
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
               echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true
               echo "=== bosh-lxc-init ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null || true
