@@ -367,6 +367,9 @@ func (f Factory) Create(
 					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 					"ip link set lo up 2>/dev/null || true\n" +
+					"# Set shared memory limits required by postgres pre-start\n" +
+					"sysctl -w kernel.shmmax=67108864 2>/dev/null || true\n" +
+					"sysctl -w kernel.shmall=4194304 2>/dev/null || true\n" +
 					"# Bring up network via DHCP\n" +
 					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 					"if [ -n \"$IFACE\" ]; then\n" +
