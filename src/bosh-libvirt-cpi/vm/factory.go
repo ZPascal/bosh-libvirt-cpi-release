@@ -251,6 +251,10 @@ func (f Factory) Create(
 			lxcInitScript = "#!/bin/sh\n" +
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 				"exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1\n" +
+				"# Mount tmpfs at /var/vcap/store so postgres can write its data directory.\n" +
+				"# Without this, bosh-agent doesn't mount a persistent disk and postgres fails.\n" +
+				"mkdir -p /var/vcap/store\n" +
+				"mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
@@ -370,6 +374,9 @@ func (f Factory) Create(
 					"# Set shared memory limits required by postgres pre-start\n" +
 					"sysctl -w kernel.shmmax=67108864 2>/dev/null || true\n" +
 					"sysctl -w kernel.shmall=4194304 2>/dev/null || true\n" +
+					"# Mount tmpfs at /var/vcap/store so postgres can write its data directory.\n" +
+					"mkdir -p /var/vcap/store\n" +
+					"mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true\n" +
 					"# Bring up network via DHCP\n" +
 					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 					"if [ -n \"$IFACE\" ]; then\n" +
