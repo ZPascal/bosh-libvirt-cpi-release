@@ -402,6 +402,9 @@ jobs:
               echo "=== postgres job logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/postgres/" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -40 || true
               echo "=== bosh agent log postgres ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -i "postgres\|pre-start\|Error\|exit" | tail -20 || true
               echo "=== bosh agent log pre-start full ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -A5 -B2 "pre-start\|run_script\|GenericScript\|RunScript" | tail -40 || true
+              echo "=== bosh agent full log tail ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -100 || true
+              echo "=== postgres job bin dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/jobs/postgres/bin/" 2>/dev/null || true
+              echo "=== var vcap jobs ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/jobs/" 2>/dev/null || true
               echo "=== /usr/sbin wrappers ===" && sudo ls -la "$VMDIR/rootfs/usr/sbin/su" "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
