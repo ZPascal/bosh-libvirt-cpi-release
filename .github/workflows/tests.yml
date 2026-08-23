@@ -400,9 +400,9 @@ jobs:
               echo "=== var vcap data jobs ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/data/jobs/" 2>/dev/null || true
               echo "=== var vcap data packages ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/packages/" 2>/dev/null || true
               echo "=== var vcap packages ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/packages/" 2>/dev/null || true
-              echo "=== postgres compile log ===" && sudo find "$VMDIR/rootfs/var/vcap" -name "*.log" -newer "$VMDIR/rootfs/var/vcap/bosh/agent.json" 2>/dev/null | xargs sudo grep -l "postgres\|compile\|initdb\|error" 2>/dev/null | head -3 | xargs sudo tail -20 2>/dev/null || true
-              echo "=== compile logs ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/compile/" 2>/dev/null || true
-              echo "=== postgres compile dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/compile/postgres-15/" 2>/dev/null || true
+              echo "=== packages.out tail ===" && sudo tail -50 "$VMDIR/rootfs/var/vcap/bosh/packages.out" 2>/dev/null || true
+              echo "=== postgres-15 data dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/" 2>/dev/null | head -5 || true
+              echo "=== postgres-15 bin ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/bin/" 2>/dev/null || echo "bin dir missing/empty"
               echo "=== postgres data job dir ===" && PGJOB=$(sudo readlink "$VMDIR/rootfs/var/vcap/jobs/postgres" 2>/dev/null) && [ -n "$PGJOB" ] && sudo ls -la "$VMDIR/rootfs$PGJOB/bin/" 2>/dev/null || true
               echo "=== /var/sbin/sysctl test ===" && sudo chroot "$VMDIR/rootfs" /usr/sbin/sysctl kernel.shmmax 2>/dev/null || true
               echo "=== agent log compile/package lines ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | grep -i "compil\|packag\|postgres\|error\|FAIL\|exit.*1\|make\|configure\|gcc" | grep -v "DelayedAudit\|unlimitedRetry" | tail -30 || true
