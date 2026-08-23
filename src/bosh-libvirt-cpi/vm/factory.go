@@ -210,7 +210,7 @@ func (f Factory) Create(
 			"while [ \"$1\" != '-c' ] && [ $# -gt 0 ]; do shift; done\n" +
 			"shift  # skip '-c'\n" +
 			"exec /bin/sh -c \"$@\"\n"
-		sysctlWrapper := "#!/bin/sh\n/sbin/sysctl \"$@\" 2>/dev/null; exit 0\n"
+		sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
 		// finds them via exec.Command regardless of the inherited PATH.
 		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
@@ -421,7 +421,7 @@ func (f Factory) Create(
 				_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
 				// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
 				// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
-				sysctlWrapper := "#!/bin/sh\n/sbin/sysctl \"$@\" 2>/dev/null; exit 0\n"
+				sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 				_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
 				initScript := "#!/bin/sh\n" +
