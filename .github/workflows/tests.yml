@@ -405,7 +405,7 @@ jobs:
               echo "=== postgres compile dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/compile/postgres-15/" 2>/dev/null || true
               echo "=== postgres data job dir ===" && PGJOB=$(sudo readlink "$VMDIR/rootfs/var/vcap/jobs/postgres" 2>/dev/null) && [ -n "$PGJOB" ] && sudo ls -la "$VMDIR/rootfs$PGJOB/bin/" 2>/dev/null || true
               echo "=== /var/sbin/sysctl test ===" && sudo chroot "$VMDIR/rootfs" /usr/sbin/sysctl kernel.shmmax 2>/dev/null || true
-              echo "=== bosh-agent-init.log pre-start section ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | grep -i "pre-start\|postgres\|run_script\|error\|failed\|exit\|sysctl\|initdb" | tail -30 || true
+              echo "=== agent log compile/package lines ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | grep -i "compil\|packag\|postgres\|error\|FAIL\|exit.*1\|make\|configure\|gcc" | grep -v "DelayedAudit\|unlimitedRetry" | tail -30 || true
               echo "=== postgres pre-start log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stderr.log" 2>/dev/null | tail -30 || true
               echo "=== postgres pre-start stdout ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stdout.log" 2>/dev/null | tail -30 || true
               echo "=== postgres job logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/postgres/" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -40 || true
