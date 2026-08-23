@@ -271,7 +271,7 @@ func (f Factory) Create(
 		// advances every second, so incarnationChanged() returns true after one
 		// DelayBetweenCheckTries sleep without needing any signal from sv kill/start.
 		monitStub := "python3 -c \"\n" +
-			"import http.server, socketserver, sys, time\n" +
+			"import http.server, socketserver, sys, time, subprocess, os\n" +
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
 			"def xml():\n" +
 			"  inc = str(int(time.time()))\n" +
@@ -285,7 +285,17 @@ func (f Factory) Create(
 			"    self.end_headers()\n" +
 			"    self.wfile.write(body)\n" +
 			"  def do_POST(self):\n" +
-			"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
+			"    length = int(self.headers.get('Content-Length','0'))\n" +
+			"    self.rfile.read(length)\n" +
+			"    # Extract service name and action from URL: /service/<name>?action=start\n" +
+			"    path = self.path\n" +
+			"    action = 'start' if 'action=start' in path else 'stop'\n" +
+			"    parts = path.split('/')\n" +
+			"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
+			"    if svc and action == 'start':\n" +
+			"      ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"      if os.path.exists(ctl):\n" +
+			"        subprocess.Popen([ctl, 'start'], stdout=open('/tmp/monit-'+svc+'.log','a'), stderr=subprocess.STDOUT)\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Length','0')\n" +
 			"    self.end_headers()\n" +
@@ -483,7 +493,7 @@ func (f Factory) Create(
 					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 					"fi\n" +
 					"python3 -c \"\n" +
-					"import http.server, socketserver, sys, time\n" +
+					"import http.server, socketserver, sys, time, subprocess, os\n" +
 					"socketserver.TCPServer.allow_reuse_address = True\n" +
 					"def xml():\n" +
 					"  inc = str(int(time.time()))\n" +
@@ -497,7 +507,16 @@ func (f Factory) Create(
 					"    self.end_headers()\n" +
 					"    self.wfile.write(body)\n" +
 					"  def do_POST(self):\n" +
-					"    self.rfile.read(int(self.headers.get('Content-Length','0')))\n" +
+					"    length = int(self.headers.get('Content-Length','0'))\n" +
+					"    self.rfile.read(length)\n" +
+					"    path = self.path\n" +
+					"    action = 'start' if 'action=start' in path else 'stop'\n" +
+					"    parts = path.split('/')\n" +
+					"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
+					"    if svc and action == 'start':\n" +
+					"      ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+					"      if os.path.exists(ctl):\n" +
+					"        subprocess.Popen([ctl, 'start'], stdout=open('/tmp/monit-'+svc+'.log','a'), stderr=subprocess.STDOUT)\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Length','0')\n" +
 					"    self.end_headers()\n" +
