@@ -206,12 +206,19 @@ func (f Factory) Create(
 			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
-		suWrapper := "#!/bin/sh\n# Use runuser (no PAM) to switch to vcap and run the command.\n" +
-			"# Parses: su [-] [user] -c cmd  -> runuser -u user -- sh -c cmd\n" +
+		suWrapper := "#!/bin/sh\n# Replace 'su - user -c cmd' with setpriv to avoid PAM issues in containers.\n" +
+			"# setpriv is in util-linux and switches uid/gid without PAM authentication.\n" +
 			"_user=root\n" +
 			"while [ $# -gt 0 ]; do\n" +
 			"  case \"$1\" in\n" +
-			"    -c) shift; exec runuser -u \"$_user\" -- /bin/sh -c \"$@\" ;;\n" +
+			"    -c) shift\n" +
+			"      if [ \"$_user\" = root ]; then\n" +
+			"        exec /bin/sh -c \"$@\"\n" +
+			"      fi\n" +
+			"      _uid=$(id -u \"$_user\" 2>/dev/null || echo 1000)\n" +
+			"      _gid=$(id -g \"$_user\" 2>/dev/null || echo 1000)\n" +
+			"      exec setpriv --reuid=\"$_uid\" --regid=\"$_gid\" --clear-groups -- /bin/sh -c \"$@\"\n" +
+			"      ;;\n" +
 			"    -*) shift ;;\n" +
 			"    *)  _user=\"$1\"; shift ;;\n" +
 			"  esac\n" +
@@ -426,12 +433,19 @@ func (f Factory) Create(
 				// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
 				// fails in our kernel-boot environment (PAM not configured). By running
 				// initdb as root instead, we bypass the user-switch failure.
-				suWrapper := "#!/bin/sh\n# Use runuser (no PAM) to switch to vcap and run the command.\n" +
-					"# Parses: su [-] [user] -c cmd  -> runuser -u user -- sh -c cmd\n" +
+				suWrapper := "#!/bin/sh\n# Replace 'su - user -c cmd' with setpriv to avoid PAM issues in containers.\n" +
+					"# setpriv is in util-linux and switches uid/gid without PAM authentication.\n" +
 					"_user=root\n" +
 					"while [ $# -gt 0 ]; do\n" +
 					"  case \"$1\" in\n" +
-					"    -c) shift; exec runuser -u \"$_user\" -- /bin/sh -c \"$@\" ;;\n" +
+					"    -c) shift\n" +
+					"      if [ \"$_user\" = root ]; then\n" +
+					"        exec /bin/sh -c \"$@\"\n" +
+					"      fi\n" +
+					"      _uid=$(id -u \"$_user\" 2>/dev/null || echo 1000)\n" +
+					"      _gid=$(id -g \"$_user\" 2>/dev/null || echo 1000)\n" +
+					"      exec setpriv --reuid=\"$_uid\" --regid=\"$_gid\" --clear-groups -- /bin/sh -c \"$@\"\n" +
+					"      ;;\n" +
 					"    -*) shift ;;\n" +
 					"    *)  _user=\"$1\"; shift ;;\n" +
 					"  esac\n" +
