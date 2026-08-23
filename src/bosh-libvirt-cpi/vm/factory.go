@@ -277,7 +277,11 @@ func (f Factory) Create(
 			"  inc = str(int(time.time()))\n" +
 			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 			"def start_svc(svc):\n" +
+			"  import glob\n" +
 			"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
+			"  if not os.path.exists(bpm):\n" +
+			"    pkgs = glob.glob('/var/vcap/packages/bpm/bin/bpm')\n" +
+			"    if pkgs: bpm = pkgs[0]\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
 			"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
 			"  if os.path.exists(bpm):\n" +
@@ -294,12 +298,9 @@ func (f Factory) Create(
 			"    self.wfile.write(body)\n" +
 			"  def do_POST(self):\n" +
 			"    length = int(self.headers.get('Content-Length','0'))\n" +
-			"    self.rfile.read(length)\n" +
-			"    path = self.path\n" +
-			"    action = 'start' if 'action=start' in path else 'stop'\n" +
-			"    parts = path.split('/')\n" +
-			"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
-			"    if svc and action == 'start':\n" +
+			"    body = self.rfile.read(length).decode()\n" +
+			"    svc = self.path.strip('/')\n" +
+			"    if svc and 'action=start' in body:\n" +
 			"      start_svc(svc)\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Length','0')\n" +
@@ -504,7 +505,11 @@ func (f Factory) Create(
 					"  inc = str(int(time.time()))\n" +
 					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
 					"def start_svc(svc):\n" +
+					"  import glob\n" +
 					"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
+					"  if not os.path.exists(bpm):\n" +
+					"    pkgs = glob.glob('/var/vcap/packages/bpm/bin/bpm')\n" +
+					"    if pkgs: bpm = pkgs[0]\n" +
 					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
 					"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
 					"  if os.path.exists(bpm):\n" +
@@ -521,12 +526,9 @@ func (f Factory) Create(
 					"    self.wfile.write(body)\n" +
 					"  def do_POST(self):\n" +
 					"    length = int(self.headers.get('Content-Length','0'))\n" +
-					"    self.rfile.read(length)\n" +
-					"    path = self.path\n" +
-					"    action = 'start' if 'action=start' in path else 'stop'\n" +
-					"    parts = path.split('/')\n" +
-					"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
-					"    if svc and action == 'start':\n" +
+					"    body = self.rfile.read(length).decode()\n" +
+					"    svc = self.path.strip('/')\n" +
+					"    if svc and 'action=start' in body:\n" +
 					"      start_svc(svc)\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Length','0')\n" +
