@@ -418,7 +418,7 @@ jobs:
               echo "=== /usr/sbin wrappers ===" && sudo ls -la "$VMDIR/rootfs/usr/sbin/su" "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
-              echo "=== pre-start script first 5 lines ===" && sudo head -5 "$VMDIR/rootfs/var/vcap/jobs/postgres/bin/pre-start" 2>/dev/null || true
+              echo "=== chroot bash test ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c 'echo hello; id vcap 2>&1 || echo "vcap not found"' 2>&1 || true
               echo "=== run pre-start manually ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -x /var/vcap/jobs/postgres/bin/pre-start 2>&1 | head -20 || true
               echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
               echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true

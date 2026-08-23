@@ -206,10 +206,24 @@ func (f Factory) Create(
 			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
-		suWrapper := "#!/bin/sh\n# Skip user switching; run command directly.\n" +
-			"while [ \"$1\" != '-c' ] && [ $# -gt 0 ]; do shift; done\n" +
-			"shift  # skip '-c'\n" +
-			"exec /bin/sh -c \"$@\"\n"
+		suWrapper := "#!/bin/sh\n# Use runuser (no PAM) to switch to vcap and run the command.\n" +
+			"# Parses: su [-] [user] -c cmd  -> runuser -u user -- sh -c cmd\n" +
+			"_user=root\n" +
+			"while [ $# -gt 0 ]; do\n" +
+			"  case \"$1\" in\n" +
+			"    -c) shift; exec runuser -u \"$_user\" -- /bin/sh -c \"$@\" ;;\n" +
+			"    -*) shift ;;\n" +
+			"    *)  _user=\"$1\"; shift ;;\n" +
+			"  esac\n" +
+			"done\n"
+		// Also configure PAM so the real /bin/su works without auth for root→any.
+		pamSuConf := "auth sufficient pam_rootok.so\n" +
+			"session optional pam_loginuid.so\n" +
+			"account sufficient pam_unix.so\n" +
+			"session required pam_unix.so\n"
+		_ = os.MkdirAll(vmRootfs+"/etc/pam.d", 0755)
+		_ = os.WriteFile(vmRootfs+"/etc/pam.d/su", []byte(pamSuConf), 0644)
+		_ = os.WriteFile(vmRootfs+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
 		sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
 		// finds them via exec.Command regardless of the inherited PATH.
@@ -412,13 +426,25 @@ func (f Factory) Create(
 				// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
 				// fails in our kernel-boot environment (PAM not configured). By running
 				// initdb as root instead, we bypass the user-switch failure.
-				suWrapper := "#!/bin/sh\n# Skip user switching; run command directly as current user.\n" +
-					"# Usage: su - <user> -c <cmd>  OR  su <user> -c <cmd>\n" +
-					"while [ \"$1\" != '-c' ] && [ $# -gt 0 ]; do shift; done\n" +
-					"shift  # skip '-c'\n" +
-					"exec /bin/sh -c \"$@\"\n"
+				suWrapper := "#!/bin/sh\n# Use runuser (no PAM) to switch to vcap and run the command.\n" +
+					"# Parses: su [-] [user] -c cmd  -> runuser -u user -- sh -c cmd\n" +
+					"_user=root\n" +
+					"while [ $# -gt 0 ]; do\n" +
+					"  case \"$1\" in\n" +
+					"    -c) shift; exec runuser -u \"$_user\" -- /bin/sh -c \"$@\" ;;\n" +
+					"    -*) shift ;;\n" +
+					"    *)  _user=\"$1\"; shift ;;\n" +
+					"  esac\n" +
+					"done\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
 				_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
+				pamSuConf := "auth sufficient pam_rootok.so\n" +
+					"session optional pam_loginuid.so\n" +
+					"account sufficient pam_unix.so\n" +
+					"session required pam_unix.so\n"
+				_ = os.MkdirAll(mntDir+"/etc/pam.d", 0755)
+				_ = os.WriteFile(mntDir+"/etc/pam.d/su", []byte(pamSuConf), 0644)
+				_ = os.WriteFile(mntDir+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
 				// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
 				// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
 				sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
