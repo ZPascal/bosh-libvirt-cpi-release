@@ -276,6 +276,14 @@ func (f Factory) Create(
 			"def xml():\n" +
 			"  inc = str(int(time.time()))\n" +
 			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
+			"def start_svc(svc):\n" +
+			"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
+			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+			"  if os.path.exists(bpm):\n" +
+			"    subprocess.Popen([bpm,'start',svc], stdout=log, stderr=log)\n" +
+			"  elif os.path.exists(ctl):\n" +
+			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
 			"    body = xml()\n" +
@@ -287,15 +295,12 @@ func (f Factory) Create(
 			"  def do_POST(self):\n" +
 			"    length = int(self.headers.get('Content-Length','0'))\n" +
 			"    self.rfile.read(length)\n" +
-			"    # Extract service name and action from URL: /service/<name>?action=start\n" +
 			"    path = self.path\n" +
 			"    action = 'start' if 'action=start' in path else 'stop'\n" +
 			"    parts = path.split('/')\n" +
 			"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
 			"    if svc and action == 'start':\n" +
-			"      ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
-			"      if os.path.exists(ctl):\n" +
-			"        subprocess.Popen([ctl, 'start'], stdout=open('/tmp/monit-'+svc+'.log','a'), stderr=subprocess.STDOUT)\n" +
+			"      start_svc(svc)\n" +
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Length','0')\n" +
 			"    self.end_headers()\n" +
@@ -498,6 +503,14 @@ func (f Factory) Create(
 					"def xml():\n" +
 					"  inc = str(int(time.time()))\n" +
 					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services/><servicegroups/></monit>').encode()\n" +
+					"def start_svc(svc):\n" +
+					"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
+					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+					"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+					"  if os.path.exists(bpm):\n" +
+					"    subprocess.Popen([bpm,'start',svc], stdout=log, stderr=log)\n" +
+					"  elif os.path.exists(ctl):\n" +
+					"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
 					"    body = xml()\n" +
@@ -514,9 +527,7 @@ func (f Factory) Create(
 					"    parts = path.split('/')\n" +
 					"    svc = parts[2].split('?')[0] if len(parts) > 2 else ''\n" +
 					"    if svc and action == 'start':\n" +
-					"      ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
-					"      if os.path.exists(ctl):\n" +
-					"        subprocess.Popen([ctl, 'start'], stdout=open('/tmp/monit-'+svc+'.log','a'), stderr=subprocess.STDOUT)\n" +
+					"      start_svc(svc)\n" +
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Length','0')\n" +
 					"    self.end_headers()\n" +

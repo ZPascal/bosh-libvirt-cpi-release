@@ -17,6 +17,10 @@ releases:
   url: https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3
   version: "283.1.3"
   sha1: 91a350d377e9185fbc950a1168073eb1e3207eae
+- name: bpm
+  url: https://bosh.io/d/github.com/cloudfoundry/bpm-release?v=1.4.9
+  version: "1.4.9"
+  sha1: e4d3a64d299a319f31b4d012fea2585134866bc8
 - name: bosh-libvirt-cpi
   url: file://..
   version: create
@@ -48,6 +52,8 @@ instance_groups:
 - name: bosh
   instances: 1
   jobs:
+  - name: bpm
+    release: bpm
   - name: nats
     release: bosh
   - name: postgres
