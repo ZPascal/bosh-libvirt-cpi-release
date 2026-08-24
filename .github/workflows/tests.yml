@@ -419,6 +419,7 @@ jobs:
               echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
               echo "=== monit job dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/monit/job/" 2>/dev/null || echo "NO MONITRC FILES"
+              echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
               echo "=== monit nats log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-nats.log" 2>/dev/null | tail -10 || true
               echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-director.log" 2>/dev/null | tail -10 || true

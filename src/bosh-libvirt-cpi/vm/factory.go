@@ -312,7 +312,8 @@ func (f Factory) Create(
 			"    self.send_response(200)\n" +
 			"    self.send_header('Content-Length','0')\n" +
 			"    self.end_headers()\n" +
-			"  def log_message(self, *a): pass\n" +
+			"  def log_message(self, fmt, *a):\n" +
+			"    open('/tmp/monit-req.log','a').write('[%s] %s %s\\n' % (self.log_date_time_string(), self.command, self.path))\n" +
 			"try:\n" +
 			"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
 			"  sys.stderr.write('monit stub: ready\\\\n')\n" +
@@ -547,7 +548,8 @@ func (f Factory) Create(
 					"    self.send_response(200)\n" +
 					"    self.send_header('Content-Length','0')\n" +
 					"    self.end_headers()\n" +
-					"  def log_message(self, *a): pass\n" +
+					"  def log_message(self, fmt, *a):\n" +
+			"    open('/tmp/monit-req.log','a').write('[%s] %s %s\\n' % (self.log_date_time_string(), self.command, self.path))\n" +
 					"try:\n" +
 					"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
 					"  sys.stderr.write('monit stub: ready\\\\n')\n" +
