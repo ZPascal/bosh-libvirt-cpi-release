@@ -277,9 +277,10 @@ func (f Factory) Create(
 			"  inc = str(int(time.time()))\n" +
 			"  import glob, re\n" +
 			"  svcs = []\n" +
-			"  for f in glob.glob('/var/vcap/monit/job/*.monitrc'):\n" +
+			"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 			"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
-			"      svcs.append(m)\n" +
+			"      if m not in svcs: svcs.append(m)\n" +
+			"  open('/tmp/monit-svcs.log','w').write(str(svcs)+'\\n')\n" +
 			"  svc_xml = ''.join('<service type=\\\"5\\\"><name>%s</name><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % s for s in svcs)\n" +
 			"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>').encode()\n" +
@@ -513,9 +514,10 @@ func (f Factory) Create(
 					"  inc = str(int(time.time()))\n" +
 					"  import glob, re\n" +
 					"  svcs = []\n" +
-					"  for f in glob.glob('/var/vcap/monit/job/*.monitrc'):\n" +
+					"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 					"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
-					"      svcs.append(m)\n" +
+					"      if m not in svcs: svcs.append(m)\n" +
+					"  open('/tmp/monit-svcs.log','w').write(str(svcs)+'\\n')\n" +
 					"  svc_xml = ''.join('<service type=\\\"5\\\"><name>%s</name><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % s for s in svcs)\n" +
 					"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>').encode()\n" +
