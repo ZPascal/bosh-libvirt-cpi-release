@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -160,6 +161,25 @@ func (f Factory) Create(
 			for _, svc := range svcs {
 				_ = os.RemoveAll(vmRootfs + "/etc/sv/" + svc.Name() + "/supervise")
 			}
+		}
+
+		// Remove tmpfs mounts for /var/vcap/monit and /var/vcap/data from the
+		// stemcell fstab. libvirt-lxc applies the container's fstab at start time;
+		// if /var/vcap/monit is a tmpfs, bosh-agent writes monitrc files to the
+		// tmpfs (invisible from the rootfs), so the monit stub can't find them.
+		// Similarly /var/vcap/data must not be a tmpfs so packages/jobs persist.
+		if fstabData, ferr := os.ReadFile(vmRootfs + "/etc/fstab"); ferr == nil {
+			var filtered []byte
+			for _, line := range bytes.Split(fstabData, []byte("\n")) {
+				l := string(line)
+				if strings.Contains(l, "/var/vcap/monit") ||
+					(strings.Contains(l, "tmpfs") && strings.Contains(l, "/var/vcap/data")) {
+					continue
+				}
+				filtered = append(filtered, line...)
+				filtered = append(filtered, '\n')
+			}
+			_ = os.WriteFile(vmRootfs+"/etc/fstab", filtered, 0644)
 		}
 
 		// Pre-create /var/vcap/store and /var/vcap/data so BOSH jobs can write their
