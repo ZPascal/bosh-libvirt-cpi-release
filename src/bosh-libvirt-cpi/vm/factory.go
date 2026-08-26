@@ -280,11 +280,11 @@ func (f Factory) Create(
 			"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 			"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
 			"      if m not in svcs: svcs.append(m)\n" +
-			"  xmlcontent = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
-			"  open('/tmp/monit-svcs.log','w').write(str(svcs)+'\\n'+xmlcontent[:500]+'\\n')\n" +
 			"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 			"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
-			"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>').encode()\n" +
+			"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
+			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+'\\n')\n" +
+			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
 			"  import glob\n" +
 			"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
@@ -518,11 +518,11 @@ func (f Factory) Create(
 					"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 					"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
 					"      if m not in svcs: svcs.append(m)\n" +
-					"  xmlcontent = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
-					"  open('/tmp/monit-svcs.log','w').write(str(svcs)+'\\n'+xmlcontent[:500]+'\\n')\n" +
 					"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 					"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
-					"  return ('<monit id=\\\"stub\\\" incarnation=\\\"' + inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>').encode()\n" +
+					"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
+					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+'\\n')\n" +
+					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
 					"  import glob\n" +
 					"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
