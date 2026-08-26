@@ -283,7 +283,10 @@ func (f Factory) Create(
 			"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 			"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 			"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
-			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+'\\n')\n" +
+			"  import os as _os\n" +
+			"  try: _files = _os.listdir('/var/vcap/monit/job')\n" +
+			"  except: _files = []\n" +
+			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
 			"  import glob\n" +
@@ -521,7 +524,10 @@ func (f Factory) Create(
 					"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 					"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 					"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
-					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+'\\n')\n" +
+					"  import os as _os\n" +
+			"  try: _files = _os.listdir('/var/vcap/monit/job')\n" +
+			"  except: _files = []\n" +
+			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
 					"  import glob\n" +
