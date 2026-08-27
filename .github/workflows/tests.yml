@@ -419,6 +419,7 @@ jobs:
               echo "=== /usr/sbin wrappers ===" && sudo ls -la "$VMDIR/rootfs/usr/sbin/su" "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
               echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
+              echo "=== fstab content ===" && sudo cat "$VMDIR/rootfs/etc/fstab" 2>/dev/null || true
               echo "=== monit job dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/monit/job/" 2>/dev/null || echo "NO MONITRC FILES"
               echo "=== monit dir ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" -name "*.monitrc" 2>/dev/null | head -5 || echo "no .monitrc files"
               echo "=== monit all files ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" 2>/dev/null | head -20 || true

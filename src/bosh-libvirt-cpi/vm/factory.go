@@ -295,11 +295,18 @@ func (f Factory) Create(
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
 			"def xml():\n" +
 			"  inc = str(int(time.time()))\n" +
-			"  import glob, re\n" +
+			"  import glob, re, json\n" +
 			"  svcs = []\n" +
 			"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 			"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
 			"      if m not in svcs: svcs.append(m)\n" +
+			"  if not svcs:\n" +
+			"    try:\n" +
+			"      spec = json.load(open('/var/vcap/bosh/spec.json'))\n" +
+			"      for tpl in spec.get('job',{}).get('templates',[]):\n" +
+			"        n = tpl.get('name','')\n" +
+			"        if n and n not in ('bpm','libvirt_cpi') and n not in svcs: svcs.append(n)\n" +
+			"    except: pass\n" +
 			"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 			"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 			"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
@@ -536,11 +543,18 @@ func (f Factory) Create(
 					"socketserver.TCPServer.allow_reuse_address = True\n" +
 					"def xml():\n" +
 					"  inc = str(int(time.time()))\n" +
-					"  import glob, re\n" +
+					"  import glob, re, json\n" +
 					"  svcs = []\n" +
 					"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
 					"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
 					"      if m not in svcs: svcs.append(m)\n" +
+					"  if not svcs:\n" +
+					"    try:\n" +
+					"      spec = json.load(open('/var/vcap/bosh/spec.json'))\n" +
+					"      for tpl in spec.get('job',{}).get('templates',[]):\n" +
+					"        n = tpl.get('name','')\n" +
+					"        if n and n not in ('bpm','libvirt_cpi') and n not in svcs: svcs.append(n)\n" +
+					"    except: pass\n" +
 					"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
 					"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
 					"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
