@@ -423,6 +423,8 @@ jobs:
               echo "=== monit job dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/monit/job/" 2>/dev/null || echo "NO MONITRC FILES"
               echo "=== monit dir ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" -name "*.monitrc" 2>/dev/null | head -5 || echo "no .monitrc files"
               echo "=== monit all files ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" 2>/dev/null | head -20 || true
+              echo "=== director post-start log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/director/post-start.stderr.log" 2>/dev/null | tail -20 || true
+              echo "=== director log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/director/director.stdout.log" 2>/dev/null | tail -20 || true
               echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
               echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
