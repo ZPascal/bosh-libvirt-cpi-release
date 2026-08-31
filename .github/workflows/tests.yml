@@ -432,7 +432,8 @@ jobs:
               echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
               echo "=== monit nats log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-nats.log" 2>/dev/null | tail -10 || true
-              echo "=== bpm nats test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo mkdir -p "$VMDIR/rootfs/sys/fs/cgroup"; sudo mount --bind /sys/fs/cgroup "$VMDIR/rootfs/sys/fs/cgroup" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/packages/bpm/bin/bpm start nats 2>&1 | head -5' 2>&1 || true
+              echo "=== bpm nats test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo mkdir -p "$VMDIR/rootfs/sys/fs/cgroup"; sudo mount --bind /sys/fs/cgroup "$VMDIR/rootfs/sys/fs/cgroup" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/packages/bpm/bin/bpm start nats; echo "exit=$?"' 2>&1 | tail -20 || true
+              echo "=== bpm logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/bpm" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
               echo "=== cgroup info ===" && ls /sys/fs/cgroup/ 2>/dev/null | head -10 && cat /proc/cgroups | head -5 || true
               echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-director.log" 2>/dev/null | tail -10 || true
               echo "=== bpm exists ===" && sudo ls "$VMDIR/rootfs/var/vcap/jobs/bpm/bin/bpm" 2>/dev/null || echo "BPM NOT FOUND"
