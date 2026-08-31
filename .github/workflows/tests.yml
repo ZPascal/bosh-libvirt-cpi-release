@@ -315,7 +315,9 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev systemd-container
-        # Enable user namespaces required by libvirt-lxc on GitHub Actions runners
+        # Enable cgroup v2 delegation so LXC containers can use cgroups for BPM
+        sudo mkdir -p /sys/fs/cgroup
+        ls /sys/fs/cgroup/ 2>/dev/null || echo "cgroup not available at /sys/fs/cgroup"
         sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
         sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
         # Set kernel.shmmax for postgres: the BOSH postgres pre-start script runs

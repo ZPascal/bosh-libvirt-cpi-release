@@ -48,6 +48,10 @@ func (b LXCDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, dis
       <source dir='%s'/>
       <target dir='/mnt/ephemeral'/>
     </filesystem>
+    <filesystem type='mount'>
+      <source dir='/sys/fs/cgroup'/>
+      <target dir='/sys/fs/cgroup'/>
+    </filesystem>
     <console type='pty'/>
   </devices>
 </domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, privnetXML, ifaceXML, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk))
