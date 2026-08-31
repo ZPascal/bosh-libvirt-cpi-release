@@ -369,7 +369,7 @@ func (f Factory) Create(
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 				"mkdir -p /sys/fs/cgroup\n" +
-				"mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
+				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
@@ -411,7 +411,7 @@ func (f Factory) Create(
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 				"mkdir -p /sys/fs/cgroup\n" +
-				"mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
+				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
