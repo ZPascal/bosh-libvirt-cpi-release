@@ -291,6 +291,7 @@ func (f Factory) Create(
 			"done\n" +
 			"exec /usr/bin/curl \"$@\"\n"
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper), 0755)
+		_ = os.WriteFile(vmRootfs+"/usr/bin/curl", []byte(curlWrapper), 0755)
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
