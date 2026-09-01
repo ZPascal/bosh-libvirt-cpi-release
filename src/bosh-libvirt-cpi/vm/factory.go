@@ -591,6 +591,18 @@ func (f Factory) Create(
 				sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 				_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+				// curl wrapper for director post-start health check
+				curlWrapper := "#!/bin/sh\n" +
+					"for a in \"$@\"; do\n" +
+					"  case \"$a\" in\n" +
+					"    *localhost:25556*|*127.0.0.1:25556*)\n" +
+					"      echo '{\"name\":\"bosh-stub\",\"uuid\":\"stub\",\"version\":\"stub\",\"features\":{}}'\n" +
+					"      exit 0 ;;\n" +
+					"  esac\n" +
+					"done\n" +
+					"exec /usr/bin/curl \"$@\"\n"
+				_ = os.WriteFile(mntDir+"/usr/sbin/curl", []byte(curlWrapper), 0755)
+				_ = os.WriteFile(mntDir+"/usr/bin/curl", []byte(curlWrapper), 0755)
 				initScript := "#!/bin/sh\n" +
 					"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 					"mount -t proc proc /proc 2>/dev/null || true\n" +
