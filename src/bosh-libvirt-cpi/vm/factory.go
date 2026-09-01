@@ -316,16 +316,26 @@ func (f Factory) Create(
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
-			"  import glob\n" +
-			"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
-			"  if not os.path.exists(bpm):\n" +
-			"    pkgs = glob.glob('/var/vcap/packages/bpm/bin/bpm')\n" +
-			"    if pkgs: bpm = pkgs[0]\n" +
-			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"  import glob, yaml\n" +
 			"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
-			"  if os.path.exists(bpm):\n" +
-			"    subprocess.Popen([bpm,'start',svc], stdout=log, stderr=log)\n" +
-			"  elif os.path.exists(ctl):\n" +
+			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
+			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"  if os.path.exists(bpmyml):\n" +
+			"    try:\n" +
+			"      cfg = yaml.safe_load(open(bpmyml))\n" +
+			"      proc = cfg.get('processes',[{}])[0]\n" +
+			"      exe = proc.get('executable','')\n" +
+			"      args = [exe] + proc.get('args',[])\n" +
+			"      env = dict(os.environ)\n" +
+			"      env.update(proc.get('env',{}))\n" +
+			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
+			"      open(pf,'w').write(str(p.pid))\n" +
+			"      return\n" +
+			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
+			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"  if os.path.exists(ctl):\n" +
 			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
 			"  def do_GET(self):\n" +
@@ -611,16 +621,26 @@ func (f Factory) Create(
 					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
-					"  import glob\n" +
-					"  bpm = '/var/vcap/jobs/bpm/bin/bpm'\n" +
-					"  if not os.path.exists(bpm):\n" +
-					"    pkgs = glob.glob('/var/vcap/packages/bpm/bin/bpm')\n" +
-					"    if pkgs: bpm = pkgs[0]\n" +
-					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+					"  import glob, yaml\n" +
 					"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
-					"  if os.path.exists(bpm):\n" +
-					"    subprocess.Popen([bpm,'start',svc], stdout=log, stderr=log)\n" +
-					"  elif os.path.exists(ctl):\n" +
+					"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
+					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+					"  if os.path.exists(bpmyml):\n" +
+					"    try:\n" +
+					"      cfg = yaml.safe_load(open(bpmyml))\n" +
+					"      proc = cfg.get('processes',[{}])[0]\n" +
+					"      exe = proc.get('executable','')\n" +
+					"      args = [exe] + proc.get('args',[])\n" +
+					"      env = dict(os.environ)\n" +
+					"      env.update(proc.get('env',{}))\n" +
+					"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
+					"      open(pf,'w').write(str(p.pid))\n" +
+					"      return\n" +
+					"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
+					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+					"  if os.path.exists(ctl):\n" +
 					"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 					"class H(http.server.BaseHTTPRequestHandler):\n" +
 					"  def do_GET(self):\n" +
