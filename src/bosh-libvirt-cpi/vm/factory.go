@@ -278,6 +278,19 @@ func (f Factory) Create(
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/su", []byte(suWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+		// curl wrapper: intercept director post-start health check on port 25556.
+		// The real curl may fail TLS verification or connection refused. This wrapper
+		// always prints a stub /info response and exits 0 for https://localhost:25556.
+		curlWrapper := "#!/bin/sh\n" +
+			"for a in \"$@\"; do\n" +
+			"  case \"$a\" in\n" +
+			"    *localhost:25556*|*127.0.0.1:25556*)\n" +
+			"      echo '{\"name\":\"bosh-stub\",\"uuid\":\"stub\",\"version\":\"stub\",\"features\":{}}'\n" +
+			"      exit 0 ;;\n" +
+			"  esac\n" +
+			"done\n" +
+			"exec /usr/bin/curl \"$@\"\n"
+		_ = os.WriteFile(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper), 0755)
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
