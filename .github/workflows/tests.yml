@@ -431,6 +431,7 @@ jobs:
               echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
               echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
+              echo "=== curl wrapper ===" && sudo cat "$VMDIR/rootfs/usr/sbin/curl" 2>/dev/null || echo "NO CURL WRAPPER"
               echo "=== director-stub log ===" && sudo cat "$VMDIR/rootfs/tmp/director-stub.log" 2>/dev/null | tail -10 || true
               echo "=== monit nats log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-nats.log" 2>/dev/null | tail -10 || true
               echo "=== bpm nats test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo mkdir -p "$VMDIR/rootfs/sys/fs/cgroup"; sudo mount --bind /sys/fs/cgroup "$VMDIR/rootfs/sys/fs/cgroup" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/packages/bpm/bin/bpm start nats; echo "exit=$?"' 2>&1 | tail -20 || true
