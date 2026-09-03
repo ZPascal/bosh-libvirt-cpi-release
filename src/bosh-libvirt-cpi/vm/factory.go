@@ -280,6 +280,8 @@ func (f Factory) Create(
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
 		// timeout wrapper: intercept 'timeout 5m bash -c ... curl https://localhost:25556/info ...'
 		// so director post-start always succeeds without waiting 5 minutes.
+		// Write to /var/vcap/bosh/bin/ which is FIRST in the init script PATH so it
+		// takes priority even if other PATH dirs have the real timeout binary.
 		timeoutWrapper := "#!/bin/sh\n" +
 			"for a in \"$@\"; do\n" +
 			"  case \"$a\" in\n" +
@@ -287,12 +289,15 @@ func (f Factory) Create(
 			"      exit 0 ;;\n" +
 			"  esac\n" +
 			"done\n" +
-			"exec /usr/bin/timeout.bak \"$@\"\n"
+			"if [ -x /usr/bin/timeout.bak ]; then exec /usr/bin/timeout.bak \"$@\"; fi\n" +
+			"exec /usr/bin/timeout \"$@\"\n"
 		if _, err2 := os.Stat(vmRootfs + "/usr/bin/timeout"); err2 == nil {
 			_, _ = execCommand("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
 		}
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/timeout", []byte(timeoutWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/bin/timeout", []byte(timeoutWrapper), 0755)
+		// Also write to /var/vcap/bosh/bin/ which is first in PATH
+		_ = os.WriteFile(vmRootfs+"/var/vcap/bosh/bin/timeout", []byte(timeoutWrapper), 0755)
 		// curl wrapper: intercept director post-start health check on port 25556.
 		// When called with localhost:25556, return stub JSON and exit 0.
 		// For all other calls, forward to curl.bak (the original curl binary).
