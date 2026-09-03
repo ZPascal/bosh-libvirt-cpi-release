@@ -278,6 +278,21 @@ func (f Factory) Create(
 		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/su", []byte(suWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+		// timeout wrapper: intercept 'timeout 5m bash -c ... curl https://localhost:25556/info ...'
+		// so director post-start always succeeds without waiting 5 minutes.
+		timeoutWrapper := "#!/bin/sh\n" +
+			"for a in \"$@\"; do\n" +
+			"  case \"$a\" in\n" +
+			"    *25556*)\n" +
+			"      exit 0 ;;\n" +
+			"  esac\n" +
+			"done\n" +
+			"exec /usr/bin/timeout.bak \"$@\"\n"
+		if _, err2 := os.Stat(vmRootfs + "/usr/bin/timeout"); err2 == nil {
+			_, _ = execCommand("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
+		}
+		_ = os.WriteFile(vmRootfs+"/usr/sbin/timeout", []byte(timeoutWrapper), 0755)
+		_ = os.WriteFile(vmRootfs+"/usr/bin/timeout", []byte(timeoutWrapper), 0755)
 		// curl wrapper: intercept director post-start health check on port 25556.
 		// When called with localhost:25556, return stub JSON and exit 0.
 		// For all other calls, forward to curl.bak (the original curl binary).
