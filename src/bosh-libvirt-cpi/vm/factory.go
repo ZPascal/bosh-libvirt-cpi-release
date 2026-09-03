@@ -412,6 +412,7 @@ func (f Factory) Create(
 		if staticIP != "" {
 			lxcInitScript = "#!/bin/sh\n" +
 				"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+				"mkdir -p /var/vcap/bosh/log\n" +
 				"exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1\n" +
 				"# Mount pseudo-filesystems needed by BPM/runc\n" +
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
