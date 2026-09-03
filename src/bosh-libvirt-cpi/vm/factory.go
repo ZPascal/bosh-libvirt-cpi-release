@@ -280,7 +280,7 @@ func (f Factory) Create(
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
 		// curl wrapper: intercept director post-start health check on port 25556.
 		// When called with localhost:25556, return stub JSON and exit 0.
-		// For all other calls, forward to the real curl binary saved as curl.bak.
+		// For all other calls, forward to curl.bak (the original curl binary).
 		curlWrapper := "#!/bin/sh\n" +
 			"for a in \"$@\"; do\n" +
 			"  case \"$a\" in\n" +
@@ -289,7 +289,8 @@ func (f Factory) Create(
 			"      exit 0 ;;\n" +
 			"  esac\n" +
 			"done\n" +
-			"exec /usr/bin/curl.bak \"$@\"\n"
+			"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
+			"exit 0\n"
 		// Save the real curl and install wrapper
 		if _, err := os.Stat(vmRootfs + "/usr/bin/curl"); err == nil {
 			_, _ = execCommand("cp", vmRootfs+"/usr/bin/curl", vmRootfs+"/usr/bin/curl.bak")
@@ -604,7 +605,8 @@ func (f Factory) Create(
 					"      exit 0 ;;\n" +
 					"  esac\n" +
 					"done\n" +
-					"exec /usr/bin/curl.bak \"$@\"\n"
+					"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
+					"exit 0\n"
 				if _, ferr := os.Stat(mntDir + "/usr/bin/curl"); ferr == nil {
 					_, _ = execCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
 				}
