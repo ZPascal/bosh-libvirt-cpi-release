@@ -433,7 +433,7 @@ jobs:
               echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
               echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
-              echo "=== container mounts ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/container-mounts.txt" 2>/dev/null | grep "usr\|vcap\|bind" || echo "no mounts file"
+              echo "=== container mounts ===" && (sudo cat "$VMDIR/rootfs/bosh-mounts.txt" 2>/dev/null || sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/container-mounts.txt" 2>/dev/null || echo "no mounts file") | grep -E "usr|vcap|bind|overlay|tmpfs" | head -15
               echo "=== curl test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/curl --insecure --fail https://localhost:25556/info; echo "exit=$?"' 2>&1 | head -5 || true
               echo "=== timeout test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/timeout 1 echo ok; echo "exit=$?"' 2>&1 | head -3 || true
               echo "=== bosh-lxc-init mounts ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null | grep "mount\|proc\|sys\|cgroup\|fstab" || true
