@@ -433,6 +433,7 @@ jobs:
               echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
               echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
+              echo "=== curl test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/curl --insecure --fail https://localhost:25556/info; echo "exit=$?"' 2>&1 | head -5 || true
               echo "=== curl wrapper ===" && sudo cat "$VMDIR/rootfs/usr/sbin/curl" 2>/dev/null || echo "NO CURL WRAPPER"
               echo "=== usr/bin/curl ===" && sudo cat "$VMDIR/rootfs/usr/bin/curl" 2>/dev/null | head -3 || echo "NO /usr/bin/curl"
               echo "=== curl.bak ===" && sudo ls -la "$VMDIR/rootfs/usr/bin/curl.bak" 2>/dev/null || echo "NO curl.bak"
