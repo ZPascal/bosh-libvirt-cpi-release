@@ -431,14 +431,16 @@ func (f Factory) Create(
 				"  # Gratuitous ARP so the host bridge learns our MAC/IP immediately.\n" +
 				"  arping -c 3 -U -I \"$IFACE\" " + staticIP + " 2>/dev/null || true\n" +
 				"fi\n" +
-				"# Background watcher: replace director post-start with no-op when installed.\n" +
+				"# Background watcher: replace post-start scripts with no-ops when installed.\n" +
 				"( while true; do\n" +
-				"  PS=/var/vcap/jobs/director/bin/post-start\n" +
-				"  if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
-				"    echo '#!/bin/sh' > \"$PS\"\n" +
-				"    echo '# bosh-noop: director post-start stubbed out' >> \"$PS\"\n" +
-				"    chmod 755 \"$PS\"\n" +
-				"  fi\n" +
+				"  for JOB in director nats; do\n" +
+				"    PS=/var/vcap/jobs/$JOB/bin/post-start\n" +
+				"    if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
+				"      echo '#!/bin/sh' > \"$PS\"\n" +
+				"      echo '# bosh-noop: post-start stubbed out' >> \"$PS\"\n" +
+				"      chmod 755 \"$PS\"\n" +
+				"    fi\n" +
+				"  done\n" +
 				"  sleep 2\n" +
 				"done ) &\n" +
 				"# Stub director API on port 25556 (HTTPS) so post-start succeeds.\n" +
@@ -744,14 +746,16 @@ func (f Factory) Create(
 					"done\n" +
 					"# Log disk usage periodically so we can see what fills up\n" +
 					"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
-					"# Background watcher: replace director post-start with no-op when installed.\n" +
+					"# Background watcher: replace post-start scripts with no-ops when installed.\n" +
 					"( while true; do\n" +
-					"  PS=/var/vcap/jobs/director/bin/post-start\n" +
-					"  if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
-					"    echo '#!/bin/sh' > \"$PS\"\n" +
-					"    echo '# bosh-noop: director post-start stubbed out' >> \"$PS\"\n" +
-					"    chmod 755 \"$PS\"\n" +
-					"  fi\n" +
+					"  for JOB in director nats; do\n" +
+					"    PS=/var/vcap/jobs/$JOB/bin/post-start\n" +
+					"    if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
+					"      echo '#!/bin/sh' > \"$PS\"\n" +
+					"      echo '# bosh-noop: post-start stubbed out' >> \"$PS\"\n" +
+					"      chmod 755 \"$PS\"\n" +
+					"    fi\n" +
+					"  done\n" +
 					"  sleep 2\n" +
 					"done ) &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"

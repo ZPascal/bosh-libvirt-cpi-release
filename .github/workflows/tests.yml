@@ -233,9 +233,18 @@ jobs:
     - name: Deploy smoke test deployment (QEMU)
       continue-on-error: true
       run: |
-        # Skip smoke test if director isn't actually running
+        echo "Waiting for director on port 25555..."
+        for i in $(seq 1 24); do
+          if curl -sk --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
+            echo "Director is up!"
+            cat /tmp/director-info.json
+            break
+          fi
+          echo "Attempt $i/24 - not ready yet, waiting 5s..."
+          sleep 5
+        done
         if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
-          echo "Director not reachable on port 25555 - skipping smoke test (expected when director is not fully running)"
+          echo "Director not reachable after waiting - skipping smoke test"
           exit 0
         fi
         bosh alias-env qemu-ci \
@@ -465,9 +474,19 @@ jobs:
     - name: Deploy smoke test deployment (LXC)
       continue-on-error: true
       run: |
-        # Skip smoke test if director isn't actually running
+        # Wait up to 2 minutes for director to come up on port 25555
+        echo "Waiting for director on port 25555..."
+        for i in $(seq 1 24); do
+          if curl -sk --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
+            echo "Director is up!"
+            cat /tmp/director-info.json
+            break
+          fi
+          echo "Attempt $i/24 - not ready yet, waiting 5s..."
+          sleep 5
+        done
         if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
-          echo "Director not reachable on port 25555 - skipping smoke test (expected when director is not fully running)"
+          echo "Director not reachable after waiting - skipping smoke test"
           exit 0
         fi
         bosh alias-env lxc-ci \
