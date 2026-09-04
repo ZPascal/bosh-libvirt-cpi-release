@@ -355,8 +355,16 @@ func (f Factory) Create(
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
-			"  import glob, yaml\n" +
+			"  import glob, yaml, socket, time\n" +
 			"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+			"  # For director: wait for postgres to be ready first\n" +
+			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
+			"    for _ in range(30):\n" +
+			"      try:\n" +
+			"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
+			"        s.close()\n" +
+			"        break\n" +
+			"      except: time.sleep(2)\n" +
 			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
@@ -691,8 +699,15 @@ func (f Factory) Create(
 					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
-					"  import glob, yaml\n" +
+					"  import glob, yaml, socket, time\n" +
 					"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
+					"    for _ in range(30):\n" +
+					"      try:\n" +
+					"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
+					"        s.close()\n" +
+					"        break\n" +
+					"      except: time.sleep(2)\n" +
 					"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 					"  if os.path.exists(bpmyml):\n" +
