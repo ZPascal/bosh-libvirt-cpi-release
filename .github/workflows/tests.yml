@@ -243,6 +243,11 @@ jobs:
           echo "Attempt $i/24 - not ready yet, waiting 5s..."
           sleep 5
         done
+        echo "=== monit postgres log ===" && sudo find /tmp/bosh_libvirt_cpi -name 'monit-postgres.log' -o -name 'monit-postgresql.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || true
+        echo "=== QEMU postgres pre-start log ===" && \
+          sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+        echo "=== QEMU console monit nats/director logs ===" && \
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "monit-\|postgres\|director\|nats\|Error\|5432\|25555" | tail -20 || true
         if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - skipping smoke test"
           exit 0
@@ -485,6 +490,10 @@ jobs:
           echo "Attempt $i/24 - not ready yet, waiting 5s..."
           sleep 5
         done
+        VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
+        [ -n "$VMDIR" ] && echo "=== monit postgres log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-postgres.log" 2>/dev/null | tail -15 || true
+        [ -n "$VMDIR" ] && echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-director.log" 2>/dev/null | tail -15 || true
+        [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -10 || true
         if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - skipping smoke test"
           exit 0
