@@ -379,6 +379,19 @@ func (f Factory) Create(
 			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
+			"      # For postgres: after starting, wait and run create-database\n" +
+			"      if svc == 'postgres':\n" +
+			"        def run_createdb():\n" +
+			"          for _ in range(30):\n" +
+			"            try:\n" +
+			"              s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
+			"              s.close()\n" +
+			"              break\n" +
+			"            except: time.sleep(2)\n" +
+			"          import glob\n" +
+			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
+			"            subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+			"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 			"      return\n" +
 			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
@@ -722,6 +735,15 @@ func (f Factory) Create(
 					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
 					"      open(pf,'w').write(str(p.pid))\n" +
+					"      if svc == 'postgres':\n" +
+					"        def run_createdb():\n" +
+					"          for _ in range(30):\n" +
+					"            try:\n" +
+					"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close(); break\n" +
+					"            except: time.sleep(2)\n" +
+					"          import glob\n" +
+					"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+					"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 					"      return\n" +
 					"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
 					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
