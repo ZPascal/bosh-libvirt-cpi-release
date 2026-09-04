@@ -2,6 +2,7 @@ package vm_test
 
 import (
 	"errors"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -40,16 +41,21 @@ var _ = Describe("VMImpl disk operations", func() {
 		runner *driverfakes.FakeRunner
 		drv    *driverfakes.FakeDriver
 		logger boshlog.Logger
+		tmpDir string
 	)
 
 	BeforeEach(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "vm-disks-test")
+		Expect(err).ToNot(HaveOccurred())
+
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		runner = &driverfakes.FakeRunner{}
 		drv = &driverfakes.FakeDriver{}
 		// GetResult is used when reconfigureAgent reads env.json — provide
 		// minimal valid JSON so FromBytes succeeds.
 		runner.GetResult = []byte("{}")
-		store := vm.NewStore("/vms/vm-1", runner)
+		store := vm.NewStore(tmpDir, runner)
 		// Use stemcell API version 2 so persistent-disk AttachDisk skips
 		// reconfigureAgent.
 		stemVer := apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2})
@@ -60,6 +66,10 @@ var _ = Describe("VMImpl disk operations", func() {
 			drv,
 			logger,
 		)
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("AttachDisk", func() {

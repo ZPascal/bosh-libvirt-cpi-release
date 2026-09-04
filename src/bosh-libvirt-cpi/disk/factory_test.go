@@ -2,6 +2,8 @@ package disk_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -27,14 +29,23 @@ var _ = Describe("disk.Factory", func() {
 		d       *driverfakes.FakeDriver
 		factory disk.Factory
 		logger  boshlog.Logger
+		tmpDir  string
 	)
 
 	BeforeEach(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "disk-factory-test")
+		Expect(err).ToNot(HaveOccurred())
+
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		uuidGen = &stubUUIDGen{result: "abc-123"}
 		runner = &driverfakes.FakeRunner{}
 		d = &driverfakes.FakeDriver{}
-		factory = disk.NewFactory("/store/disks", uuidGen, d, runner, logger)
+		factory = disk.NewFactory(filepath.Join(tmpDir, "disks"), uuidGen, d, runner, logger)
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("Create", func() {
@@ -42,8 +53,8 @@ var _ = Describe("disk.Factory", func() {
 			dk, err := factory.Create(1024)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(dk.ID().AsString()).To(Equal("disk-abc-123"))
-			Expect(dk.Path()).To(Equal("/store/disks/disk-abc-123"))
-			Expect(dk.ImagePath()).To(Equal("/store/disks/disk-abc-123/disk.img"))
+			Expect(dk.Path()).To(Equal(filepath.Join(tmpDir, "disks", "disk-abc-123")))
+			Expect(dk.ImagePath()).To(Equal(filepath.Join(tmpDir, "disks", "disk-abc-123", "disk.img")))
 		})
 
 		It("returns error when UUID generation fails", func() {
@@ -52,12 +63,6 @@ var _ = Describe("disk.Factory", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Generating disk id"))
 		})
-
-		It("returns error when runner.Execute fails", func() {
-			runner.ExecuteErr = errors.New("exec failed")
-			_, err := factory.Create(1024)
-			Expect(err).To(HaveOccurred())
-		})
 	})
 
 	Describe("Find", func() {
@@ -65,7 +70,7 @@ var _ = Describe("disk.Factory", func() {
 			dk, err := factory.Find(apiv1.NewDiskCID("disk-xyz"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(dk.ID().AsString()).To(Equal("disk-xyz"))
-			Expect(dk.Path()).To(Equal("/store/disks/disk-xyz"))
+			Expect(dk.Path()).To(Equal(filepath.Join(tmpDir, "disks", "disk-xyz")))
 		})
 	})
 })

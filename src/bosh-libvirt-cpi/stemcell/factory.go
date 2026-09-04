@@ -1,6 +1,11 @@
 package stemcell
 
 import (
+	"compress/gzip"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"path/filepath"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
@@ -28,6 +33,11 @@ type Factory struct {
 	uuidGen    boshuuid.Generator
 	compressor boshcmd.Compressor
 
+	// ConvertToQCOW2 converts a raw image to qcow2; injectable for testing.
+	ConvertToQCOW2 func(src, dst string) error
+	// DecompressImage decompresses a gzip image to dst; injectable for testing.
+	DecompressImage func(src, dst string) error
+
 	logTag string
 	logger boshlog.Logger
 }
@@ -52,6 +62,15 @@ func NewFactory(
 		fs:         fs,
 		uuidGen:    uuidGen,
 		compressor: compressor,
+
+		ConvertToQCOW2: func(src, dst string) error {
+			out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", src, dst).CombinedOutput()
+			if err != nil {
+				return bosherr.WrapErrorf(err, "qemu-img: %s", string(out))
+			}
+			return nil
+		},
+		DecompressImage: decompressOrCopy,
 
 		logTag: "stemcell.Factory",
 		logger: logger,
@@ -94,32 +113,91 @@ func (f Factory) newStemcell(cid apiv1.StemcellCID) StemcellImpl {
 }
 
 func (f Factory) upload(imagePath, stemcellPath string) error {
-	tmpDir, err := f.fs.TempDir("bosh-libvirt-cpi-stemcell-upload")
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Creating tmp stemcell directory")
-	}
-
-	defer func() { _ = f.fs.RemoveAll(tmpDir) }()
-
-	err = f.compressor.DecompressFileToDir(imagePath, tmpDir, boshcmd.CompressorOptions{})
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Unpacking stemcell '%s' to '%s'", imagePath, tmpDir)
-	}
-
-	_, _, err = f.runner.Execute("mkdir", "-p", stemcellPath)
+	err := f.fs.MkdirAll(stemcellPath, 0755)
 	if err != nil {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
 
-	// The stemcell tarball is expected to contain a file named "image" that
-	// holds the disk image in the format requested by the domain builder
-	// (raw, qcow2, vmdk). We upload it under "image.<format>".
-	srcImage := filepath.Join(tmpDir, "image")
-	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
+	format := f.domBuilder.DiskImageFormat()
+	dstImage := filepath.Join(stemcellPath, "image."+format)
 
-	err = f.runner.Upload(srcImage, dstImage)
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Uploading stemcell image")
+	switch format {
+	case "qcow2":
+		// The stemcell image is gzip-compressed raw disk; decompress then convert to qcow2.
+		rawTmp := dstImage + ".raw"
+		if err := f.DecompressImage(imagePath, rawTmp); err != nil {
+			return bosherr.WrapError(err, "Decompressing stemcell image")
+		}
+		if err := f.ConvertToQCOW2(rawTmp, dstImage); err != nil {
+			_ = os.Remove(rawTmp)
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+		}
+		_ = os.Remove(rawTmp)
+	case "raw":
+		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
+		// plain raw filesystem image for libvirt-lxc.
+		if err := decompressOrCopy(imagePath, dstImage); err != nil {
+			return bosherr.WrapError(err, "Preparing raw stemcell image")
+		}
+	case "ext4":
+		// Extract rootfs tar into a temp dir then pack into an ext4 raw image.
+		tmpDir := dstImage + ".rootfs"
+		if err := os.MkdirAll(tmpDir, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating temp rootfs dir")
+		}
+		defer func() { _ = os.RemoveAll(tmpDir) }()
+		if out, err := exec.Command("tar", "-xzf", imagePath, "-C", tmpDir).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+		}
+		// Calculate size: du -sm gives MiB; add 20% headroom
+		duOut, _ := exec.Command("du", "-sm", tmpDir).Output()
+		sizeMB := 2048 // default 2 GiB
+		if len(duOut) > 0 {
+			var n int
+			if _, err := fmt.Sscanf(string(duOut), "%d", &n); err == nil && n > 0 {
+				sizeMB = n*120/100 + 64 // 20% headroom + 64 MB
+			}
+		}
+		sizeArg := fmt.Sprintf("%dM", sizeMB)
+		if out, err := exec.Command("dd", "if=/dev/zero", "of="+dstImage, "bs=1M",
+			"count=0", "seek="+fmt.Sprintf("%d", sizeMB)).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Creating ext4 image file: %s", string(out))
+		}
+		_ = sizeArg
+		if out, err := exec.Command("mkfs.ext4", "-F", dstImage).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Formatting ext4 image: %s", string(out))
+		}
+		mntDir := dstImage + ".mnt"
+		if err := os.MkdirAll(mntDir, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating mount point")
+		}
+		defer func() { _ = exec.Command("umount", mntDir).Run(); _ = os.RemoveAll(mntDir) }()
+		if out, err := exec.Command("mount", "-o", "loop", dstImage, mntDir).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Mounting ext4 image: %s", string(out))
+		}
+		if out, err := exec.Command("cp", "-a", tmpDir+"/.", mntDir+"/").CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 image: %s", string(out))
+		}
+	case "dir":
+		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
+		if err := os.MkdirAll(dstImage, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating stemcell rootfs directory")
+		}
+		out, err := exec.Command("tar", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
+		if err != nil {
+			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+		}
+	default:
+		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Uploading stemcell image")
+		}
+	}
+
+	// chmod only applies to file-based images, not directory/ext4-based ones.
+	if format != "dir" && format != "ext4" {
+		if err := f.fs.Chmod(dstImage, 0644); err != nil {
+			return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+		}
 	}
 
 	return nil
@@ -130,4 +208,37 @@ func (f Factory) cleanUpPartialImport(stemcell StemcellImpl) {
 	if err != nil {
 		f.logger.Error(f.logTag, "Failed to clean up partially imported stemcell: %s", err)
 	}
+}
+
+// decompressOrCopy writes src to dst, decompressing gzip if detected.
+func decompressOrCopy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close() //nolint:errcheck
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+		if err != nil {
+			_ = os.Remove(dst)
+		}
+	}()
+
+	gr, gzErr := gzip.NewReader(in)
+	if gzErr != nil {
+		// Not gzip — rewind and copy as-is.
+		if _, err = in.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		_, err = io.Copy(out, in)
+		return err
+	}
+	defer gr.Close() //nolint:errcheck
+	_, err = io.Copy(out, gr)
+	return err
 }

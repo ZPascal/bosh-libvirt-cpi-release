@@ -1,0 +1,35 @@
+---
+# Removes SSH connection fields from qemu-cpi.yml so bosh create-env
+# can run locally (qemu:///system) without any SSH secrets.
+# Also restores the libvirt default NAT network (192.168.122.0/24)
+# so the QEMU Director VM gets a reachable IP.
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/username?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/private_key?
+- type: remove
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
+- type: remove
+  path: /cloud_provider/properties/host?
+- type: remove
+  path: /cloud_provider/properties/username?
+- type: remove
+  path: /cloud_provider/properties/private_key?
+- type: remove
+  path: /cloud_provider/properties/host_key?
+- type: replace
+  path: /networks/name=default/type
+  value: manual
+- type: replace
+  path: /networks/name=default/subnets
+  value:
+  - range: 192.168.122.0/24
+    gateway: 192.168.122.1
+    dns: [192.168.122.1, 8.8.8.8]
+    static: [192.168.122.10]
+    cloud_properties: {}
+- type: replace
+  path: /instance_groups/name=bosh/networks/0/static_ips
+  value: [192.168.122.10]

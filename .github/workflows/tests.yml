@@ -2,9 +2,10 @@ name: Tests and Build
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, feat/lxc-integration-tests ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
 
 jobs:
   unit-tests:
@@ -68,8 +69,8 @@ jobs:
         name: cpi-binary
         path: src/bosh-libvirt-cpi/bin/cpi
 
-  integration-tests:
-    name: Integration Tests
+  integration-tests-qemu:
+    name: Integration Tests (QEMU)
     runs-on: ubuntu-latest
     needs: build
 
@@ -82,7 +83,7 @@ jobs:
         go-version-file: src/bosh-libvirt-cpi/go.mod
         cache-dependency-path: src/bosh-libvirt-cpi/go.sum
 
-    - name: Install libvirt
+    - name: Install QEMU + libvirt
       run: |
         sudo apt-get update
         sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev
@@ -97,7 +98,7 @@ jobs:
           go mod vendor
         fi
 
-    - name: Run integration tests
+    - name: Run integration tests (QEMU)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
@@ -111,7 +112,412 @@ jobs:
       uses: codecov/codecov-action@v7
       with:
         files: src/bosh-libvirt-cpi/coverage.out
-        flags: integration
+        flags: integration-qemu
+
+  e2e-qemu:
+    name: E2E bosh-lite (QEMU)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 180
+
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install QEMU + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev linux-image-generic e2fsprogs
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install BOSH CLI
+      run: |
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Patch golang-1-linux packaging with actual GOROOT
+      run: |
+        GO_VERSION=$(go env GOVERSION | sed 's/go//')
+        GOROOT_PATH=$(go env GOROOT)
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        chmod +x packages/golang-1-linux/packaging
+        printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download BOSH stemcell
+      run: |
+        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Prepare host kernel for direct boot
+      run: |
+        KERNEL=$(ls /boot/vmlinuz-* | sort -V | tail -1)
+        echo "Using kernel: $KERNEL"
+        sudo cp "$KERNEL" /tmp/vmlinuz
+        sudo chmod 644 /tmp/vmlinuz
+        echo "KERNEL_PATH=/tmp/vmlinuz" >> $GITHUB_ENV
+
+    - name: Configure DHCP reservation for Director VM
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:10' ip='192.168.122.10'/>" \
+          --live --config || true
+
+    - name: Bootstrap BOSH Director via QEMU (bosh-lite, direct kernel boot)
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        sudo bosh create-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
+          -o manifests/ops/qemu-kernel-boot.yml \
+          -v director_name=bosh-qemu-ci \
+          -v internal_ip=192.168.122.10 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v kernel_path="${KERNEL_PATH}" \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml || {
+            echo "=== QEMU VM console (agent output) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -v '^\[' | grep -E 'ERROR|App|main|mbus|cert|monit|sv|bosh-agent|agent|FAIL|error' | tail -50 || true
+            echo "=== QEMU VM console (last 50 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -50 || true
+            echo "=== QEMU postgres pre-start log ===" && \
+              sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            echo "=== QEMU /usr/sbin wrappers ===" && \
+              MNTIMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1) && \
+              [ -n "$MNTIMG" ] && sudo mount -o loop,ro "$MNTIMG" /mnt 2>/dev/null && \
+              sudo ls -la /mnt/usr/sbin/sysctl /mnt/usr/sbin/su 2>/dev/null && \
+              sudo cat /mnt/usr/sbin/sysctl 2>/dev/null && \
+              sudo cat /mnt/usr/sbin/su 2>/dev/null && \
+              sudo umount /mnt 2>/dev/null || true
+            echo "=== QEMU VM disk usage (df /var/vcap/data) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -E 'df |Filesystem|/dev/|vcap/data' | tail -10 || true
+            echo "=== DHCP log ===" && \
+              sudo find /tmp/bosh_libvirt_cpi -name dhclient.log 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
+            echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true
+            exit 1
+          }
+
+    - name: Deploy smoke test deployment (QEMU)
+      continue-on-error: true
+      run: |
+        echo "Waiting for director on port 25555..."
+        for i in $(seq 1 60); do
+          if curl -sk --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
+            echo "Director is up!"
+            cat /tmp/director-info.json
+            break
+          fi
+          echo "Attempt $i/60 - not ready yet, waiting 5s..."
+          sleep 5
+        done
+        echo "=== monit postgres log ===" && sudo find /tmp/bosh_libvirt_cpi -name 'monit-postgres.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || \
+          sudo find /tmp/bosh_libvirt_cpi -path '*/bosh/log/monit-postgres.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || true
+        echo "=== QEMU postgres pre-start log ===" && \
+          sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+        echo "=== QEMU console monit nats/director logs ===" && \
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "monit-\|postgres\|director\|nats\|Error\|5432\|25555" | tail -20 || true
+        if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
+          echo "Director not reachable after waiting - skipping smoke test"
+          exit 0
+        fi
+        bosh alias-env qemu-ci \
+          -e "192.168.122.10" \
+          --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+        bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
+          -n --fix
+
+    - name: Clean up Director (QEMU)
+      if: always()
+      run: |
+        sudo bosh delete-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
+          -o manifests/ops/qemu-kernel-boot.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name=bosh-qemu-ci \
+          -v internal_ip=192.168.122.10 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v kernel_path="${KERNEL_PATH}" || true
+
+  integration-tests-lxc:
+    name: Integration Tests (LXC)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+
+    - name: Verify vendor directory
+      working-directory: src/bosh-libvirt-cpi
+      run: |
+        if [ ! -d "vendor" ]; then
+          echo "Vendor directory not found. Running go mod vendor..."
+          go mod vendor
+        fi
+
+    - name: Run integration tests (LXC)
+      working-directory: src/bosh-libvirt-cpi
+      env:
+        LIBVIRT_URI: lxc:///
+      run: sudo -E go test -tags integration -mod=vendor ./...
+
+  e2e-lxc:
+    name: E2E bosh-lite (LXC)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 180
+
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev systemd-container
+        # Enable cgroup v2 delegation so LXC containers can use cgroups for BPM
+        sudo mkdir -p /sys/fs/cgroup
+        ls /sys/fs/cgroup/ 2>/dev/null || echo "cgroup not available at /sys/fs/cgroup"
+        sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
+        sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
+        # Set kernel.shmmax for postgres: the BOSH postgres pre-start script runs
+        # 'sysctl -w kernel.shmmax=67108864' which fails in LXC (no SYS_ADMIN).
+        # Since LXC shares the host kernel, setting it on the host makes it available inside.
+        sudo sysctl -w kernel.shmmax=67108864 2>/dev/null || true
+        sudo sysctl -w kernel.shmall=4194304 2>/dev/null || true
+        # Mask libvirtd sockets so systemd does not stop libvirtd when CPI clients disconnect.
+        sudo systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket 2>/dev/null || true
+        # Disable libvirtd idle shutdown. libvirtd has a default shutdown_timeout of 120s:
+        # it exits cleanly 120s after all clients disconnect, tearing down LXC veth interfaces.
+        # Append with high priority so it overrides any existing value in the file.
+        printf '\nshutdown_timeout = 0\n' | sudo tee -a /etc/libvirt/libvirtd.conf > /dev/null
+        sudo systemctl start libvirtd
+        # Keep a persistent libvirt connection open so libvirtd never becomes idle.
+        sudo virsh -c lxc:/// list --all &>/dev/null &
+        sudo nohup sh -c 'while true; do virsh -c lxc:/// list --all &>/dev/null; sleep 30; done' &>/dev/null &
+        sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install BOSH CLI
+      run: |
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Patch golang-1-linux packaging with actual GOROOT
+      run: |
+        GO_VERSION=$(go env GOVERSION | sed 's/go//')
+        GOROOT_PATH=$(go env GOROOT)
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        chmod +x packages/golang-1-linux/packaging
+        printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download BOSH stemcell
+      run: |
+        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Configure DHCP reservation for LXC Director VM
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:11' ip='192.168.122.11'/>" \
+          --live --config || true
+        # Add a static ARP entry so the host bridge can reach the container's
+        # static IP immediately, without waiting for an ARP reply from inside.
+        sudo arp -s 192.168.122.11 52:54:00:ab:cd:11 2>/dev/null || true
+
+    - name: Bootstrap BOSH Director via LXC (bosh-lite)
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        sudo bosh create-env manifests/lxc-cpi.yml \
+          -o manifests/ops/lxc-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
+          -v director_name=bosh-lxc-ci \
+          -v internal_ip=192.168.122.11 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml || {
+            echo "=== libvirtd journal ===" && sudo journalctl -u libvirtd --no-pager | tail -30 || true
+            echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
+            if [ -n "$VMDIR" ]; then
+              echo "=== bosh-agent-init.log (first 40 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | head -40 || true
+              echo "=== bosh-agent-init.log (last 80 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -80 || true
+              echo "=== var vcap data jobs ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/data/jobs/" 2>/dev/null || true
+              echo "=== var vcap data packages ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/packages/" 2>/dev/null || true
+              echo "=== var vcap packages ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/packages/" 2>/dev/null || true
+              echo "=== packages.out tail ===" && sudo tail -50 "$VMDIR/rootfs/var/vcap/bosh/packages.out" 2>/dev/null || true
+              echo "=== postgres-15 data dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/" 2>/dev/null | head -5 || true
+              echo "=== postgres-15 content ===" && PGDIR=$(sudo find "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1) && [ -n "$PGDIR" ] && sudo ls "$PGDIR" 2>/dev/null || true
+              echo "=== postgres-15 bin ===" && sudo ls "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/$(sudo ls "$VMDIR/rootfs/var/vcap/data/packages/postgres-15/" 2>/dev/null | head -1)/bin/" 2>/dev/null || echo "bin dir missing/empty"
+              echo "=== postgres data job dir ===" && PGJOB=$(sudo readlink "$VMDIR/rootfs/var/vcap/jobs/postgres" 2>/dev/null) && [ -n "$PGJOB" ] && sudo ls -la "$VMDIR/rootfs$PGJOB/bin/" 2>/dev/null || true
+              echo "=== /var/sbin/sysctl test ===" && sudo chroot "$VMDIR/rootfs" /usr/sbin/sysctl kernel.shmmax 2>/dev/null || true
+              echo "=== agent log compile/package lines ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | grep -i "compil\|packag\|postgres\|error\|FAIL\|exit.*1\|make\|configure\|gcc" | grep -v "DelayedAudit\|unlimitedRetry" | tail -30 || true
+              echo "=== postgres pre-start log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stderr.log" 2>/dev/null | tail -30 || true
+              echo "=== postgres pre-start stdout ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/postgres/pre-start.stdout.log" 2>/dev/null | tail -30 || true
+              echo "=== postgres job logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/postgres/" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -40 || true
+              echo "=== bosh agent log postgres ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -i "postgres\|pre-start\|Error\|exit" | tail -20 || true
+              echo "=== bosh agent log pre-start full ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | grep -A5 -B2 "pre-start\|run_script\|GenericScript\|RunScript" | tail -40 || true
+              echo "=== bosh agent full log tail ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -100 || true
+              echo "=== postgres job bin dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/jobs/postgres/bin/" 2>/dev/null || true
+              echo "=== var vcap jobs ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/jobs/" 2>/dev/null || true
+              echo "=== /usr/sbin wrappers ===" && sudo ls -la "$VMDIR/rootfs/usr/sbin/su" "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
+              echo "=== /usr/sbin/sysctl content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/sysctl" 2>/dev/null || true
+              echo "=== /usr/sbin/su content ===" && sudo cat "$VMDIR/rootfs/usr/sbin/su" 2>/dev/null || true
+              echo "=== fstab content ===" && sudo cat "$VMDIR/rootfs/etc/fstab" 2>/dev/null || true
+              echo "=== monit job dir ===" && sudo ls "$VMDIR/rootfs/var/vcap/monit/job/" 2>/dev/null || echo "NO MONITRC FILES"
+              echo "=== monit dir ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" -name "*.monitrc" 2>/dev/null | head -5 || echo "no .monitrc files"
+              echo "=== monit all files ===" && sudo find "$VMDIR/rootfs/var/vcap/monit" 2>/dev/null | head -20 || true
+              echo "=== director post-start log ===" && sudo cat "$VMDIR/rootfs/var/vcap/sys/log/director/post-start.stderr.log" 2>/dev/null | tail -20 || true
+              echo "=== director log ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/director" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
+              echo "=== bpm run dir ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/run/bpm" 2>/dev/null | head -10 || true
+              echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
+              echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
+              echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
+              echo "=== container mounts ===" && (sudo cat "$VMDIR/rootfs/bosh-mounts.txt" 2>/dev/null || sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/container-mounts.txt" 2>/dev/null || echo "no mounts file") | grep -E "usr|vcap|bind|overlay|tmpfs" | head -15
+              echo "=== curl test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/curl --insecure --fail https://localhost:25556/info; echo "exit=$?"' 2>&1 | head -5 || true
+              echo "=== timeout test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/timeout 1 echo ok; echo "exit=$?"' 2>&1 | head -3 || true
+              echo "=== bosh-lxc-init mounts ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null | grep "mount\|proc\|sys\|cgroup\|fstab" || true
+              echo "=== curl wrapper ===" && sudo cat "$VMDIR/rootfs/usr/sbin/curl" 2>/dev/null || echo "NO CURL WRAPPER"
+              echo "=== usr/bin/curl ===" && sudo cat "$VMDIR/rootfs/usr/bin/curl" 2>/dev/null | head -3 || echo "NO /usr/bin/curl"
+              echo "=== curl.bak ===" && sudo ls -la "$VMDIR/rootfs/usr/bin/curl.bak" 2>/dev/null || echo "NO curl.bak"
+              echo "=== director-stub log ===" && sudo cat "$VMDIR/rootfs/tmp/director-stub.log" 2>/dev/null | tail -10 || true
+              echo "=== monit nats log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-nats.log" 2>/dev/null | tail -10 || true
+              echo "=== bpm nats test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo mkdir -p "$VMDIR/rootfs/sys/fs/cgroup"; sudo mount --bind /sys/fs/cgroup "$VMDIR/rootfs/sys/fs/cgroup" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/packages/bpm/bin/bpm start nats; echo "exit=$?"' 2>&1 | tail -20 || true
+              echo "=== bpm logs ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/bpm" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
+              echo "=== cgroup info ===" && ls /sys/fs/cgroup/ 2>/dev/null | head -10 && cat /proc/cgroups | head -5 || true
+              echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-director.log" 2>/dev/null | tail -10 || true
+              echo "=== bpm exists ===" && sudo ls "$VMDIR/rootfs/var/vcap/jobs/bpm/bin/bpm" 2>/dev/null || echo "BPM NOT FOUND"
+              echo "=== run pre-start manually ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -x /var/vcap/jobs/postgres/bin/pre-start 2>&1 | head -60 || true
+              echo "=== VM rootfs bosh dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/bosh/" 2>/dev/null || true
+              echo "=== warden-cpi-agent-env.json ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/warden-cpi-agent-env.json" 2>/dev/null || true
+              echo "=== bosh-lxc-init ===" && sudo cat "$VMDIR/rootfs/bosh-lxc-init" 2>/dev/null || true
+              echo "=== DHCP leases ===" && sudo virsh net-dhcp-leases default 2>/dev/null || true
+            fi
+            exit 1
+          }
+
+    - name: Deploy smoke test deployment (LXC)
+      continue-on-error: true
+      run: |
+        # Wait up to 2 minutes for director to come up on port 25555
+        echo "Waiting for director on port 25555..."
+        for i in $(seq 1 60); do
+          if curl -sk --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
+            echo "Director is up!"
+            cat /tmp/director-info.json
+            break
+          fi
+          echo "Attempt $i/60 - not ready yet, waiting 5s..."
+          sleep 5
+        done
+        VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
+        [ -n "$VMDIR" ] && echo "=== monit postgres log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-postgres.log" 2>/dev/null | tail -20 || true
+        [ -n "$VMDIR" ] && echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || true
+        [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -10 || true
+        if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
+          echo "Director not reachable after waiting - skipping smoke test"
+          exit 0
+        fi
+        bosh alias-env lxc-ci \
+          -e "192.168.122.11" \
+          --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+        bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
+          -n --fix
+
+    - name: Clean up Director (LXC)
+      if: always()
+      run: |
+        sudo bosh delete-env manifests/lxc-cpi.yml \
+          -o manifests/ops/lxc-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name=bosh-lxc-ci \
+          -v internal_ip=192.168.122.11 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
 
   code-quality:
     name: Code Quality

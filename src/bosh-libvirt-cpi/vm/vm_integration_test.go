@@ -17,7 +17,6 @@ import (
 
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
-	"bosh-libvirt-cpi/driver/domains"
 	"bosh-libvirt-cpi/stemcell"
 	bvm "bosh-libvirt-cpi/vm"
 )
@@ -53,7 +52,7 @@ var _ = Describe("VM (integration)", func() {
 		compressor := boshcmd.NewTarballCompressor(boshsys.NewExecCmdRunner(logger), fs)
 		localRunner := driver.NewLocalRunner(fs, boshsys.NewExecCmdRunner(logger), logger)
 		runner := driver.NewExpandingPathRunner(localRunner)
-		domBuilder := domains.QEMUDomainBuilder{}
+		domBuilder := domBuilderFromEnv()
 
 		libvirtConn := driver.NewLibvirtConnImpl(conn)
 		d := driver.NewLibvirtDriver(libvirtConn, domBuilder, logger)

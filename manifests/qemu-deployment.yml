@@ -1,0 +1,30 @@
+---
+# Minimal single-instance deployment for QEMU/KVM integration smoke test.
+# Deploys one nats instance to verify the Director can manage QEMU VMs.
+name: qemu-test-deployment
+
+releases:
+- name: bosh
+  version: latest
+
+stemcells:
+- alias: default
+  os: ubuntu-jammy
+  version: latest
+
+update:
+  canaries: 1
+  max_in_flight: 1
+  canary_watch_time: 1000-30000
+  update_watch_time: 1000-30000
+
+instance_groups:
+- name: nats
+  instances: 1
+  jobs:
+  - name: nats
+    release: bosh
+  vm_type: default
+  stemcell: default
+  networks:
+  - name: default
