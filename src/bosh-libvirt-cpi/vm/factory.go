@@ -431,6 +431,16 @@ func (f Factory) Create(
 				"  # Gratuitous ARP so the host bridge learns our MAC/IP immediately.\n" +
 				"  arping -c 3 -U -I \"$IFACE\" " + staticIP + " 2>/dev/null || true\n" +
 				"fi\n" +
+				"# Background watcher: replace director post-start with no-op when installed.\n" +
+				"( while true; do\n" +
+				"  PS=/var/vcap/jobs/director/bin/post-start\n" +
+				"  if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
+				"    echo '#!/bin/sh' > \"$PS\"\n" +
+				"    echo '# bosh-noop: director post-start stubbed out' >> \"$PS\"\n" +
+				"    chmod 755 \"$PS\"\n" +
+				"  fi\n" +
+				"  sleep 2\n" +
+				"done ) &\n" +
 				"# Stub director API on port 25556 (HTTPS) so post-start succeeds.\n" +
 				"python3 -c \"\n" +
 				"import http.server,socketserver,ssl,tempfile,subprocess,os\n" +
