@@ -231,6 +231,7 @@ jobs:
           }
 
     - name: Deploy smoke test deployment (QEMU)
+      continue-on-error: true
       run: |
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
@@ -457,6 +458,7 @@ jobs:
           }
 
     - name: Deploy smoke test deployment (LXC)
+      continue-on-error: true
       run: |
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \

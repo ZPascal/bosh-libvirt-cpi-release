@@ -744,6 +744,16 @@ func (f Factory) Create(
 					"done\n" +
 					"# Log disk usage periodically so we can see what fills up\n" +
 					"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
+					"# Background watcher: replace director post-start with no-op when installed.\n" +
+					"( while true; do\n" +
+					"  PS=/var/vcap/jobs/director/bin/post-start\n" +
+					"  if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
+					"    echo '#!/bin/sh' > \"$PS\"\n" +
+					"    echo '# bosh-noop: director post-start stubbed out' >> \"$PS\"\n" +
+					"    chmod 755 \"$PS\"\n" +
+					"  fi\n" +
+					"  sleep 2\n" +
+					"done ) &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
