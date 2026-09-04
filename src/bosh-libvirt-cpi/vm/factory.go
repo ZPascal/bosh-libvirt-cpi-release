@@ -356,7 +356,8 @@ func (f Factory) Create(
 			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time\n" +
-			"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
+			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 			"  # For director: wait for postgres to be ready first\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
 			"    for _ in range(30):\n" +
@@ -713,7 +714,8 @@ func (f Factory) Create(
 					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
 					"  import glob, yaml, socket, time\n" +
-					"  log = open('/tmp/monit-'+svc+'.log','a')\n" +
+					"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
+					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
 					"    for _ in range(30):\n" +
 					"      try:\n" +
