@@ -739,7 +739,7 @@ func (f Factory) Create(
 					"      env = dict(os.environ)\n" +
 					"      env.update(proc.get('env',{}))\n" +
 					"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
-			"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
+					"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
 					"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 					"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
 					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
