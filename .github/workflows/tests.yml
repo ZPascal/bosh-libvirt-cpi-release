@@ -452,7 +452,7 @@ jobs:
               echo "=== director log ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/log/director" -name "*.log" 2>/dev/null | xargs sudo cat 2>/dev/null | tail -20 || true
               echo "=== bpm run dir ===" && sudo find "$VMDIR/rootfs/var/vcap/sys/run/bpm" 2>/dev/null | head -10 || true
               echo "=== monit svcs log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-svcs.log" 2>/dev/null || true
-              echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-req.log" 2>/dev/null | tail -20 || true
+              echo "=== monit request log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-req.log" 2>/dev/null | tail -20 || true
               echo "=== monit stub log ===" && sudo cat "$VMDIR/rootfs/tmp/monit-stub.log" 2>/dev/null | tail -20 || true
               echo "=== container mounts ===" && (sudo cat "$VMDIR/rootfs/bosh-mounts.txt" 2>/dev/null || sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/container-mounts.txt" 2>/dev/null || echo "no mounts file") | grep -E "usr|vcap|bind|overlay|tmpfs" | head -15
               echo "=== curl test in chroot ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c '/usr/bin/curl --insecure --fail https://localhost:25556/info; echo "exit=$?"' 2>&1 | head -5 || true
