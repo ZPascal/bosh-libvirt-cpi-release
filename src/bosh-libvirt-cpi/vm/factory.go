@@ -376,8 +376,11 @@ func (f Factory) Create(
 			"      args = [exe] + proc.get('args',[])\n" +
 			"      env = dict(os.environ)\n" +
 			"      env.update(proc.get('env',{}))\n" +
+			"      # Run as vcap (uid 1000) - postgres and director refuse to run as root\n" +
+			"      args = ['/sbin/setpriv','--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
 			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
 			"      # For postgres: after starting, wait and run create-database\n" +
@@ -733,8 +736,10 @@ func (f Factory) Create(
 					"      args = [exe] + proc.get('args',[])\n" +
 					"      env = dict(os.environ)\n" +
 					"      env.update(proc.get('env',{}))\n" +
+					"      args = ['/sbin/setpriv','--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 					"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
 					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+					"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
 					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
 					"      open(pf,'w').write(str(p.pid))\n" +
 					"      if svc == 'postgres':\n" +
