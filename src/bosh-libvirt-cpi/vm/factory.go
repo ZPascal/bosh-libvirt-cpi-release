@@ -383,7 +383,7 @@ func (f Factory) Create(
 			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
 			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
+			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
 			"      # For postgres: after starting, wait and run create-database\n" +
 			"      if svc == 'postgres':\n" +
@@ -744,7 +744,7 @@ func (f Factory) Create(
 					"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
 					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 					"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log)\n" +
+					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 					"      open(pf,'w').write(str(p.pid))\n" +
 					"      if svc == 'postgres':\n" +
 					"        def run_createdb():\n" +
