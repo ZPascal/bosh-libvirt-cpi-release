@@ -362,13 +362,25 @@ func (f Factory) Create(
 			"  import glob, yaml, socket, time\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"  # For director: wait for postgres to be ready first\n" +
+			"  # For director: wait for postgres to be ready first, then patch DB host to use TCP\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
 			"    for _ in range(30):\n" +
 			"      try:\n" +
 			"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
 			"        s.close()\n" +
 			"        break\n" +
+			"      except: time.sleep(2)\n" +
+			"    # Patch director.yml to use TCP (127.0.0.1) instead of UNIX socket\n" +
+			"    try:\n" +
+			"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
+			"      with open(cfg_path) as f: text = f.read()\n" +
+			"      import re\n" +
+			"      # Replace UNIX socket path with TCP host\n" +
+			"      text2 = re.sub(r'host:\\s*/var/vcap/sys/run/postgresql', 'host: 127.0.0.1', text)\n" +
+			"      if text2 != text:\n" +
+			"        with open(cfg_path,'w') as f: f.write(text2)\n" +
+			"        log.write('Patched director.yml: UNIX socket -> TCP 127.0.0.1\\n')\n" +
+			"    except Exception as e: log.write('Patch failed: '+str(e)+'\\n')\n" +
 			"      except: time.sleep(2)\n" +
 			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
@@ -735,6 +747,15 @@ func (f Factory) Create(
 					"        s.close()\n" +
 					"        break\n" +
 					"      except: time.sleep(2)\n" +
+					"    try:\n" +
+					"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
+					"      with open(cfg_path) as f: text = f.read()\n" +
+					"      import re\n" +
+					"      text2 = re.sub(r'host:\\s*/var/vcap/sys/run/postgresql', 'host: 127.0.0.1', text)\n" +
+					"      if text2 != text:\n" +
+					"        with open(cfg_path,'w') as f: f.write(text2)\n" +
+					"        log.write('Patched director.yml: UNIX socket -> TCP 127.0.0.1\\n')\n" +
+					"    except Exception as e: log.write('Patch failed: '+str(e)+'\\n')\n" +
 					"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 					"  if os.path.exists(bpmyml):\n" +
