@@ -198,6 +198,10 @@ func (f Factory) Create(
 			{vmRootfs + "/var/vcap/data/packages", 0755, 0},
 			{vmRootfs + "/var/vcap/data/tmp", 0755, 1000},
 			{vmRootfs + "/var/vcap/store", 0700, 1000},
+			// Pre-create postgres socket dir on rootfs so it persists (not on tmpfs).
+			// The director connects to postgres via UNIX socket at this path.
+			{vmRootfs + "/var/vcap/sys/run/postgresql", 0755, 1000},
+			{vmRootfs + "/var/vcap/sys/log", 0750, 1000},
 		} {
 			if mkErr := os.MkdirAll(d.path, d.perm); mkErr == nil && d.uid != 0 {
 				_ = os.Chown(d.path, d.uid, d.uid)
