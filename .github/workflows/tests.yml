@@ -498,6 +498,8 @@ jobs:
         [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -5 || true
         [ -n "$VMDIR" ] && echo "=== director config db section ===" && sudo grep -B1 -A8 "database\|adapter\|host.*5432\|port.*5432" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -20 || true
         [ -n "$VMDIR" ] && echo "=== director.yml db ===" && sudo grep -A5 "adapter\|database\|host\|port\|user\|password" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | grep -E "adapter|database|host|port|user|password" | head -10 || true
+        [ -n "$VMDIR" ] && echo "=== director.yml db2 ===" && sudo grep "db:\|adapter:\|database:\|  host:\|  port:\|  user:" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -10 || true
+        [ -n "$VMDIR" ] && echo "=== postgres socket dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/sys/run/postgresql" 2>/dev/null || echo "no socket dir"
         [ -n "$VMDIR" ] && echo "=== pg_hba.conf ===" && sudo cat "$VMDIR/rootfs/var/vcap/store/postgres-15/pg_hba.conf" 2>/dev/null | grep -v "^#" | head -10 || true
         [ -n "$VMDIR" ] && echo "=== postgresql.conf listen ===" && sudo grep "listen_address\|port" "$VMDIR/rootfs/var/vcap/store/postgres-15/postgresql.conf" 2>/dev/null | head -5 || true
         [ -n "$VMDIR" ] && echo "=== director ruby ver ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c 'source /var/vcap/jobs/director/env 2>/dev/null && /var/vcap/packages/director-ruby-4.0/bin/ruby --version' 2>&1 | head -3 || true
