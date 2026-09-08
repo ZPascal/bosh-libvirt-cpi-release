@@ -451,6 +451,9 @@ func (f Factory) Create(
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
 				"mkdir -p /sys/fs/cgroup\n" +
 				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
+				"# Ensure /var/vcap/sys/run/postgresql is on rootfs (not tmpfs) for postgres socket\n" +
+				"mkdir -p /var/vcap/sys/run/postgresql /var/vcap/sys/run/bpm /var/vcap/sys/log\n" +
+				"chown -R 1000:1000 /var/vcap/sys/run/postgresql /var/vcap/sys/log 2>/dev/null || true\n" +
 				"cat /proc/mounts > /bosh-mounts.txt 2>/dev/null || true\n" +
 				"cat /proc/mounts > /var/vcap/bosh/log/container-mounts.txt 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
