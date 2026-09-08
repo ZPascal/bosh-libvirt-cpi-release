@@ -497,6 +497,7 @@ jobs:
         [ -n "$VMDIR" ] && echo "=== postgres start script test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/jobs/postgres/bin/postgres & PG_PID=$!; sleep 3; kill $PG_PID 2>/dev/null; wait $PG_PID 2>/dev/null' 2>&1 | head -10 || true
         [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -5 || true
         [ -n "$VMDIR" ] && echo "=== director config db section ===" && sudo grep -B1 -A8 "database\|adapter\|host.*5432\|port.*5432" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -20 || true
+        [ -n "$VMDIR" ] && echo "=== director.yml db ===" && sudo python3 -c "import yaml; d=yaml.safe_load(open('$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml')); print(d.get('db','NOT FOUND'))" 2>/dev/null || true
         [ -n "$VMDIR" ] && echo "=== pg_hba.conf ===" && sudo cat "$VMDIR/rootfs/var/vcap/store/postgres-15/pg_hba.conf" 2>/dev/null | grep -v "^#" | head -10 || true
         [ -n "$VMDIR" ] && echo "=== postgresql.conf listen ===" && sudo grep "listen_address\|port" "$VMDIR/rootfs/var/vcap/store/postgres-15/postgresql.conf" 2>/dev/null | head -5 || true
         [ -n "$VMDIR" ] && echo "=== director ruby ver ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c 'source /var/vcap/jobs/director/env 2>/dev/null && /var/vcap/packages/director-ruby-4.0/bin/ruby --version' 2>&1 | head -3 || true
