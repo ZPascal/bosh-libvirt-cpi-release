@@ -421,6 +421,9 @@ jobs:
             echo "=== virsh list --all ===" && sudo virsh -c lxc:/// list --all 2>/dev/null || true
             VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
             if [ -n "$VMDIR" ]; then
+              echo "=== VMDIR check ===" && sudo ls -la "$VMDIR/" | head -5 || true
+              echo "=== bosh-mounts.txt ===" && sudo cat "$VMDIR/rootfs/bosh-mounts.txt" 2>/dev/null | grep -E "vcap|tmpfs|overlay" | head -10 || echo "not found"
+              echo "=== virsh dumpxml ===" && VMNAME=$(sudo virsh -c lxc:/// list --all 2>/dev/null | grep "running" | awk '{print $2}') && [ -n "$VMNAME" ] && sudo virsh -c lxc:/// dumpxml "$VMNAME" 2>/dev/null | grep -A2 "filesystem" | head -15 || true
               echo "=== bosh-agent-init.log (first 40 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | head -40 || true
               echo "=== bosh-agent-init.log (last 80 lines) ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -80 || true
               echo "=== var vcap data jobs ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/data/jobs/" 2>/dev/null || true
