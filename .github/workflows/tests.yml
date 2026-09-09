@@ -496,6 +496,7 @@ jobs:
         done
         VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
         [ -n "$VMDIR" ] && echo "=== monit postgres log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-postgres.log" 2>/dev/null | tail -20 || true
+        [ -n "$VMDIR" ] && echo "=== postgres socket file ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/sys/run/postgresql/" 2>/dev/null || echo "no socket dir or empty"
         [ -n "$VMDIR" ] && echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || true
         [ -n "$VMDIR" ] && echo "=== postgres start script test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/jobs/postgres/bin/postgres & PG_PID=$!; sleep 3; kill $PG_PID 2>/dev/null; wait $PG_PID 2>/dev/null' 2>&1 | head -10 || true
         [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -5 || true
