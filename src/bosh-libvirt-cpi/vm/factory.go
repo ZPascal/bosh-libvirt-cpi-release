@@ -381,7 +381,6 @@ func (f Factory) Create(
 			"        with open(cfg_path,'w') as f: f.write(text2)\n" +
 			"        log.write('Patched director.yml: UNIX socket -> TCP 127.0.0.1\\n')\n" +
 			"    except Exception as e: log.write('Patch failed: '+str(e)+'\\n')\n" +
-			"      except: time.sleep(2)\n" +
 			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
