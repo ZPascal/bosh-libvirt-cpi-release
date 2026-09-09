@@ -406,19 +406,30 @@ func (f Factory) Create(
 			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
-			"      # For postgres: after starting, wait and run create-database\n" +
+			"      # For postgres: after starting, wait and run create-database, then keep watchdog\n" +
 			"      if svc == 'postgres':\n" +
-			"        def run_createdb():\n" +
-			"          for _ in range(30):\n" +
+			"        _pg_args = args; _pg_env = env\n" +
+			"        def run_createdb_and_watch():\n" +
+			"          for _ in range(60):\n" +
 			"            try:\n" +
-			"              s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
-			"              s.close()\n" +
-			"              break\n" +
+			"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close(); break\n" +
 			"            except: time.sleep(2)\n" +
 			"          import glob\n" +
 			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
 			"            subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
-			"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
+			"          # Watchdog: restart postgres if it dies\n" +
+			"          while True:\n" +
+			"            time.sleep(5)\n" +
+			"            try:\n" +
+			"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close()\n" +
+			"            except:\n" +
+			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"              try:\n" +
+			"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"                open(pf,'w').write(str(np.pid))\n" +
+			"                time.sleep(3)\n" +
+			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
+			"        import threading; threading.Thread(target=run_createdb_and_watch, daemon=True).start()\n" +
 			"      return\n" +
 			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
@@ -785,13 +796,24 @@ func (f Factory) Create(
 					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 					"      open(pf,'w').write(str(p.pid))\n" +
 					"      if svc == 'postgres':\n" +
+					"        _pg_args = args; _pg_env = env\n" +
 					"        def run_createdb():\n" +
-					"          for _ in range(30):\n" +
+					"          for _ in range(60):\n" +
 					"            try:\n" +
 					"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close(); break\n" +
 					"            except: time.sleep(2)\n" +
 					"          import glob\n" +
 					"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+					"          while True:\n" +
+					"            time.sleep(5)\n" +
+					"            try:\n" +
+					"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close()\n" +
+					"            except:\n" +
+					"              log.write('postgres down - restarting\\n'); log.flush()\n" +
+					"              try:\n" +
+					"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
+					"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
+					"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
 					"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 					"      return\n" +
 					"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
