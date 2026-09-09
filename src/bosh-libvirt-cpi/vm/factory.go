@@ -391,15 +391,15 @@ func (f Factory) Create(
 			"      if svc == 'postgres':\n" +
 			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 			"        try:\n" +
-			"          txt = open(pgconf).read()\n" +
-			"          q=chr(39); txt2=re.sub('listen_addresses\\\\s*=\\\\s*'+q+'[^'+q+']*'+q, 'listen_addresses = '+q+'*'+q, txt)\n" +
-			"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf: listen_addresses=*\\n')\n" +
+			"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
+			"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
+			"          log.write('Appended listen_addresses=* to postgresql.conf\\n'); log.flush()\n" +
 			"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
 			"          hba_txt = open(hba).read()\n" +
-			"          if 'host all all 0.0.0.0/0' not in hba_txt:\n" +
+			"          if '0.0.0.0/0' not in hba_txt:\n" +
 			"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-			"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n')\n" +
-			"        except Exception as pe: log.write('pg conf patch: '+str(pe)+'\\n')\n" +
+			"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n'); log.flush()\n" +
+			"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
 			"      env = dict(os.environ)\n" +
@@ -792,15 +792,15 @@ func (f Factory) Create(
 					"      if svc == 'postgres':\n" +
 					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 					"        try:\n" +
-					"          txt = open(pgconf).read()\n" +
-					"          q=chr(39); txt2=re.sub('listen_addresses\\\\s*=\\\\s*'+q+'[^'+q+']*'+q, 'listen_addresses = '+q+'*'+q, txt)\n" +
-					"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf listen_addresses=*\\n')\n" +
+					"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
+					"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
+					"          log.write('Appended listen_addresses=* to postgresql.conf\\n'); log.flush()\n" +
 					"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
 					"          hba_txt = open(hba).read()\n" +
-					"          if 'host all all 0.0.0.0/0' not in hba_txt:\n" +
+					"          if '0.0.0.0/0' not in hba_txt:\n" +
 					"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-					"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n')\n" +
-					"        except Exception as pe: log.write('pg conf patch: '+str(pe)+'\\n')\n" +
+					"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n'); log.flush()\n" +
+					"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
 					"      env = dict(os.environ)\n" +
