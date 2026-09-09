@@ -392,7 +392,7 @@ func (f Factory) Create(
 			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 			"        try:\n" +
 			"          txt = open(pgconf).read()\n" +
-			"          txt2 = re.sub(r\"listen_addresses\\s*=\\s*'[^']*'\", \"listen_addresses = '*'\", txt)\n" +
+			"          q=chr(39); txt2=re.sub('listen_addresses\\\\s*=\\\\s*'+q+'[^'+q+']*'+q, 'listen_addresses = '+q+'*'+q, txt)\n" +
 			"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf: listen_addresses=*\\n')\n" +
 			"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
 			"          hba_txt = open(hba).read()\n" +
@@ -793,7 +793,7 @@ func (f Factory) Create(
 					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 					"        try:\n" +
 					"          txt = open(pgconf).read()\n" +
-					"          txt2 = re.sub(r\"listen_addresses\\s*=\\s*'[^']*'\", \"listen_addresses = '*'\", txt)\n" +
+					"          q=chr(39); txt2=re.sub('listen_addresses\\\\s*=\\\\s*'+q+'[^'+q+']*'+q, 'listen_addresses = '+q+'*'+q, txt)\n" +
 					"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf listen_addresses=*\\n')\n" +
 					"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
 					"          hba_txt = open(hba).read()\n" +
