@@ -359,19 +359,20 @@ func (f Factory) Create(
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
 			"def start_svc(svc):\n" +
-			"  import glob, yaml, socket, time\n" +
+			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"  # For director: wait for postgres to be ready first, then patch DB host to use TCP\n" +
+			"  # For director: wait for postgres to be ready via container IP (monit runs on host)\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-			"    log.write('waiting for postgres on 127.0.0.1:5432\\n'); log.flush()\n" +
+			"    pg_host = '" + staticIP + "'\n" +
+			"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 			"    pg_ready = False\n" +
 			"    for i in range(300):\n" +
 			"      try:\n" +
-			"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
+			"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 			"        s.close()\n" +
 			"        import subprocess as _sp\n" +
-			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h','127.0.0.1','-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h',pg_host,'-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
 			"          capture_output=True, timeout=5)\n" +
 			"        log.write('psql rc='+str(r.returncode)+' out='+r.stdout.decode()[:40]+' err='+r.stderr.decode()[:40]+'\\n'); log.flush()\n" +
 			"        if r.returncode == 0: pg_ready = True; break\n" +
@@ -380,23 +381,25 @@ func (f Factory) Create(
 			"      time.sleep(2)\n" +
 			"    log.write('pg_ready='+str(pg_ready)+'\\n'); log.flush()\n" +
 			"    if not pg_ready: return\n" +
-			"    # Patch director.yml to use TCP (127.0.0.1) instead of UNIX socket\n" +
-			"    try:\n" +
-			"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
-			"      with open(cfg_path) as f: text = f.read()\n" +
-			"      import re\n" +
-			"      # Replace UNIX socket path with TCP host\n" +
-			"      text2 = re.sub(r'host:\\s*/var/vcap/sys/run/postgresql', 'host: 127.0.0.1', text)\n" +
-			"      if text2 != text:\n" +
-			"        with open(cfg_path,'w') as f: f.write(text2)\n" +
-			"        log.write('Patched director.yml: UNIX socket -> TCP 127.0.0.1\\n')\n" +
-			"    except Exception as e: log.write('Patch failed: '+str(e)+'\\n')\n" +
 			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
 			"      cfg = yaml.safe_load(open(bpmyml))\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
+			"      # For postgres: patch postgresql.conf to listen on all interfaces before start\n" +
+			"      if svc == 'postgres':\n" +
+			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
+			"        try:\n" +
+			"          txt = open(pgconf).read()\n" +
+			"          txt2 = re.sub(r\"listen_addresses\\s*=\\s*'[^']*'\", \"listen_addresses = '*'\", txt)\n" +
+			"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf: listen_addresses=*\\n')\n" +
+			"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
+			"          hba_txt = open(hba).read()\n" +
+			"          if 'host all all 0.0.0.0/0' not in hba_txt:\n" +
+			"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
+			"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n')\n" +
+			"        except Exception as pe: log.write('pg conf patch: '+str(pe)+'\\n')\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
 			"      env = dict(os.environ)\n" +
@@ -412,11 +415,11 @@ func (f Factory) Create(
 			"      open(pf,'w').write(str(p.pid))\n" +
 			"      # For postgres: after starting, wait and run create-database, then keep watchdog\n" +
 			"      if svc == 'postgres':\n" +
-			"        _pg_args = args; _pg_env = env\n" +
+			"        _pg_args = args; _pg_env = env; _pg_host = '" + staticIP + "'\n" +
 			"        def run_createdb_and_watch():\n" +
 			"          for _ in range(60):\n" +
 			"            try:\n" +
-			"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close(); break\n" +
+			"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
 			"            except: time.sleep(2)\n" +
 			"          import glob\n" +
 			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
@@ -425,7 +428,7 @@ func (f Factory) Create(
 			"          while True:\n" +
 			"            time.sleep(5)\n" +
 			"            try:\n" +
-			"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close()\n" +
+			"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
 			"            except:\n" +
 			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
 			"              try:\n" +
@@ -642,6 +645,7 @@ func (f Factory) Create(
 					agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 				}
+				qemuStaticIP, _ := extractNetworkFromEnv(f.injectMbusCert(addBlobstoreToEnv(envBytes)))
 				// Symlink bosh tools into /usr/local/bin
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
 				boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
@@ -757,18 +761,19 @@ func (f Factory) Create(
 					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 					"  return result.encode()\n" +
 					"def start_svc(svc):\n" +
-					"  import glob, yaml, socket, time\n" +
+					"  import glob, yaml, socket, time, re\n" +
 					"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-					"    log.write('waiting for postgres on 127.0.0.1:5432\\n'); log.flush()\n" +
+					"    pg_host = '" + qemuStaticIP + "'\n" +
+					"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 					"    pg_ready = False\n" +
 					"    for i in range(300):\n" +
 					"      try:\n" +
-					"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
+					"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 					"        s.close()\n" +
 					"        import subprocess as _sp\n" +
-					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h','127.0.0.1','-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h',pg_host,'-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
 					"          capture_output=True, timeout=5)\n" +
 					"        log.write('psql rc='+str(r.returncode)+' out='+r.stdout.decode()[:40]+' err='+r.stderr.decode()[:40]+'\\n'); log.flush()\n" +
 					"        if r.returncode == 0: pg_ready = True; break\n" +
@@ -777,21 +782,25 @@ func (f Factory) Create(
 					"      time.sleep(2)\n" +
 					"    log.write('pg_ready='+str(pg_ready)+'\\n'); log.flush()\n" +
 					"    if not pg_ready: return\n" +
-					"    try:\n" +
-					"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
-					"      with open(cfg_path) as f: text = f.read()\n" +
-					"      import re\n" +
-					"      text2 = re.sub(r'host:\\s*/var/vcap/sys/run/postgresql', 'host: 127.0.0.1', text)\n" +
-					"      if text2 != text:\n" +
-					"        with open(cfg_path,'w') as f: f.write(text2)\n" +
-					"        log.write('Patched director.yml: UNIX socket -> TCP 127.0.0.1\\n')\n" +
-					"    except Exception as e: log.write('Patch failed: '+str(e)+'\\n')\n" +
 					"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
 					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 					"  if os.path.exists(bpmyml):\n" +
 					"    try:\n" +
 					"      cfg = yaml.safe_load(open(bpmyml))\n" +
 					"      proc = cfg.get('processes',[{}])[0]\n" +
+					"      # For postgres: patch postgresql.conf to listen on all interfaces\n" +
+					"      if svc == 'postgres':\n" +
+					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
+					"        try:\n" +
+					"          txt = open(pgconf).read()\n" +
+					"          txt2 = re.sub(r\"listen_addresses\\s*=\\s*'[^']*'\", \"listen_addresses = '*'\", txt)\n" +
+					"          if txt2 != txt: open(pgconf,'w').write(txt2); log.write('Patched postgresql.conf listen_addresses=*\\n')\n" +
+					"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
+					"          hba_txt = open(hba).read()\n" +
+					"          if 'host all all 0.0.0.0/0' not in hba_txt:\n" +
+					"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
+					"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n')\n" +
+					"        except Exception as pe: log.write('pg conf patch: '+str(pe)+'\\n')\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
 					"      env = dict(os.environ)\n" +
@@ -805,18 +814,18 @@ func (f Factory) Create(
 					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 					"      open(pf,'w').write(str(p.pid))\n" +
 					"      if svc == 'postgres':\n" +
-					"        _pg_args = args; _pg_env = env\n" +
+					"        _pg_args = args; _pg_env = env; _pg_host = '" + qemuStaticIP + "'\n" +
 					"        def run_createdb():\n" +
 					"          for _ in range(60):\n" +
 					"            try:\n" +
-					"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close(); break\n" +
+					"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
 					"            except: time.sleep(2)\n" +
 					"          import glob\n" +
 					"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
 					"          while True:\n" +
 					"            time.sleep(5)\n" +
 					"            try:\n" +
-					"              s = socket.create_connection(('127.0.0.1', 5432), 1); s.close()\n" +
+					"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
 					"            except:\n" +
 					"              log.write('postgres down - restarting\\n'); log.flush()\n" +
 					"              try:\n" +
