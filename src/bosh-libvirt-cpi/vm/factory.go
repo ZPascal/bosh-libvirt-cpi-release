@@ -364,12 +364,18 @@ func (f Factory) Create(
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 			"  # For director: wait for postgres to be ready first, then patch DB host to use TCP\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-			"    for _ in range(30):\n" +
+			"    for _ in range(60):\n" +
 			"      try:\n" +
 			"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
 			"        s.close()\n" +
-			"        break\n" +
-			"      except: time.sleep(2)\n" +
+			"        # Also verify postgres accepts real connections by checking psql\n" +
+			"        import subprocess as _sp\n" +
+			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h','127.0.0.1','-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+			"          capture_output=True, timeout=5)\n" +
+			"        log.write('psql rc='+str(r.returncode)+' stdout='+r.stdout.decode()[:80]+' stderr='+r.stderr.decode()[:80]+'\\n')\n" +
+			"        if r.returncode == 0: break\n" +
+			"      except Exception as e: log.write('pg wait err: '+str(e)+'\\n')\n" +
+			"      time.sleep(2)\n" +
 			"    # Patch director.yml to use TCP (127.0.0.1) instead of UNIX socket\n" +
 			"    try:\n" +
 			"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
@@ -740,12 +746,17 @@ func (f Factory) Create(
 					"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-					"    for _ in range(30):\n" +
+					"    for _ in range(60):\n" +
 					"      try:\n" +
 					"        s = socket.create_connection(('127.0.0.1', 5432), 1)\n" +
 					"        s.close()\n" +
-					"        break\n" +
-					"      except: time.sleep(2)\n" +
+					"        import subprocess as _sp\n" +
+					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h','127.0.0.1','-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+					"          capture_output=True, timeout=5)\n" +
+					"        log.write('psql rc='+str(r.returncode)+' stdout='+r.stdout.decode()[:80]+' stderr='+r.stderr.decode()[:80]+'\\n')\n" +
+					"        if r.returncode == 0: break\n" +
+					"      except Exception as e: log.write('pg wait err: '+str(e)+'\\n')\n" +
+					"      time.sleep(2)\n" +
 					"    try:\n" +
 					"      cfg_path = '/var/vcap/jobs/director/config/director.yml'\n" +
 					"      with open(cfg_path) as f: text = f.read()\n" +
