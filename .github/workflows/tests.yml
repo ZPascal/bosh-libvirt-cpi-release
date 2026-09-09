@@ -500,13 +500,15 @@ jobs:
         [ -n "$VMDIR" ] && echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || true
         [ -n "$VMDIR" ] && echo "=== postgres start script test ===" && sudo mount -t proc proc "$VMDIR/rootfs/proc" 2>/dev/null; sudo mount -t sysfs sysfs "$VMDIR/rootfs/sys" 2>/dev/null; sudo chroot "$VMDIR/rootfs" /bin/bash -c '/var/vcap/jobs/postgres/bin/postgres & PG_PID=$!; sleep 3; kill $PG_PID 2>/dev/null; wait $PG_PID 2>/dev/null' 2>&1 | head -10 || true
         [ -n "$VMDIR" ] && echo "=== director env ===" && sudo cat "$VMDIR/rootfs/var/vcap/jobs/director/env" 2>/dev/null | head -5 || true
-        [ -n "$VMDIR" ] && echo "=== director.yml full db block ===" && sudo grep -A20 "^db:" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -25 || true
-        [ -n "$VMDIR" ] && echo "=== director.yml host line ===" && sudo grep "host:" "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -5 || true
+        [ -n "$VMDIR" ] && echo "=== director.yml full (first 80 lines) ===" && sudo head -80 "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null || true
+        [ -n "$VMDIR" ] && echo "=== director.yml db section ===" && sudo awk '/^db:/,/^[a-z]/' "$VMDIR/rootfs/var/vcap/jobs/director/config/director.yml" 2>/dev/null | head -20 || true
+        [ -n "$VMDIR" ] && echo "=== director.yml via nsenter ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount -- head -30 /var/vcap/jobs/director/config/director.yml 2>/dev/null || echo "cannot read via nsenter"
         [ -n "$VMDIR" ] && echo "=== postgres socket dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/sys/run/postgresql" 2>/dev/null || echo "no socket dir"
         [ -n "$VMDIR" ] && echo "=== postgres running? ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount --pid -- ps aux 2>/dev/null | grep postgres || echo "cannot check"
+        [ -n "$VMDIR" ] && echo "=== director running? ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount --pid -- ps aux 2>/dev/null | grep -E "director|ruby" | grep -v grep || echo "no director process"
         [ -n "$VMDIR" ] && echo "=== pg_hba.conf ===" && sudo cat "$VMDIR/rootfs/var/vcap/store/postgres-15/pg_hba.conf" 2>/dev/null | grep -v "^#" | head -10 || true
         [ -n "$VMDIR" ] && echo "=== postgresql.conf listen ===" && sudo grep "listen_address\|port" "$VMDIR/rootfs/var/vcap/store/postgres-15/postgresql.conf" 2>/dev/null | head -5 || true
-        [ -n "$VMDIR" ] && echo "=== director ruby ver ===" && sudo chroot "$VMDIR/rootfs" /bin/bash -c 'source /var/vcap/jobs/director/env 2>/dev/null && /var/vcap/packages/director-ruby-4.0/bin/ruby --version' 2>&1 | head -3 || true
+        [ -n "$VMDIR" ] && echo "=== monit-director head20 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | head -20 || true
         [ -n "$VMDIR" ] && echo "=== monit-director tail50 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -50 || true
         if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - skipping smoke test"
