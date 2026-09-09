@@ -231,7 +231,6 @@ jobs:
           }
 
     - name: Deploy smoke test deployment (QEMU)
-      continue-on-error: true
       run: |
         echo "Waiting for director on port 25555..."
         for i in $(seq 1 60); do
@@ -250,8 +249,8 @@ jobs:
         echo "=== QEMU console monit nats/director logs ===" && \
           sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "monit-\|postgres\|director\|nats\|Error\|5432\|25555" | tail -20 || true
         if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
-          echo "Director not reachable after waiting - skipping smoke test"
-          exit 0
+          echo "Director not reachable after waiting - failing"
+          exit 1
         fi
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
@@ -481,7 +480,6 @@ jobs:
           }
 
     - name: Deploy smoke test deployment (LXC)
-      continue-on-error: true
       run: |
         # Wait up to 2 minutes for director to come up on port 25555
         echo "Waiting for director on port 25555..."
@@ -511,8 +509,8 @@ jobs:
         [ -n "$VMDIR" ] && echo "=== monit-director head20 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | head -20 || true
         [ -n "$VMDIR" ] && echo "=== monit-director tail50 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -50 || true
         if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
-          echo "Director not reachable after waiting - skipping smoke test"
-          exit 0
+          echo "Director not reachable after waiting - failing"
+          exit 1
         fi
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \
