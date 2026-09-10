@@ -387,40 +387,8 @@ func (f Factory) Create(
 			"    try:\n" +
 			"      cfg = yaml.safe_load(open(bpmyml))\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
-			"      # For postgres: patch conf and restart so it listens on all interfaces\n" +
-			"      if svc == 'postgres':\n" +
-			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
-			"        try:\n" +
-			"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
-			"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
-			"          log.write('Appended listen_addresses=*\\n'); log.flush()\n" +
-			"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
-			"          if '0.0.0.0/0' not in open(hba).read():\n" +
-			"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-			"            log.write('Added 0.0.0.0/0 to pg_hba.conf\\n'); log.flush()\n" +
-			"          # Stop the running postgres (started by pre-start with -h 127.0.0.1)\n" +
-			"          pgctl = '/var/vcap/packages/postgres-15/bin/pg_ctl'\n" +
-			"          pgdata = '/var/vcap/store/postgres-15'\n" +
-			"          import subprocess as _sp2\n" +
-			"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
-			"          if setpriv2:\n" +
-			"            r_stop = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'stop','-D',pgdata,'-m','fast'],\n" +
-			"              capture_output=True, timeout=30)\n" +
-			"            log.write('pg_ctl stop rc='+str(r_stop.returncode)+'\\n'); log.flush()\n" +
-			"          time.sleep(2)\n" +
-			"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
-			"      # For postgres: strip -h flag so listen_addresses from conf is used\n" +
-			"      if svc == 'postgres':\n" +
-			"        clean = []\n" +
-			"        skip = False\n" +
-			"        for a in args:\n" +
-			"          if skip: skip = False; continue\n" +
-			"          if a == '-h': skip = True; continue\n" +
-			"          if a.startswith('-h'): continue\n" +
-			"          clean.append(a)\n" +
-			"        args = clean\n" +
 			"      env = dict(os.environ)\n" +
 			"      env.update(proc.get('env',{}))\n" +
 			"      # Run as vcap (uid 1000) - postgres and director refuse to run as root\n" +
@@ -531,6 +499,27 @@ func (f Factory) Create(
 				"  done\n" +
 				"  sleep 2\n" +
 				"done ) &\n" +
+				"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
+				"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
+				"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
+				"  PGCTL=/var/vcap/packages/postgres-15/bin/pg_ctl\n" +
+				"  PGDATA=/var/vcap/store/postgres-15\n" +
+				"  while true; do\n" +
+				"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
+				"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
+				"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
+				"      # Restart postgres so it binds to all interfaces\n" +
+				"      if [ -x \"$PGCTL\" ]; then\n" +
+				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
+				"        sleep 2\n" +
+				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
+				"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
+				"      fi\n" +
+				"      break\n" +
+				"    fi\n" +
+				"    sleep 1\n" +
+				"  done\n" +
+				") &\n" +
 				"# Stub director API on port 25556 (HTTPS) so post-start succeeds.\n" +
 				"python3 -c \"\n" +
 				"import http.server,socketserver,ssl,tempfile,subprocess,os\n" +
@@ -807,39 +796,8 @@ func (f Factory) Create(
 					"    try:\n" +
 					"      cfg = yaml.safe_load(open(bpmyml))\n" +
 					"      proc = cfg.get('processes',[{}])[0]\n" +
-					"      # For postgres: patch conf and stop running instance so new start uses *\n" +
-					"      if svc == 'postgres':\n" +
-					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
-					"        try:\n" +
-					"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
-					"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
-					"          log.write('Appended listen_addresses=*\\n'); log.flush()\n" +
-					"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
-					"          if '0.0.0.0/0' not in open(hba).read():\n" +
-					"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-					"            log.write('Added 0.0.0.0/0 to pg_hba.conf\\n'); log.flush()\n" +
-					"          pgctl = '/var/vcap/packages/postgres-15/bin/pg_ctl'\n" +
-					"          pgdata = '/var/vcap/store/postgres-15'\n" +
-					"          import subprocess as _sp2\n" +
-					"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
-					"          if setpriv2:\n" +
-					"            r_stop = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'stop','-D',pgdata,'-m','fast'],\n" +
-					"              capture_output=True, timeout=30)\n" +
-					"            log.write('pg_ctl stop rc='+str(r_stop.returncode)+'\\n'); log.flush()\n" +
-					"          time.sleep(2)\n" +
-					"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
-					"      # Strip -h flag so listen_addresses from postgresql.conf is used\n" +
-					"      if svc == 'postgres':\n" +
-					"        clean = []\n" +
-					"        skip = False\n" +
-					"        for a in args:\n" +
-					"          if skip: skip = False; continue\n" +
-					"          if a == '-h': skip = True; continue\n" +
-					"          if a.startswith('-h'): continue\n" +
-					"          clean.append(a)\n" +
-					"        args = clean\n" +
 					"      env = dict(os.environ)\n" +
 					"      env.update(proc.get('env',{}))\n" +
 					"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
@@ -921,6 +879,26 @@ func (f Factory) Create(
 					"  done\n" +
 					"  sleep 2\n" +
 					"done ) &\n" +
+					"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
+					"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
+					"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
+					"  PGCTL=/var/vcap/packages/postgres-15/bin/pg_ctl\n" +
+					"  PGDATA=/var/vcap/store/postgres-15\n" +
+					"  while true; do\n" +
+					"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
+					"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
+					"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
+					"      if [ -x \"$PGCTL\" ]; then\n" +
+					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
+					"        sleep 2\n" +
+					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
+					"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
+					"      fi\n" +
+					"      break\n" +
+					"    fi\n" +
+					"    sleep 1\n" +
+					"  done\n" +
+					") &\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
