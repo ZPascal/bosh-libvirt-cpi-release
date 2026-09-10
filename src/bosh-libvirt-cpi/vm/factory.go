@@ -387,7 +387,7 @@ func (f Factory) Create(
 			"    try:\n" +
 			"      cfg = yaml.safe_load(open(bpmyml))\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
-			"      # For postgres: patch conf, reload/restart so it listens on all interfaces\n" +
+			"      # For postgres: patch conf and restart so it listens on all interfaces\n" +
 			"      if svc == 'postgres':\n" +
 			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 			"        try:\n" +
@@ -398,19 +398,29 @@ func (f Factory) Create(
 			"          if '0.0.0.0/0' not in open(hba).read():\n" +
 			"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
 			"            log.write('Added 0.0.0.0/0 to pg_hba.conf\\n'); log.flush()\n" +
-			"          # Try pg_ctl reload to make running postgres re-read config\n" +
+			"          # Stop the running postgres (started by pre-start with -h 127.0.0.1)\n" +
 			"          pgctl = '/var/vcap/packages/postgres-15/bin/pg_ctl'\n" +
 			"          pgdata = '/var/vcap/store/postgres-15'\n" +
 			"          import subprocess as _sp2\n" +
 			"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"          if setpriv2:\n" +
-			"            r2 = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'reload','-D',pgdata],\n" +
-			"              capture_output=True, timeout=10)\n" +
-			"            log.write('pg_ctl reload rc='+str(r2.returncode)+' '+r2.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-			"            if r2.returncode == 0: return  # postgres already running and reloaded\n" +
+			"            r_stop = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'stop','-D',pgdata,'-m','fast'],\n" +
+			"              capture_output=True, timeout=30)\n" +
+			"            log.write('pg_ctl stop rc='+str(r_stop.returncode)+'\\n'); log.flush()\n" +
+			"          time.sleep(2)\n" +
 			"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
+			"      # For postgres: strip -h flag so listen_addresses from conf is used\n" +
+			"      if svc == 'postgres':\n" +
+			"        clean = []\n" +
+			"        skip = False\n" +
+			"        for a in args:\n" +
+			"          if skip: skip = False; continue\n" +
+			"          if a == '-h': skip = True; continue\n" +
+			"          if a.startswith('-h'): continue\n" +
+			"          clean.append(a)\n" +
+			"        args = clean\n" +
 			"      env = dict(os.environ)\n" +
 			"      env.update(proc.get('env',{}))\n" +
 			"      # Run as vcap (uid 1000) - postgres and director refuse to run as root\n" +
@@ -797,7 +807,7 @@ func (f Factory) Create(
 					"    try:\n" +
 					"      cfg = yaml.safe_load(open(bpmyml))\n" +
 					"      proc = cfg.get('processes',[{}])[0]\n" +
-					"      # For postgres: patch conf, reload/restart so it listens on all interfaces\n" +
+					"      # For postgres: patch conf and stop running instance so new start uses *\n" +
 					"      if svc == 'postgres':\n" +
 					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 					"        try:\n" +
@@ -813,13 +823,23 @@ func (f Factory) Create(
 					"          import subprocess as _sp2\n" +
 					"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 					"          if setpriv2:\n" +
-					"            r2 = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'reload','-D',pgdata],\n" +
-					"              capture_output=True, timeout=10)\n" +
-					"            log.write('pg_ctl reload rc='+str(r2.returncode)+' '+r2.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-					"            if r2.returncode == 0: return\n" +
+					"            r_stop = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'stop','-D',pgdata,'-m','fast'],\n" +
+					"              capture_output=True, timeout=30)\n" +
+					"            log.write('pg_ctl stop rc='+str(r_stop.returncode)+'\\n'); log.flush()\n" +
+					"          time.sleep(2)\n" +
 					"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
+					"      # Strip -h flag so listen_addresses from postgresql.conf is used\n" +
+					"      if svc == 'postgres':\n" +
+					"        clean = []\n" +
+					"        skip = False\n" +
+					"        for a in args:\n" +
+					"          if skip: skip = False; continue\n" +
+					"          if a == '-h': skip = True; continue\n" +
+					"          if a.startswith('-h'): continue\n" +
+					"          clean.append(a)\n" +
+					"        args = clean\n" +
 					"      env = dict(os.environ)\n" +
 					"      env.update(proc.get('env',{}))\n" +
 					"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
