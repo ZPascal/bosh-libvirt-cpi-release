@@ -500,31 +500,10 @@ func (f Factory) Create(
 				"  done\n" +
 				"  sleep 2\n" +
 				"done ) &\n" +
-				"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
-				"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
-				"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
-				"  PGDATA=/var/vcap/store/postgres-15\n" +
-				"  PGCTL=$(ls /var/vcap/packages/postgres-15/bin/pg_ctl /var/vcap/data/packages/postgres-15/*/bin/pg_ctl 2>/dev/null | head -1)\n" +
-				"  PG_ISREADY=$(ls /var/vcap/packages/postgres-15/bin/pg_isready /var/vcap/data/packages/postgres-15/*/bin/pg_isready 2>/dev/null | head -1)\n" +
-				"  while true; do\n" +
-				"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
-				"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
-				"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
-				"      echo \"pg_ctl=$PGCTL\" >> /var/vcap/bosh/log/pg-patch.log\n" +
-				"      if [ -x \"$PGCTL\" ]; then\n" +
-				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
-				"        sleep 3\n" +
-				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
-				"        sleep 3\n" +
-				"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
-				"      else\n" +
-				"        echo 'pg_ctl not found, skipping restart' >> /var/vcap/bosh/log/pg-patch.log\n" +
-				"      fi\n" +
-				"      break\n" +
-				"    fi\n" +
-				"    sleep 1\n" +
-				"  done\n" +
-				") &\n" +
+				"# Redirect external IP:5432 -> 127.0.0.1:5432 so monit stub can check postgres\n" +
+				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 				"# Stub director API on port 25556 (HTTPS) so post-start succeeds.\n" +
 				"python3 -c \"\n" +
 				"import http.server,socketserver,ssl,tempfile,subprocess,os\n" +
@@ -884,30 +863,10 @@ func (f Factory) Create(
 					"  done\n" +
 					"  sleep 2\n" +
 					"done ) &\n" +
-					"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
-					"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
-					"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
-					"  PGDATA=/var/vcap/store/postgres-15\n" +
-					"  PGCTL=$(ls /var/vcap/packages/postgres-15/bin/pg_ctl /var/vcap/data/packages/postgres-15/*/bin/pg_ctl 2>/dev/null | head -1)\n" +
-					"  while true; do\n" +
-					"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
-					"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
-					"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
-					"      echo \"pg_ctl=$PGCTL\" >> /var/vcap/bosh/log/pg-patch.log\n" +
-					"      if [ -x \"$PGCTL\" ]; then\n" +
-					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
-					"        sleep 3\n" +
-					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
-					"        sleep 3\n" +
-					"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
-					"      else\n" +
-					"        echo 'pg_ctl not found' >> /var/vcap/bosh/log/pg-patch.log\n" +
-					"      fi\n" +
-					"      break\n" +
-					"    fi\n" +
-					"    sleep 1\n" +
-					"  done\n" +
-					") &\n" +
+					"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub\n" +
+					"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+					"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+					"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
