@@ -372,9 +372,10 @@ func (f Factory) Create(
 			"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 			"        s.close()\n" +
 			"        import subprocess as _sp\n" +
-			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h',pg_host,'-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+			"        # Use pg_isready to check if postgres accepts connections (no user needed)\n" +
+			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
 			"          capture_output=True, timeout=5)\n" +
-			"        log.write('psql rc='+str(r.returncode)+' out='+r.stdout.decode()[:40]+' err='+r.stderr.decode()[:40]+'\\n'); log.flush()\n" +
+			"        log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
 			"        if r.returncode == 0: pg_ready = True; break\n" +
 			"      except Exception as e:\n" +
 			"        if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
@@ -502,18 +503,22 @@ func (f Factory) Create(
 				"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
 				"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
 				"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
-				"  PGCTL=/var/vcap/packages/postgres-15/bin/pg_ctl\n" +
 				"  PGDATA=/var/vcap/store/postgres-15\n" +
+				"  PGCTL=$(ls /var/vcap/packages/postgres-15/bin/pg_ctl /var/vcap/data/packages/postgres-15/*/bin/pg_ctl 2>/dev/null | head -1)\n" +
+				"  PG_ISREADY=$(ls /var/vcap/packages/postgres-15/bin/pg_isready /var/vcap/data/packages/postgres-15/*/bin/pg_isready 2>/dev/null | head -1)\n" +
 				"  while true; do\n" +
 				"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
 				"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
 				"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
-				"      # Restart postgres so it binds to all interfaces\n" +
+				"      echo \"pg_ctl=$PGCTL\" >> /var/vcap/bosh/log/pg-patch.log\n" +
 				"      if [ -x \"$PGCTL\" ]; then\n" +
 				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
-				"        sleep 2\n" +
+				"        sleep 3\n" +
 				"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
+				"        sleep 3\n" +
 				"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
+				"      else\n" +
+				"        echo 'pg_ctl not found, skipping restart' >> /var/vcap/bosh/log/pg-patch.log\n" +
 				"      fi\n" +
 				"      break\n" +
 				"    fi\n" +
@@ -781,9 +786,9 @@ func (f Factory) Create(
 					"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 					"        s.close()\n" +
 					"        import subprocess as _sp\n" +
-					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/psql','-h',pg_host,'-p','5432','-U','postgres','-d','bosh','-c','SELECT 1'],\n" +
+					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
 					"          capture_output=True, timeout=5)\n" +
-					"        log.write('psql rc='+str(r.returncode)+' out='+r.stdout.decode()[:40]+' err='+r.stderr.decode()[:40]+'\\n'); log.flush()\n" +
+					"        log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
 					"        if r.returncode == 0: pg_ready = True; break\n" +
 					"      except Exception as e:\n" +
 					"        if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
@@ -882,17 +887,21 @@ func (f Factory) Create(
 					"# Background watcher: patch postgresql.conf to listen on all interfaces.\n" +
 					"( PGCONF=/var/vcap/store/postgres-15/postgresql.conf\n" +
 					"  PGHBA=/var/vcap/store/postgres-15/pg_hba.conf\n" +
-					"  PGCTL=/var/vcap/packages/postgres-15/bin/pg_ctl\n" +
 					"  PGDATA=/var/vcap/store/postgres-15\n" +
+					"  PGCTL=$(ls /var/vcap/packages/postgres-15/bin/pg_ctl /var/vcap/data/packages/postgres-15/*/bin/pg_ctl 2>/dev/null | head -1)\n" +
 					"  while true; do\n" +
 					"    if [ -f \"$PGCONF\" ] && ! grep -q '0\\.0\\.0\\.0/0' \"$PGHBA\" 2>/dev/null; then\n" +
 					"      printf '\\nlisten_addresses = '\"'\"'*'\"'\"'\\n' >> \"$PGCONF\"\n" +
 					"      echo 'host all all 0.0.0.0/0 trust' >> \"$PGHBA\"\n" +
+					"      echo \"pg_ctl=$PGCTL\" >> /var/vcap/bosh/log/pg-patch.log\n" +
 					"      if [ -x \"$PGCTL\" ]; then\n" +
 					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" stop -D \"$PGDATA\" -m fast 2>/dev/null || true\n" +
-					"        sleep 2\n" +
+					"        sleep 3\n" +
 					"        setpriv --reuid=1000 --regid=1000 --clear-groups -- \"$PGCTL\" start -D \"$PGDATA\" -o '-p 5432' 2>/dev/null || true\n" +
+					"        sleep 3\n" +
 					"        echo 'postgres restarted with listen_addresses=*' >> /var/vcap/bosh/log/pg-patch.log\n" +
+					"      else\n" +
+					"        echo 'pg_ctl not found' >> /var/vcap/bosh/log/pg-patch.log\n" +
 					"      fi\n" +
 					"      break\n" +
 					"    fi\n" +
