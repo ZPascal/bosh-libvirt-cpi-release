@@ -387,18 +387,27 @@ func (f Factory) Create(
 			"    try:\n" +
 			"      cfg = yaml.safe_load(open(bpmyml))\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
-			"      # For postgres: patch postgresql.conf to listen on all interfaces before start\n" +
+			"      # For postgres: patch conf, reload/restart so it listens on all interfaces\n" +
 			"      if svc == 'postgres':\n" +
 			"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 			"        try:\n" +
 			"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
 			"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
-			"          log.write('Appended listen_addresses=* to postgresql.conf\\n'); log.flush()\n" +
+			"          log.write('Appended listen_addresses=*\\n'); log.flush()\n" +
 			"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
-			"          hba_txt = open(hba).read()\n" +
-			"          if '0.0.0.0/0' not in hba_txt:\n" +
+			"          if '0.0.0.0/0' not in open(hba).read():\n" +
 			"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-			"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n'); log.flush()\n" +
+			"            log.write('Added 0.0.0.0/0 to pg_hba.conf\\n'); log.flush()\n" +
+			"          # Try pg_ctl reload to make running postgres re-read config\n" +
+			"          pgctl = '/var/vcap/packages/postgres-15/bin/pg_ctl'\n" +
+			"          pgdata = '/var/vcap/store/postgres-15'\n" +
+			"          import subprocess as _sp2\n" +
+			"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+			"          if setpriv2:\n" +
+			"            r2 = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'reload','-D',pgdata],\n" +
+			"              capture_output=True, timeout=10)\n" +
+			"            log.write('pg_ctl reload rc='+str(r2.returncode)+' '+r2.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+			"            if r2.returncode == 0: return  # postgres already running and reloaded\n" +
 			"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
@@ -788,18 +797,26 @@ func (f Factory) Create(
 					"    try:\n" +
 					"      cfg = yaml.safe_load(open(bpmyml))\n" +
 					"      proc = cfg.get('processes',[{}])[0]\n" +
-					"      # For postgres: patch postgresql.conf to listen on all interfaces\n" +
+					"      # For postgres: patch conf, reload/restart so it listens on all interfaces\n" +
 					"      if svc == 'postgres':\n" +
 					"        pgconf = '/var/vcap/store/postgres-15/postgresql.conf'\n" +
 					"        try:\n" +
 					"          log.write('patching '+pgconf+'\\n'); log.flush()\n" +
 					"          open(pgconf,'a').write('\\nlisten_addresses = ' + chr(39) + '*' + chr(39) + '\\n')\n" +
-					"          log.write('Appended listen_addresses=* to postgresql.conf\\n'); log.flush()\n" +
+					"          log.write('Appended listen_addresses=*\\n'); log.flush()\n" +
 					"          hba = pgconf.replace('postgresql.conf','pg_hba.conf')\n" +
-					"          hba_txt = open(hba).read()\n" +
-					"          if '0.0.0.0/0' not in hba_txt:\n" +
+					"          if '0.0.0.0/0' not in open(hba).read():\n" +
 					"            open(hba,'a').write('host all all 0.0.0.0/0 trust\\n')\n" +
-					"            log.write('Added 0.0.0.0/0 trust to pg_hba.conf\\n'); log.flush()\n" +
+					"            log.write('Added 0.0.0.0/0 to pg_hba.conf\\n'); log.flush()\n" +
+					"          pgctl = '/var/vcap/packages/postgres-15/bin/pg_ctl'\n" +
+					"          pgdata = '/var/vcap/store/postgres-15'\n" +
+					"          import subprocess as _sp2\n" +
+					"          setpriv2 = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+					"          if setpriv2:\n" +
+					"            r2 = _sp2.run([setpriv2,'--reuid=1000','--regid=1000','--clear-groups','--',pgctl,'reload','-D',pgdata],\n" +
+					"              capture_output=True, timeout=10)\n" +
+					"            log.write('pg_ctl reload rc='+str(r2.returncode)+' '+r2.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+					"            if r2.returncode == 0: return\n" +
 					"        except Exception as pe: log.write('pg conf patch err: '+str(pe)+'\\n'); log.flush()\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
