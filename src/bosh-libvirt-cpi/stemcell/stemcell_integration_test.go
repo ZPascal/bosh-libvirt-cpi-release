@@ -16,7 +16,6 @@ import (
 	libvirt "libvirt.org/go/libvirt"
 
 	"bosh-libvirt-cpi/driver"
-	"bosh-libvirt-cpi/driver/domains"
 	"bosh-libvirt-cpi/stemcell"
 )
 
@@ -57,7 +56,7 @@ var _ = Describe("Stemcell (integration)", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 		libvirtConn := driver.NewLibvirtConnImpl(conn)
-		domBuilder := domains.QEMUDomainBuilder{}
+		domBuilder := domBuilderFromEnv()
 		d := driver.NewLibvirtDriver(libvirtConn, domBuilder, logger)
 
 		opts := stemcell.FactoryOpts{DirPath: tmpDir}

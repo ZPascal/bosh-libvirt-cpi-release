@@ -8,9 +8,9 @@ fi
 
 source ${pkg_dir}/bosh/compile.env
 
-# CGO_ENABLED=1 is required by libvirt.org/go/libvirt (cgo bindings).
-# The build host must have libvirt-dev installed:
-#   apt-get install -y libvirt-dev
+# libvirt_dlopen: load libvirt.so at runtime via dlopen instead of linking
+# at compile time. This avoids needing pkg-config/libvirt-dev headers in
+# the stemcell during BOSH package compilation.
 export CGO_ENABLED=1
 
 mkdir -p /tmp/go/.cache
@@ -23,4 +23,4 @@ mkdir -p ${BOSH_INSTALL_TARGET}/bin
 export GOARCH=amd64
 export GOOS=linux
 
-go build -mod=vendor -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go
+go build -mod=vendor -tags libvirt_dlopen -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go

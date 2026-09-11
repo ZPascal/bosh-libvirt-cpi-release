@@ -1,0 +1,22 @@
+#!/bin/bash
+# CI: emit compile.env and runtime.env pointing at the system Go.
+# No files to copy — the bosh packaging step just writes the env scripts.
+set -e -x
+
+PACKAGE_NAME="$(basename ${BOSH_INSTALL_TARGET})"
+mkdir -p "${BOSH_INSTALL_TARGET}/bosh"
+
+cat > "${BOSH_INSTALL_TARGET}/bosh/compile.env" <<EOF
+export GOROOT=/usr/local/go
+export GOPATH=\$PWD
+export GOCACHE=/tmp/go-cache
+export GOTOOLCHAIN=local
+export PATH=\$GOROOT/bin:\$GOPATH/bin:\$PATH
+EOF
+
+cat > "${BOSH_INSTALL_TARGET}/bosh/runtime.env" <<EOF
+export GOROOT=/usr/local/go
+export GOCACHE=/tmp/go-cache
+export GOPATH="\$PWD"
+export PATH="\$GOROOT/bin:\$GOPATH/bin:\$PATH"
+EOF
