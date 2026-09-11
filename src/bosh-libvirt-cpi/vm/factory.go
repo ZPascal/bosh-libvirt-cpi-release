@@ -367,7 +367,7 @@ func (f Factory) Create(
 			"    pg_host = '" + staticIP + "'\n" +
 			"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 			"    pg_ready = False\n" +
-			"    for i in range(300):\n" +
+			"    for i in range(5400):\n" +
 			"      try:\n" +
 			"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 			"        s.close()\n" +
@@ -760,7 +760,7 @@ func (f Factory) Create(
 					"    pg_host = '" + qemuStaticIP + "'\n" +
 					"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 					"    pg_ready = False\n" +
-					"    for i in range(300):\n" +
+					"    for i in range(5400):\n" +
 					"      try:\n" +
 					"        s = socket.create_connection((pg_host, 5432), 1)\n" +
 					"        s.close()\n" +
