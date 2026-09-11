@@ -361,28 +361,49 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"  # For director: wait for postgres to be ready via container IP (monit runs on host)\n" +
+			"  # For director-like services: start async so HTTP response returns immediately\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-			"    pg_host = '" + staticIP + "'\n" +
-			"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
-			"    pg_ready = False\n" +
-			"    for i in range(5400):\n" +
+			"    import threading\n" +
+			"    def _start_async():\n" +
+			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"      pg_host = '" + staticIP + "'\n" +
+			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
+			"      for i in range(5400):\n" +
+			"        try:\n" +
+			"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
+			"          import subprocess as _sp\n" +
+			"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
+			"            capture_output=True, timeout=5)\n" +
+			"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+			"          if r.returncode == 0: break\n" +
+			"        except Exception as e:\n" +
+			"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
+			"        time.sleep(2)\n" +
+			"      else:\n" +
+			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
+			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
-			"        s = socket.create_connection((pg_host, 5432), 1)\n" +
-			"        s.close()\n" +
-			"        import subprocess as _sp\n" +
-			"        # Use pg_isready to check if postgres accepts connections (no user needed)\n" +
-			"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
-			"          capture_output=True, timeout=5)\n" +
-			"        log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-			"        if r.returncode == 0: pg_ready = True; break\n" +
-			"      except Exception as e:\n" +
-			"        if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
-			"      time.sleep(2)\n" +
-			"    log.write('pg_ready='+str(pg_ready)+'\\n'); log.flush()\n" +
-			"    if not pg_ready: return\n" +
-			"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
+			"        cfg = yaml.safe_load(open(bpmyml))\n" +
+			"        proc = cfg.get('processes',[{}])[0]\n" +
+			"        exe = proc.get('executable','')\n" +
+			"        args = [exe] + proc.get('args',[])\n" +
+			"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+			"        if not setpriv_bin: return\n" +
+			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
+			"        open(pf,'w').write(str(p.pid))\n" +
+			"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
+			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
+			"    return\n" +
+			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  # For postgres and other services: start directly via bpm.yml\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
@@ -390,9 +411,7 @@ func (f Factory) Create(
 			"      proc = cfg.get('processes',[{}])[0]\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
-			"      env = dict(os.environ)\n" +
-			"      env.update(proc.get('env',{}))\n" +
-			"      # Run as vcap (uid 1000) - postgres and director refuse to run as root\n" +
+			"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
 			"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
 			"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
@@ -401,7 +420,6 @@ func (f Factory) Create(
 			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
-			"      # For postgres: after starting, wait and run create-database, then keep watchdog\n" +
 			"      if svc == 'postgres':\n" +
 			"        _pg_args = args; _pg_env = env; _pg_host = '" + staticIP + "'\n" +
 			"        def run_createdb_and_watch():\n" +
@@ -412,7 +430,6 @@ func (f Factory) Create(
 			"          import glob\n" +
 			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
 			"            subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
-			"          # Watchdog: restart postgres if it dies\n" +
 			"          while True:\n" +
 			"            time.sleep(5)\n" +
 			"            try:\n" +
@@ -421,8 +438,7 @@ func (f Factory) Create(
 			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
 			"              try:\n" +
 			"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
-			"                open(pf,'w').write(str(np.pid))\n" +
-			"                time.sleep(3)\n" +
+			"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
 			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
 			"        import threading; threading.Thread(target=run_createdb_and_watch, daemon=True).start()\n" +
 			"      return\n" +
@@ -755,26 +771,47 @@ func (f Factory) Create(
 					"def start_svc(svc):\n" +
 					"  import glob, yaml, socket, time, re\n" +
 					"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-					"    pg_host = '" + qemuStaticIP + "'\n" +
-					"    log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
-					"    pg_ready = False\n" +
-					"    for i in range(5400):\n" +
+					"    import threading\n" +
+					"    def _start_async():\n" +
+					"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+					"      pg_host = '" + qemuStaticIP + "'\n" +
+					"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
+					"      for i in range(5400):\n" +
+					"        try:\n" +
+					"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
+					"          import subprocess as _sp\n" +
+					"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
+					"            capture_output=True, timeout=5)\n" +
+					"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+					"          if r.returncode == 0: break\n" +
+					"        except Exception as e:\n" +
+					"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
+					"        time.sleep(2)\n" +
+					"      else:\n" +
+					"        log.write('postgres never ready\\n'); log.flush(); return\n" +
+					"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+					"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+					"      if not os.path.exists(bpmyml): return\n" +
 					"      try:\n" +
-					"        s = socket.create_connection((pg_host, 5432), 1)\n" +
-					"        s.close()\n" +
-					"        import subprocess as _sp\n" +
-					"        r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
-					"          capture_output=True, timeout=5)\n" +
-					"        log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-					"        if r.returncode == 0: pg_ready = True; break\n" +
-					"      except Exception as e:\n" +
-					"        if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
-					"      time.sleep(2)\n" +
-					"    log.write('pg_ready='+str(pg_ready)+'\\n'); log.flush()\n" +
-					"    if not pg_ready: return\n" +
-					"  # Try reading bpm.yml to start process directly (bypass runc)\n" +
+					"        cfg = yaml.safe_load(open(bpmyml))\n" +
+					"        proc = cfg.get('processes',[{}])[0]\n" +
+					"        exe = proc.get('executable','')\n" +
+					"        args = [exe] + proc.get('args',[])\n" +
+					"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+					"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+					"        if not setpriv_bin: return\n" +
+					"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+					"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+					"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+					"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+					"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
+					"        open(pf,'w').write(str(p.pid))\n" +
+					"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+					"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
+					"    threading.Thread(target=_start_async, daemon=True).start()\n" +
+					"    return\n" +
+					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 					"  if os.path.exists(bpmyml):\n" +
 					"    try:\n" +
@@ -782,8 +819,7 @@ func (f Factory) Create(
 					"      proc = cfg.get('processes',[{}])[0]\n" +
 					"      exe = proc.get('executable','')\n" +
 					"      args = [exe] + proc.get('args',[])\n" +
-					"      env = dict(os.environ)\n" +
-					"      env.update(proc.get('env',{}))\n" +
+					"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
 					"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 					"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
 					"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
