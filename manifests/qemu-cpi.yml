@@ -91,12 +91,20 @@ instance_groups:
           certificate: ((nats_clients_hm_tls.certificate))
           private_key: ((nats_clients_hm_tls.private_key))
     postgres: &db
-      listen_address: 127.0.0.1
+      listen_address: 0.0.0.0
       host: 127.0.0.1
       user: postgres
       password: postgres-password
       database: bosh
       adapter: postgres
+      additional_config:
+        max_connections: 32
+      pg_hba:
+      - type: host
+        database: all
+        user: all
+        address: 0.0.0.0/0
+        method: trust
     blobstore:
       address: ((internal_ip))
       port: 25250
