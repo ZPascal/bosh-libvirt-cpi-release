@@ -1058,13 +1058,16 @@ func injectCert(envBytes []byte, ca, cert, key string) []byte {
 	if bosh == nil {
 		bosh = map[string]interface{}{}
 	}
-	bosh["mbus"] = map[string]interface{}{
-		"cert": map[string]interface{}{
-			"ca":          ca,
-			"certificate": cert,
-			"private_key": key,
-		},
+	mbus, _ := bosh["mbus"].(map[string]interface{})
+	if mbus == nil {
+		mbus = map[string]interface{}{}
 	}
+	mbus["cert"] = map[string]interface{}{
+		"ca":          ca,
+		"certificate": cert,
+		"private_key": key,
+	}
+	bosh["mbus"] = mbus
 	env["bosh"] = bosh
 	m["env"] = env
 	out, err := json.Marshal(m)
@@ -1076,4 +1079,9 @@ func injectCert(envBytes []byte, ca, cert, key string) []byte {
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 	return f.newVM(cid), nil
+}
+
+// InjectMbusCertForTest exposes injectMbusCert for unit tests only.
+func (f Factory) InjectMbusCertForTest(envBytes []byte) []byte {
+	return f.injectMbusCert(envBytes)
 }

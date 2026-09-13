@@ -180,6 +180,42 @@ var _ = Describe("vm.Factory", func() {
 		})
 	})
 
+	Describe("injectMbusCert", func() {
+		It("preserves existing mbus.url when injecting cert", func() {
+			f := vm.NewFactory(
+				vm.FactoryOpts{DirPath: tmpDir},
+				vmUUIDGen, drv, runner,
+				&driverfakes.FakeDomainBuilder{DiskImageFormatResult: "qcow2"},
+				diskFactory,
+				apiv1.AgentOptions{Mbus: "nats://127.0.0.1:4222"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger,
+			)
+
+			// env JSON with mbus.url already set
+			envWithURL := []byte(`{
+				"env": {
+					"bosh": {
+						"mbus": {
+							"url": "nats://nats:secret@192.168.0.1:4222"
+						}
+					}
+				}
+			}`)
+
+			result := f.InjectMbusCertForTest(envWithURL)
+
+			var m map[string]interface{}
+			Expect(json.Unmarshal(result, &m)).To(Succeed())
+			env := m["env"].(map[string]interface{})
+			bosh := env["bosh"].(map[string]interface{})
+			mbus := bosh["mbus"].(map[string]interface{})
+
+			Expect(mbus["cert"]).ToNot(BeNil())
+			Expect(mbus["url"]).To(Equal("nats://nats:secret@192.168.0.1:4222"))
+		})
+	})
+
 	Describe("Create (ext4 branch)", func() {
 		var ext4Builder *driverfakes.FakeDomainBuilder
 
