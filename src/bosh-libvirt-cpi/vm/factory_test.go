@@ -179,4 +179,50 @@ var _ = Describe("vm.Factory", func() {
 			Expect(v.ID().AsString()).To(Equal("vm-xyz"))
 		})
 	})
+
+	Describe("Create (ext4 branch)", func() {
+		var ext4Builder *driverfakes.FakeDomainBuilder
+
+		BeforeEach(func() {
+			ext4Builder = &driverfakes.FakeDomainBuilder{
+				BuildDomainXML:        "<domain/>",
+				DiskImageFormatResult: "ext4",
+			}
+			factory = vm.NewFactory(
+				vm.FactoryOpts{DirPath: filepath.Join(tmpDir, "vms")},
+				vmUUIDGen,
+				drv,
+				runner,
+				ext4Builder,
+				diskFactory,
+				apiv1.AgentOptions{Mbus: "nats://nats:nats-password@127.0.0.1:4222"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger,
+			)
+		})
+
+		It("returns error when mount fails", func() {
+			// Inject a fake execCommand that fails for "mount"
+			vm.ExecCommand = func(name string, args ...string) ([]byte, error) {
+				if name == "mount" {
+					return []byte("no loop devices"), errors.New("mount failed")
+				}
+				return []byte{}, nil
+			}
+			defer func() { vm.ExecCommand = vm.DefaultExecCommand }()
+
+			stemcell.ImagePathResult = filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcell.ImagePathResult, []byte("fake-ext4"), 0644)
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Mounting ext4 for VM injection"))
+		})
+	})
 })

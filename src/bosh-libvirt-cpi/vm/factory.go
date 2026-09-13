@@ -150,7 +150,7 @@ func (f Factory) Create(
 	// mount the stemcell and inject per-VM agent env + init wrapper.
 	if f.domBuilder.DiskImageFormat() == "dir" {
 		vmRootfs := filepath.Join(f.opts.DirPath, vmID, "rootfs")
-		out, copyErr := execCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
+		out, copyErr := ExecCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
 		if copyErr != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", string(out))
@@ -296,7 +296,7 @@ func (f Factory) Create(
 			"if [ -x /usr/bin/timeout.bak ]; then exec /usr/bin/timeout.bak \"$@\"; fi\n" +
 			"exec /usr/bin/timeout \"$@\"\n"
 		if _, err2 := os.Stat(vmRootfs + "/usr/bin/timeout"); err2 == nil {
-			_, _ = execCommand("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
+			_, _ = ExecCommand("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
 		}
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/timeout", []byte(timeoutWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/bin/timeout", []byte(timeoutWrapper), 0755)
@@ -317,7 +317,7 @@ func (f Factory) Create(
 			"exit 0\n"
 		// Save the real curl and install wrapper
 		if _, err := os.Stat(vmRootfs + "/usr/bin/curl"); err == nil {
-			_, _ = execCommand("cp", vmRootfs+"/usr/bin/curl", vmRootfs+"/usr/bin/curl.bak")
+			_, _ = ExecCommand("cp", vmRootfs+"/usr/bin/curl", vmRootfs+"/usr/bin/curl.bak")
 		}
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/bin/curl", []byte(curlWrapper), 0755)
@@ -583,7 +583,7 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(err, "Creating VM dir")
 		}
-		if out, err := execCommand("cp", stemcell.ImagePath(), vmExt4); err != nil {
+		if out, err := ExecCommand("cp", stemcell.ImagePath(), vmExt4); err != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", string(out))
 		}
@@ -591,20 +591,27 @@ func (f Factory) Create(
 		// compilation. The stemcell ships a small image (~2GB); we need 60GB+ for all
 		// BOSH director packages. qemu-img resize expands the file, then resize2fs grows
 		// the filesystem to fill the new space.
-		if out, err := execCommand("qemu-img", "resize", vmExt4, "65G"); err != nil {
+		if out, err := ExecCommand("qemu-img", "resize", vmExt4, "65G"); err != nil {
 			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, string(out))
 		} else {
-			if out2, err2 := execCommand("e2fsck", "-f", "-y", vmExt4); err2 != nil {
+			if out2, err2 := ExecCommand("e2fsck", "-f", "-y", vmExt4); err2 != nil {
 				f.logger.Info(f.logTag, "e2fsck failed (non-fatal): %s %s", err2, string(out2))
 			}
-			if out3, err3 := execCommand("resize2fs", vmExt4); err3 != nil {
+			if out3, err3 := ExecCommand("resize2fs", vmExt4); err3 != nil {
 				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, string(out3))
 			}
 		}
 		// Mount, inject, unmount
 		mntDir := vmExt4 + ".mnt"
-		if err := os.MkdirAll(mntDir, 0755); err == nil {
-			if _, err := execCommand("mount", "-o", "loop", vmExt4, mntDir); err == nil {
+		if mkErr := os.MkdirAll(mntDir, 0755); mkErr != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
+		}
+		if out, mountErr := ExecCommand("mount", "-o", "loop", vmExt4, mntDir); mountErr != nil {
+			_ = os.RemoveAll(mntDir)
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", string(out))
+		}
 				// Remove stale supervise dirs from stemcell while we have write access
 				if svcs, _ := os.ReadDir(mntDir + "/etc/sv"); svcs != nil {
 					for _, svc := range svcs {
@@ -685,7 +692,7 @@ func (f Factory) Create(
 					"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
 					"exit 0\n"
 				if _, ferr := os.Stat(mntDir + "/usr/bin/curl"); ferr == nil {
-					_, _ = execCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
+					_, _ = ExecCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
 				}
 				_ = os.WriteFile(mntDir+"/usr/sbin/curl", []byte(curlWrapper), 0755)
 				_ = os.WriteFile(mntDir+"/usr/bin/curl", []byte(curlWrapper), 0755)
@@ -873,10 +880,8 @@ func (f Factory) Create(
 				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
 				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
 				_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
-				_, _ = execCommand("umount", mntDir)
-			}
+			_, _ = ExecCommand("umount", mntDir)
 			_ = os.RemoveAll(mntDir)
-		}
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
@@ -931,9 +936,13 @@ func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
 	return NewVMImpl(cid, store, f.stemcellAPIVersion, f.driver, f.logger)
 }
 
-func execCommand(name string, args ...string) ([]byte, error) {
+// DefaultExecCommand is the real exec implementation. Tests may override ExecCommand.
+var DefaultExecCommand = func(name string, args ...string) ([]byte, error) {
 	return exec.Command(name, args...).CombinedOutput()
 }
+
+// ExecCommand is the package-level exec hook. Override in tests.
+var ExecCommand = DefaultExecCommand
 
 // addBlobstoreToEnv injects a local blobstore config into the agent env JSON.
 // The CPI SDK ForVM factory doesn't include blobstore so the bootstrap agent
