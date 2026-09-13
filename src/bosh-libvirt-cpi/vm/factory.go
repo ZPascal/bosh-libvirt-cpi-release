@@ -627,10 +627,22 @@ func (f Factory) Create(
 		}
 		boshDir := mntDir + "/var/vcap/bosh"
 		agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
-		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
+		if mkErr := os.MkdirAll(boshDir, 0755); mkErr != nil {
+			_, _ = ExecCommand("umount", mntDir)
+			_ = os.RemoveAll(mntDir)
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(mkErr, "Creating bosh dir in ext4 rootfs")
+		}
+		if writeErr := os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644); writeErr != nil {
+			_, _ = ExecCommand("umount", mntDir)
+			_ = os.RemoveAll(mntDir)
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(writeErr, "Writing agent env to ext4 rootfs")
 		}
 		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
+		if qemuStaticIP == "" {
+			qemuStaticIP = "127.0.0.1"
+		}
 		// Symlink bosh tools into /usr/local/bin
 		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
 		boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
