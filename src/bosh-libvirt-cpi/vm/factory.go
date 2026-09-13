@@ -520,28 +520,6 @@ func (f Factory) Create(
 				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
-				"# Stub director API on port 25556 (HTTPS) so post-start succeeds.\n" +
-				"python3 -c \"\n" +
-				"import http.server,socketserver,ssl,tempfile,subprocess,os\n" +
-				"socketserver.TCPServer.allow_reuse_address=True\n" +
-				"class H(http.server.BaseHTTPRequestHandler):\n" +
-				"  def do_GET(self):\n" +
-				"    b=b'{\\\"name\\\":\\\"bosh-stub\\\",\\\"uuid\\\":\\\"stub\\\",\\\"version\\\":\\\"stub\\\",\\\"cpi\\\":\\\"stub\\\",\\\"features\\\":{}}'\n" +
-				"    self.send_response(200)\n" +
-				"    self.send_header('Content-Type','application/json')\n" +
-				"    self.send_header('Content-Length',str(len(b)))\n" +
-				"    self.end_headers()\n" +
-				"    self.wfile.write(b)\n" +
-				"  def log_message(self,*a): pass\n" +
-				"td=tempfile.mkdtemp()\n" +
-				"kf,cf=td+'/k.pem',td+'/c.pem'\n" +
-				"subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-keyout',kf,'-out',cf,'-days','1','-nodes','-subj','/CN=localhost'],capture_output=True)\n" +
-				"srv=socketserver.TCPServer(('127.0.0.1',25556),H)\n" +
-				"ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)\n" +
-				"ctx.load_cert_chain(cf,kf)\n" +
-				"srv.socket=ctx.wrap_socket(srv.socket,server_side=True)\n" +
-				"srv.serve_forever()\n" +
-				"\" >/tmp/director-stub.log 2>&1 &\n" +
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		} else {
@@ -559,20 +537,6 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n" +
-				"python3 -c \"\n" +
-				"import http.server,socketserver,ssl,tempfile,subprocess\n" +
-				"socketserver.TCPServer.allow_reuse_address=True\n" +
-				"class H(http.server.BaseHTTPRequestHandler):\n" +
-				"  def do_GET(self):\n" +
-				"    b=b'{\\\"name\\\":\\\"bosh-stub\\\",\\\"uuid\\\":\\\"stub\\\",\\\"version\\\":\\\"stub\\\",\\\"cpi\\\":\\\"stub\\\",\\\"features\\\":{}}'\n" +
-				"    self.send_response(200); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)\n" +
-				"  def log_message(self,*a): pass\n" +
-				"td=tempfile.mkdtemp(); kf,cf=td+'/k.pem',td+'/c.pem'\n" +
-				"subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-keyout',kf,'-out',cf,'-days','1','-nodes','-subj','/CN=localhost'],capture_output=True)\n" +
-				"srv=socketserver.TCPServer(('127.0.0.1',25556),H)\n" +
-				"ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); ctx.load_cert_chain(cf,kf)\n" +
-				"srv.socket=ctx.wrap_socket(srv.socket,server_side=True); srv.serve_forever()\n" +
-				"\" >/tmp/director-stub.log 2>&1 &\n" +
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		}
