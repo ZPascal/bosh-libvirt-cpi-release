@@ -242,6 +242,9 @@ var _ = Describe("vm.Factory", func() {
 				apiv1.Networks{},
 				apiv1.NewVMEnv(nil),
 			)
+			// AsBytes() on a real AgentEnv never fails with valid inputs; this test
+			// exercises the AsBytes error-check branch via the happy path — a failure
+			// from AsBytes would surface as an unexpected error here.
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
