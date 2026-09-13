@@ -1092,4 +1092,3 @@ func injectCert(envBytes []byte, ca, cert, key string) []byte {
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 	return f.newVM(cid), nil
 }
-
