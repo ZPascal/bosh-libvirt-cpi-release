@@ -361,8 +361,15 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
+			"  # nginx/director_nginx: redirect port 25555->25556 immediately, no postgres wait\n" +
+			"  if svc in ('nginx', 'director_nginx'):\n" +
+			"    import subprocess as _sp2\n" +
+			"    _sp2.run(['iptables','-t','nat','-A','OUTPUT','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
+			"    _sp2.run(['iptables','-t','nat','-A','PREROUTING','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
+			"    open('/var/vcap/bosh/log/monit-'+svc+'.log','a').write('nginx stub: iptables 25555->25556 installed\\n')\n" +
+			"    return\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
-			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
+			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
@@ -760,7 +767,15 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
+			"  # nginx/director_nginx: redirect port 25555->25556 immediately, no postgres wait\n" +
+			"  if svc in ('nginx', 'director_nginx'):\n" +
+			"    import subprocess as _sp2\n" +
+			"    _sp2.run(['iptables','-t','nat','-A','OUTPUT','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
+			"    _sp2.run(['iptables','-t','nat','-A','PREROUTING','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
+			"    open('/var/vcap/bosh/log/monit-'+svc+'.log','a').write('nginx stub: iptables 25555->25556 installed\\n')\n" +
+			"    return\n" +
+			"  # For director-like services: start async so HTTP response returns immediately\n" +
+			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
