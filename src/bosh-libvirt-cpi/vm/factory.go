@@ -361,13 +361,6 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-			"  # nginx/director_nginx: redirect port 25555->25556 immediately, no postgres wait\n" +
-			"  if svc in ('nginx', 'director_nginx'):\n" +
-			"    import subprocess as _sp2\n" +
-			"    _sp2.run(['iptables','-t','nat','-A','OUTPUT','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
-			"    _sp2.run(['iptables','-t','nat','-A','PREROUTING','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
-			"    open('/var/vcap/bosh/log/monit-'+svc+'.log','a').write('nginx stub: iptables 25555->25556 installed\\n')\n" +
-			"    return\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
 			"    import threading\n" +
@@ -527,6 +520,10 @@ func (f Factory) Create(
 				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
+				"# Redirect external IP:25555 -> 127.0.0.1:25556 (director nginx proxy)\n" +
+				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
+				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
+				"echo 'iptables dnat 25555->25556 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		} else {
@@ -767,13 +764,6 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-			"  # nginx/director_nginx: redirect port 25555->25556 immediately, no postgres wait\n" +
-			"  if svc in ('nginx', 'director_nginx'):\n" +
-			"    import subprocess as _sp2\n" +
-			"    _sp2.run(['iptables','-t','nat','-A','OUTPUT','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
-			"    _sp2.run(['iptables','-t','nat','-A','PREROUTING','-p','tcp','--dport','25555','-j','REDIRECT','--to-port','25556'], capture_output=True)\n" +
-			"    open('/var/vcap/bosh/log/monit-'+svc+'.log','a').write('nginx stub: iptables 25555->25556 installed\\n')\n" +
-			"    return\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
 			"    import threading\n" +
@@ -907,6 +897,10 @@ func (f Factory) Create(
 			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
+			"# Redirect external IP:25555 -> 127.0.0.1:25556 (director nginx proxy)\n" +
+			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
+			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
+			"echo 'iptables dnat 25555->25556 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 		// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
