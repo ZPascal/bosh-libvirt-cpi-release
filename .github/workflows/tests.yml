@@ -481,7 +481,7 @@ jobs:
 
     - name: Deploy smoke test deployment (LXC)
       run: |
-        # Wait up to 2 minutes for director to come up on port 25555
+        # Wait up to 15 minutes for director to come up on port 25555
         echo "Waiting for director on port 25555..."
         for i in $(seq 1 180); do
           if curl -sk --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
