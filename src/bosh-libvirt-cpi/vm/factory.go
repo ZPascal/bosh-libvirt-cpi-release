@@ -626,11 +626,11 @@ func (f Factory) Create(
 			return nil, bosherr.WrapError(envErr, "Marshalling agent env for ext4 rootfs injection")
 		}
 		boshDir := mntDir + "/var/vcap/bosh"
+		agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-			agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
 		}
-		qemuStaticIP, _ := extractNetworkFromEnv(f.injectMbusCert(addBlobstoreToEnv(envBytes)))
+		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
 		// Symlink bosh tools into /usr/local/bin
 		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
 		boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
