@@ -612,276 +612,276 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", string(out))
 		}
-				// Remove stale supervise dirs from stemcell while we have write access
-				if svcs, _ := os.ReadDir(mntDir + "/etc/sv"); svcs != nil {
-					for _, svc := range svcs {
-						_ = os.RemoveAll(mntDir + "/etc/sv/" + svc.Name() + "/supervise")
-					}
-				}
-				envBytes, _ := initialAgentEnv.AsBytes()
-				boshDir := mntDir + "/var/vcap/bosh"
-				if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-					agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
-					_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
-				}
-				qemuStaticIP, _ := extractNetworkFromEnv(f.injectMbusCert(addBlobstoreToEnv(envBytes)))
-				// Symlink bosh tools into /usr/local/bin
-				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
-				boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
-				for _, b := range boshBins {
-					dst := mntDir + "/usr/local/bin/" + b.Name()
-					src := "/var/vcap/bosh/bin/" + b.Name()
-					_ = os.Remove(dst)
-					_ = os.Symlink(src, dst)
-				}
-				// Pre-create /var/vcap/data so job symlinks resolve and pre-start can run.
-				// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk — it
-				// expects this tree to already exist on the root filesystem.
-				for _, dd := range []string{
-					mntDir + "/var/vcap/data",
-					mntDir + "/var/vcap/data/jobs",
-					mntDir + "/var/vcap/data/packages",
-					mntDir + "/var/vcap/data/tmp",
-				} {
-					_ = os.MkdirAll(dd, 0755)
-				}
-				// Inject a 'su' wrapper that runs the command directly as root.
-				// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
-				// fails in our kernel-boot environment (PAM not configured). By running
-				// initdb as root instead, we bypass the user-switch failure.
-				suWrapper := "#!/bin/sh\n# Replace 'su - user -c cmd' with setpriv to avoid PAM issues in containers.\n" +
-					"# setpriv is in util-linux and switches uid/gid without PAM authentication.\n" +
-					"_user=root\n" +
-					"while [ $# -gt 0 ]; do\n" +
-					"  case \"$1\" in\n" +
-					"    -c) shift\n" +
-					"      if [ \"$_user\" = root ]; then\n" +
-					"        exec /bin/sh -c \"$@\"\n" +
-					"      fi\n" +
-					"      _uid=$(id -u \"$_user\" 2>/dev/null || echo 1000)\n" +
-					"      _gid=$(id -g \"$_user\" 2>/dev/null || echo 1000)\n" +
-					"      exec setpriv --reuid=\"$_uid\" --regid=\"$_gid\" --clear-groups -- /bin/sh -c \"$@\"\n" +
-					"      ;;\n" +
-					"    -*) shift ;;\n" +
-					"    *)  _user=\"$1\"; shift ;;\n" +
-					"  esac\n" +
-					"done\n"
-				_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
-				_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
-				pamSuConf := "auth sufficient pam_rootok.so\n" +
-					"session optional pam_loginuid.so\n" +
-					"account sufficient pam_unix.so\n" +
-					"session required pam_unix.so\n"
-				_ = os.MkdirAll(mntDir+"/etc/pam.d", 0755)
-				_ = os.WriteFile(mntDir+"/etc/pam.d/su", []byte(pamSuConf), 0644)
-				_ = os.WriteFile(mntDir+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
-				// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
-				// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
-				sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
-				_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
-				_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
-				// curl wrapper for director post-start health check
-				curlWrapper := "#!/bin/sh\n" +
-					"for a in \"$@\"; do\n" +
-					"  case \"$a\" in\n" +
-					"    *localhost:25556*|*127.0.0.1:25556*)\n" +
-					"      echo '{\"name\":\"bosh-stub\",\"uuid\":\"stub\",\"version\":\"stub\",\"features\":{}}'\n" +
-					"      exit 0 ;;\n" +
-					"  esac\n" +
-					"done\n" +
-					"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
-					"exit 0\n"
-				if _, ferr := os.Stat(mntDir + "/usr/bin/curl"); ferr == nil {
-					_, _ = ExecCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
-				}
-				_ = os.WriteFile(mntDir+"/usr/sbin/curl", []byte(curlWrapper), 0755)
-				_ = os.WriteFile(mntDir+"/usr/bin/curl", []byte(curlWrapper), 0755)
-				initScript := "#!/bin/sh\n" +
-					"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
-					"mount -t proc proc /proc 2>/dev/null || true\n" +
-					"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
-					"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
-					"ip link set lo up 2>/dev/null || true\n" +
-					"# Set shared memory limits required by postgres pre-start\n" +
-					"sysctl -w kernel.shmmax=67108864 2>/dev/null || true\n" +
-					"sysctl -w kernel.shmall=4194304 2>/dev/null || true\n" +
-					"# Mount tmpfs at /var/vcap/store so postgres can write its data directory.\n" +
-					"mkdir -p /var/vcap/store\n" +
-					"mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true\n" +
-					"# Bring up network via DHCP\n" +
-					"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
-					"if [ -n \"$IFACE\" ]; then\n" +
-					"  ip link set \"$IFACE\" up\n" +
-					"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
-					"fi\n" +
-					"python3 -c \"\n" +
-					"import http.server, socketserver, sys, time, subprocess, os\n" +
-					"socketserver.TCPServer.allow_reuse_address = True\n" +
-					"def xml():\n" +
-					"  inc = str(int(time.time()))\n" +
-					"  import glob, re, json\n" +
-					"  svcs = []\n" +
-					"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
-					"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
-					"      if m not in svcs: svcs.append(m)\n" +
-					"  if not svcs:\n" +
-					"    try:\n" +
-					"      spec = json.load(open('/var/vcap/bosh/spec.json'))\n" +
-					"      for tpl in spec.get('job',{}).get('templates',[]):\n" +
-					"        n = tpl.get('name','')\n" +
-					"        if n and n not in ('bpm','libvirt_cpi') and n not in svcs: svcs.append(n)\n" +
-					"    except: pass\n" +
-					"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
-					"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
-					"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
-					"  import os as _os\n" +
-					"  try: _files = _os.listdir('/var/vcap/monit/job')\n" +
-					"  except: _files = []\n" +
-					"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
-					"  return result.encode()\n" +
-					"def start_svc(svc):\n" +
-					"  import glob, yaml, socket, time, re\n" +
-					"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-					"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
-					"    import threading\n" +
-					"    def _start_async():\n" +
-					"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-					"      pg_host = '" + qemuStaticIP + "'\n" +
-					"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
-					"      for i in range(5400):\n" +
-					"        try:\n" +
-					"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
-					"          import subprocess as _sp\n" +
-					"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
-					"            capture_output=True, timeout=5)\n" +
-					"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-					"          if r.returncode == 0: break\n" +
-					"        except Exception as e:\n" +
-					"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
-					"        time.sleep(2)\n" +
-					"      else:\n" +
-					"        log.write('postgres never ready\\n'); log.flush(); return\n" +
-					"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
-					"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
-					"      if not os.path.exists(bpmyml): return\n" +
-					"      try:\n" +
-					"        cfg = yaml.safe_load(open(bpmyml))\n" +
-					"        proc = cfg.get('processes',[{}])[0]\n" +
-					"        exe = proc.get('executable','')\n" +
-					"        args = [exe] + proc.get('args',[])\n" +
-					"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
-					"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
-					"        if not setpriv_bin: return\n" +
-					"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-					"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-					"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-					"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-					"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
-					"        open(pf,'w').write(str(p.pid))\n" +
-					"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
-					"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
-					"    threading.Thread(target=_start_async, daemon=True).start()\n" +
-					"    return\n" +
-					"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-					"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
-					"  if os.path.exists(bpmyml):\n" +
-					"    try:\n" +
-					"      cfg = yaml.safe_load(open(bpmyml))\n" +
-					"      proc = cfg.get('processes',[{}])[0]\n" +
-					"      exe = proc.get('executable','')\n" +
-					"      args = [exe] + proc.get('args',[])\n" +
-					"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
-					"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
-					"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
-					"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-					"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-					"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-					"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-					"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
-					"      open(pf,'w').write(str(p.pid))\n" +
-					"      if svc == 'postgres':\n" +
-					"        _pg_args = args; _pg_env = env; _pg_host = '" + qemuStaticIP + "'\n" +
-					"        def run_createdb():\n" +
-					"          for _ in range(60):\n" +
-					"            try:\n" +
-					"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
-					"            except: time.sleep(2)\n" +
-					"          import glob\n" +
-					"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
-					"          while True:\n" +
-					"            time.sleep(5)\n" +
-					"            try:\n" +
-					"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
-					"            except:\n" +
-					"              log.write('postgres down - restarting\\n'); log.flush()\n" +
-					"              try:\n" +
-					"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
-					"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
-					"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
-					"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
-					"      return\n" +
-					"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
-					"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
-					"  if os.path.exists(ctl):\n" +
-					"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
-					"class H(http.server.BaseHTTPRequestHandler):\n" +
-					"  def do_GET(self):\n" +
-					"    body = xml()\n" +
-					"    self.send_response(200)\n" +
-					"    self.send_header('Content-Type','text/xml')\n" +
-					"    self.send_header('Content-Length', str(len(body)))\n" +
-					"    self.end_headers()\n" +
-					"    self.wfile.write(body)\n" +
-					"  def do_POST(self):\n" +
-					"    length = int(self.headers.get('Content-Length','0'))\n" +
-					"    body = self.rfile.read(length).decode()\n" +
-					"    svc = self.path.strip('/')\n" +
-					"    if svc and 'action=start' in body:\n" +
-					"      start_svc(svc)\n" +
-					"    self.send_response(200)\n" +
-					"    self.send_header('Content-Length','0')\n" +
-					"    self.end_headers()\n" +
-					"  def log_message(self, fmt, *a):\n" +
-					"    open('/var/vcap/bosh/log/monit-req.log','a').write('[%s] %s %s\\n' % (self.log_date_time_string(), self.command, self.path))\n" +
-					"try:\n" +
-					"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
-					"  sys.stderr.write('monit stub: ready\\\\n')\n" +
-					"  sys.stderr.flush()\n" +
-					"  srv.serve_forever()\n" +
-					"except Exception as e:\n" +
-					"  sys.stderr.write('monit stub error: %s\\\\n' % str(e))\n" +
-					"  sys.stderr.flush()\n" +
-					"\" >/tmp/monit-stub.log 2>&1 &\n" +
-					"for i in $(seq 1 30); do\n" +
-					"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
-					"  sleep 0.2\n" +
-					"done\n" +
-					"# Log disk usage periodically so we can see what fills up\n" +
-					"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
-					"# Background watcher: replace post-start scripts with no-ops when installed.\n" +
-					"( while true; do\n" +
-					"  for JOB in director nats; do\n" +
-					"    PS=/var/vcap/jobs/$JOB/bin/post-start\n" +
-					"    if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
-					"      echo '#!/bin/sh' > \"$PS\"\n" +
-					"      echo '# bosh-noop: post-start stubbed out' >> \"$PS\"\n" +
-					"      chmod 755 \"$PS\"\n" +
-					"    fi\n" +
-					"  done\n" +
-					"  sleep 2\n" +
-					"done ) &\n" +
-					"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub\n" +
-					"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
-					"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
-					"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
-					"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
-				_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
-				// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
-				_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
-				ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
-				_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
-			_, _ = ExecCommand("umount", mntDir)
-			_ = os.RemoveAll(mntDir)
+		// Remove stale supervise dirs from stemcell while we have write access
+		if svcs, _ := os.ReadDir(mntDir + "/etc/sv"); svcs != nil {
+			for _, svc := range svcs {
+				_ = os.RemoveAll(mntDir + "/etc/sv/" + svc.Name() + "/supervise")
+			}
+		}
+		envBytes, _ := initialAgentEnv.AsBytes()
+		boshDir := mntDir + "/var/vcap/bosh"
+		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
+			agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
+			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644)
+		}
+		qemuStaticIP, _ := extractNetworkFromEnv(f.injectMbusCert(addBlobstoreToEnv(envBytes)))
+		// Symlink bosh tools into /usr/local/bin
+		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
+		boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
+		for _, b := range boshBins {
+			dst := mntDir + "/usr/local/bin/" + b.Name()
+			src := "/var/vcap/bosh/bin/" + b.Name()
+			_ = os.Remove(dst)
+			_ = os.Symlink(src, dst)
+		}
+		// Pre-create /var/vcap/data so job symlinks resolve and pre-start can run.
+		// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk — it
+		// expects this tree to already exist on the root filesystem.
+		for _, dd := range []string{
+			mntDir + "/var/vcap/data",
+			mntDir + "/var/vcap/data/jobs",
+			mntDir + "/var/vcap/data/packages",
+			mntDir + "/var/vcap/data/tmp",
+		} {
+			_ = os.MkdirAll(dd, 0755)
+		}
+		// Inject a 'su' wrapper that runs the command directly as root.
+		// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
+		// fails in our kernel-boot environment (PAM not configured). By running
+		// initdb as root instead, we bypass the user-switch failure.
+		suWrapper := "#!/bin/sh\n# Replace 'su - user -c cmd' with setpriv to avoid PAM issues in containers.\n" +
+			"# setpriv is in util-linux and switches uid/gid without PAM authentication.\n" +
+			"_user=root\n" +
+			"while [ $# -gt 0 ]; do\n" +
+			"  case \"$1\" in\n" +
+			"    -c) shift\n" +
+			"      if [ \"$_user\" = root ]; then\n" +
+			"        exec /bin/sh -c \"$@\"\n" +
+			"      fi\n" +
+			"      _uid=$(id -u \"$_user\" 2>/dev/null || echo 1000)\n" +
+			"      _gid=$(id -g \"$_user\" 2>/dev/null || echo 1000)\n" +
+			"      exec setpriv --reuid=\"$_uid\" --regid=\"$_gid\" --clear-groups -- /bin/sh -c \"$@\"\n" +
+			"      ;;\n" +
+			"    -*) shift ;;\n" +
+			"    *)  _user=\"$1\"; shift ;;\n" +
+			"  esac\n" +
+			"done\n"
+		_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
+		_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
+		pamSuConf := "auth sufficient pam_rootok.so\n" +
+			"session optional pam_loginuid.so\n" +
+			"account sufficient pam_unix.so\n" +
+			"session required pam_unix.so\n"
+		_ = os.MkdirAll(mntDir+"/etc/pam.d", 0755)
+		_ = os.WriteFile(mntDir+"/etc/pam.d/su", []byte(pamSuConf), 0644)
+		_ = os.WriteFile(mntDir+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
+		// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
+		// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
+		sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
+		_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
+		_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+		// curl wrapper for director post-start health check
+		curlWrapper := "#!/bin/sh\n" +
+			"for a in \"$@\"; do\n" +
+			"  case \"$a\" in\n" +
+			"    *localhost:25556*|*127.0.0.1:25556*)\n" +
+			"      echo '{\"name\":\"bosh-stub\",\"uuid\":\"stub\",\"version\":\"stub\",\"features\":{}}'\n" +
+			"      exit 0 ;;\n" +
+			"  esac\n" +
+			"done\n" +
+			"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
+			"exit 0\n"
+		if _, ferr := os.Stat(mntDir + "/usr/bin/curl"); ferr == nil {
+			_, _ = ExecCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
+		}
+		_ = os.WriteFile(mntDir+"/usr/sbin/curl", []byte(curlWrapper), 0755)
+		_ = os.WriteFile(mntDir+"/usr/bin/curl", []byte(curlWrapper), 0755)
+		initScript := "#!/bin/sh\n" +
+			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+			"mount -t proc proc /proc 2>/dev/null || true\n" +
+			"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
+			"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+			"ip link set lo up 2>/dev/null || true\n" +
+			"# Set shared memory limits required by postgres pre-start\n" +
+			"sysctl -w kernel.shmmax=67108864 2>/dev/null || true\n" +
+			"sysctl -w kernel.shmall=4194304 2>/dev/null || true\n" +
+			"# Mount tmpfs at /var/vcap/store so postgres can write its data directory.\n" +
+			"mkdir -p /var/vcap/store\n" +
+			"mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true\n" +
+			"# Bring up network via DHCP\n" +
+			"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+			"if [ -n \"$IFACE\" ]; then\n" +
+			"  ip link set \"$IFACE\" up\n" +
+			"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+			"fi\n" +
+			"python3 -c \"\n" +
+			"import http.server, socketserver, sys, time, subprocess, os\n" +
+			"socketserver.TCPServer.allow_reuse_address = True\n" +
+			"def xml():\n" +
+			"  inc = str(int(time.time()))\n" +
+			"  import glob, re, json\n" +
+			"  svcs = []\n" +
+			"  for f in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
+			"    for m in re.findall(r'check process (\\S+)', open(f).read()):\n" +
+			"      if m not in svcs: svcs.append(m)\n" +
+			"  if not svcs:\n" +
+			"    try:\n" +
+			"      spec = json.load(open('/var/vcap/bosh/spec.json'))\n" +
+			"      for tpl in spec.get('job',{}).get('templates',[]):\n" +
+			"        n = tpl.get('name','')\n" +
+			"        if n and n not in ('bpm','libvirt_cpi') and n not in svcs: svcs.append(n)\n" +
+			"    except: pass\n" +
+			"  svc_xml = ''.join('<service name=\\\"%(s)s\\\" type=\\\"5\\\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)\n" +
+			"  grp_xml = '<servicegroup name=\\\"vcap\\\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''\n" +
+			"  result = ('<monit id=\\\"stub\\\" incarnation=\\\"'+ inc + '\\\" version=\\\"5\\\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')\n" +
+			"  import os as _os\n" +
+			"  try: _files = _os.listdir('/var/vcap/monit/job')\n" +
+			"  except: _files = []\n" +
+			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
+			"  return result.encode()\n" +
+			"def start_svc(svc):\n" +
+			"  import glob, yaml, socket, time, re\n" +
+			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
+			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler', 'nginx', 'director_nginx'):\n" +
+			"    import threading\n" +
+			"    def _start_async():\n" +
+			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"      pg_host = '" + qemuStaticIP + "'\n" +
+			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
+			"      for i in range(5400):\n" +
+			"        try:\n" +
+			"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
+			"          import subprocess as _sp\n" +
+			"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
+			"            capture_output=True, timeout=5)\n" +
+			"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+			"          if r.returncode == 0: break\n" +
+			"        except Exception as e:\n" +
+			"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
+			"        time.sleep(2)\n" +
+			"      else:\n" +
+			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
+			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"      if not os.path.exists(bpmyml): return\n" +
+			"      try:\n" +
+			"        cfg = yaml.safe_load(open(bpmyml))\n" +
+			"        proc = cfg.get('processes',[{}])[0]\n" +
+			"        exe = proc.get('executable','')\n" +
+			"        args = [exe] + proc.get('args',[])\n" +
+			"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+			"        if not setpriv_bin: return\n" +
+			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
+			"        open(pf,'w').write(str(p.pid))\n" +
+			"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
+			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
+			"    return\n" +
+			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"  if os.path.exists(bpmyml):\n" +
+			"    try:\n" +
+			"      cfg = yaml.safe_load(open(bpmyml))\n" +
+			"      proc = cfg.get('processes',[{}])[0]\n" +
+			"      exe = proc.get('executable','')\n" +
+			"      args = [exe] + proc.get('args',[])\n" +
+			"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
+			"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
+			"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
+			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"      open(pf,'w').write(str(p.pid))\n" +
+			"      if svc == 'postgres':\n" +
+			"        _pg_args = args; _pg_env = env; _pg_host = '" + qemuStaticIP + "'\n" +
+			"        def run_createdb():\n" +
+			"          for _ in range(60):\n" +
+			"            try:\n" +
+			"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
+			"            except: time.sleep(2)\n" +
+			"          import glob\n" +
+			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+			"          while True:\n" +
+			"            time.sleep(5)\n" +
+			"            try:\n" +
+			"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
+			"            except:\n" +
+			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"              try:\n" +
+			"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
+			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
+			"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
+			"      return\n" +
+			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
+			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"  if os.path.exists(ctl):\n" +
+			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
+			"class H(http.server.BaseHTTPRequestHandler):\n" +
+			"  def do_GET(self):\n" +
+			"    body = xml()\n" +
+			"    self.send_response(200)\n" +
+			"    self.send_header('Content-Type','text/xml')\n" +
+			"    self.send_header('Content-Length', str(len(body)))\n" +
+			"    self.end_headers()\n" +
+			"    self.wfile.write(body)\n" +
+			"  def do_POST(self):\n" +
+			"    length = int(self.headers.get('Content-Length','0'))\n" +
+			"    body = self.rfile.read(length).decode()\n" +
+			"    svc = self.path.strip('/')\n" +
+			"    if svc and 'action=start' in body:\n" +
+			"      start_svc(svc)\n" +
+			"    self.send_response(200)\n" +
+			"    self.send_header('Content-Length','0')\n" +
+			"    self.end_headers()\n" +
+			"  def log_message(self, fmt, *a):\n" +
+			"    open('/var/vcap/bosh/log/monit-req.log','a').write('[%s] %s %s\\n' % (self.log_date_time_string(), self.command, self.path))\n" +
+			"try:\n" +
+			"  srv = socketserver.TCPServer(('127.0.0.1',2822),H)\n" +
+			"  sys.stderr.write('monit stub: ready\\\\n')\n" +
+			"  sys.stderr.flush()\n" +
+			"  srv.serve_forever()\n" +
+			"except Exception as e:\n" +
+			"  sys.stderr.write('monit stub error: %s\\\\n' % str(e))\n" +
+			"  sys.stderr.flush()\n" +
+			"\" >/tmp/monit-stub.log 2>&1 &\n" +
+			"for i in $(seq 1 30); do\n" +
+			"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
+			"  sleep 0.2\n" +
+			"done\n" +
+			"# Log disk usage periodically so we can see what fills up\n" +
+			"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
+			"# Background watcher: replace post-start scripts with no-ops when installed.\n" +
+			"( while true; do\n" +
+			"  for JOB in director nats; do\n" +
+			"    PS=/var/vcap/jobs/$JOB/bin/post-start\n" +
+			"    if [ -f \"$PS\" ] && ! grep -q 'bosh-noop' \"$PS\" 2>/dev/null; then\n" +
+			"      echo '#!/bin/sh' > \"$PS\"\n" +
+			"      echo '# bosh-noop: post-start stubbed out' >> \"$PS\"\n" +
+			"      chmod 755 \"$PS\"\n" +
+			"    fi\n" +
+			"  done\n" +
+			"  sleep 2\n" +
+			"done ) &\n" +
+			"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub\n" +
+			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
+			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
+		_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
+		// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
+		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
+		ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
+		_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
+		_, _ = ExecCommand("umount", mntDir)
+		_ = os.RemoveAll(mntDir)
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
