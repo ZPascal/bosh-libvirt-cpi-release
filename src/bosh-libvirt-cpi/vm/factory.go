@@ -1081,7 +1081,3 @@ func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 	return f.newVM(cid), nil
 }
 
-// InjectMbusCertForTest exposes injectMbusCert for unit tests only.
-func (f Factory) InjectMbusCertForTest(envBytes []byte) []byte {
-	return f.injectMbusCert(envBytes)
-}
