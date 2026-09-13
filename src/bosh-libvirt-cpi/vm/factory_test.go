@@ -224,5 +224,25 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Mounting ext4 for VM injection"))
 		})
+
+		It("runs through ext4 injection without error when all commands succeed", func() {
+			vm.ExecCommand = func(name string, args ...string) ([]byte, error) {
+				return []byte{}, nil
+			}
+			defer func() { vm.ExecCommand = vm.DefaultExecCommand }()
+
+			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+			stemcell.ImagePathResult = stemcellImg
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+		})
 	})
 })

@@ -618,7 +618,13 @@ func (f Factory) Create(
 				_ = os.RemoveAll(mntDir + "/etc/sv/" + svc.Name() + "/supervise")
 			}
 		}
-		envBytes, _ := initialAgentEnv.AsBytes()
+		envBytes, envErr := initialAgentEnv.AsBytes()
+		if envErr != nil {
+			_, _ = ExecCommand("umount", mntDir)
+			_ = os.RemoveAll(mntDir)
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(envErr, "Marshalling agent env for ext4 rootfs injection")
+		}
 		boshDir := mntDir + "/var/vcap/bosh"
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
