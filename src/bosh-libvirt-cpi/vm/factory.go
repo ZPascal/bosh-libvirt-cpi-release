@@ -365,21 +365,21 @@ func (f Factory) Create(
 			"  for line in text.splitlines():\n" +
 			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
 			"      if cur: procs.append(cur)\n" +
-			"      cur = {'name': line.split('name:',1)[1].strip().strip(\"'\\\"\" ), 'executable': '', 'args': [], 'env': {}}\n" +
+			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}}\n" +
 			"      in_args = False; in_env = False\n" +
 			"    elif cur is None: continue\n" +
 			"    elif _r.match(r'\\s+executable:', line):\n" +
-			"      cur['executable'] = line.split('executable:',1)[1].strip().strip(\"'\\\"\" ); in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False\n" +
 			"    elif _r.match(r'\\s+args:', line):\n" +
 			"      in_args = True; in_env = False\n" +
 			"      inline = line.split('args:',1)[1].strip()\n" +
 			"      if inline.startswith('['):\n" +
-			"        cur['args'] = [a.strip().strip(\"'\\\"\" ) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
+			"        _q = chr(34); cur['args'] = [a.strip().strip(_q+chr(39)) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
 			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
 			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
-			"      cur['args'].append(line.split('-',1)[1].strip().strip(\"'\\\"\" ))\n" +
+			"      _q = chr(34); cur['args'].append(line.split('-',1)[1].strip().strip(_q+chr(39)))\n" +
 			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
-			"      k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(\"'\\\"\" )\n" +
+			"      _q = chr(34); k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(_q+chr(39))\n" +
 			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
 			"  if cur: procs.append(cur)\n" +
 			"  return {'processes': procs}\n" +
@@ -549,7 +549,7 @@ func (f Factory) Create(
 			"  sys.stderr.flush()\n" +
 			"\" >/tmp/monit-stub.log 2>&1 &\n" +
 			"for i in $(seq 1 30); do\n" +
-			"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
+			"  python3 -c 'import socket,sys; s=socket.socket(); s.settimeout(0.2); s.connect((\"127.0.0.1\",2822)); s.close()' 2>/dev/null && break\n" +
 			"  sleep 0.2\n" +
 			"done\n"
 		var lxcInitScript string
@@ -841,21 +841,21 @@ func (f Factory) Create(
 			"  for line in text.splitlines():\n" +
 			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
 			"      if cur: procs.append(cur)\n" +
-			"      cur = {'name': line.split('name:',1)[1].strip().strip(\"'\\\"\" ), 'executable': '', 'args': [], 'env': {}}\n" +
+			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}}\n" +
 			"      in_args = False; in_env = False\n" +
 			"    elif cur is None: continue\n" +
 			"    elif _r.match(r'\\s+executable:', line):\n" +
-			"      cur['executable'] = line.split('executable:',1)[1].strip().strip(\"'\\\"\" ); in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False\n" +
 			"    elif _r.match(r'\\s+args:', line):\n" +
 			"      in_args = True; in_env = False\n" +
 			"      inline = line.split('args:',1)[1].strip()\n" +
 			"      if inline.startswith('['):\n" +
-			"        cur['args'] = [a.strip().strip(\"'\\\"\" ) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
+			"        _q = chr(34); cur['args'] = [a.strip().strip(_q+chr(39)) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
 			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
 			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
-			"      cur['args'].append(line.split('-',1)[1].strip().strip(\"'\\\"\" ))\n" +
+			"      _q = chr(34); cur['args'].append(line.split('-',1)[1].strip().strip(_q+chr(39)))\n" +
 			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
-			"      k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(\"'\\\"\" )\n" +
+			"      _q = chr(34); k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(_q+chr(39))\n" +
 			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
 			"  if cur: procs.append(cur)\n" +
 			"  return {'processes': procs}\n" +
@@ -1030,7 +1030,7 @@ func (f Factory) Create(
 			"  sys.stderr.flush()\n" +
 			"\" >/tmp/monit-stub.log 2>&1 &\n" +
 			"for i in $(seq 1 30); do\n" +
-			"  (echo > /dev/tcp/127.0.0.1/2822) 2>/dev/null && break\n" +
+			"  python3 -c 'import socket,sys; s=socket.socket(); s.settimeout(0.2); s.connect((\"127.0.0.1\",2822)); s.close()' 2>/dev/null && break\n" +
 			"  sleep 0.2\n" +
 			"done\n" +
 			"# Log disk usage periodically so we can see what fills up\n" +
