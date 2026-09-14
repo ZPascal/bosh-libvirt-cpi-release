@@ -382,6 +382,13 @@ func (f Factory) Create(
 			"      else:\n" +
 			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      # Run the job pre-start script as root to set up required directories\n" +
+			"      pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"      if os.path.exists(pre_start):\n" +
+			"        try:\n" +
+			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
+			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
+			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
@@ -392,8 +399,22 @@ func (f Factory) Create(
 			"        for proc in procs:\n" +
 			"          pname = proc.get('name', svc)\n" +
 			"          exe = proc.get('executable','')\n" +
+			"          if not exe or not os.path.exists(exe): log.write('skip '+pname+': exe not found\\n'); log.flush(); continue\n" +
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"          # Create nginx temp dirs if this process looks like nginx\n" +
+			"          if 'nginx' in exe or 'nginx' in pname:\n" +
+			"            for d in ['/var/vcap/data/director/tmp/client_body','/var/vcap/data/director/tmp/proxy','/var/vcap/sys/log/director']:\n" +
+			"              os.makedirs(d, exist_ok=True)\n" +
+			"              try: os.chown(d, 1000, 1000)\n" +
+			"              except: pass\n" +
+			"            # nginx compiled-in error log path - make it writable\n" +
+			"            ng_log_dir = '/var/vcap/packages/nginx/logs'\n" +
+			"            if not os.path.exists(ng_log_dir): os.makedirs(ng_log_dir, exist_ok=True)\n" +
+			"            ng_log = ng_log_dir + '/error.log'\n" +
+			"            if not os.path.exists(ng_log): open(ng_log,'a').close()\n" +
+			"            try: os.chmod(ng_log, 0o666)\n" +
+			"            except: pass\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
@@ -784,6 +805,13 @@ func (f Factory) Create(
 			"      else:\n" +
 			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      # Run the job pre-start script as root to set up required directories\n" +
+			"      pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"      if os.path.exists(pre_start):\n" +
+			"        try:\n" +
+			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
+			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
+			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
@@ -794,8 +822,22 @@ func (f Factory) Create(
 			"        for proc in procs:\n" +
 			"          pname = proc.get('name', svc)\n" +
 			"          exe = proc.get('executable','')\n" +
+			"          if not exe or not os.path.exists(exe): log.write('skip '+pname+': exe not found\\n'); log.flush(); continue\n" +
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"          # Create nginx temp dirs if this process looks like nginx\n" +
+			"          if 'nginx' in exe or 'nginx' in pname:\n" +
+			"            for d in ['/var/vcap/data/director/tmp/client_body','/var/vcap/data/director/tmp/proxy','/var/vcap/sys/log/director']:\n" +
+			"              os.makedirs(d, exist_ok=True)\n" +
+			"              try: os.chown(d, 1000, 1000)\n" +
+			"              except: pass\n" +
+			"            # nginx compiled-in error log path - make it writable\n" +
+			"            ng_log_dir = '/var/vcap/packages/nginx/logs'\n" +
+			"            if not os.path.exists(ng_log_dir): os.makedirs(ng_log_dir, exist_ok=True)\n" +
+			"            ng_log = ng_log_dir + '/error.log'\n" +
+			"            if not os.path.exists(ng_log): open(ng_log,'a').close()\n" +
+			"            try: os.chmod(ng_log, 0o666)\n" +
+			"            except: pass\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
