@@ -31,7 +31,7 @@ In `vm/factory.go`, the `start_svc` async thread (for `director`, `worker_1`, `w
 
 This closes the race: the dirs exist and are vcap-owned before `subprocess.Popen` is called, so no lazy-creation-as-root can happen.
 
-Apply this in **both** the LXC path (around line 418) and the QEMU path (around line 899) — the async director thread is duplicated between the two paths.
+Apply this in **both** the LXC path and the QEMU path — the async director thread is duplicated between the two paths. Use the code anchor `chown_root in ['/var/vcap/data/'+svc` to locate both blocks (grep for it in `factory.go`; the first occurrence is in the LXC async thread, the second in the QEMU async thread).
 
 ### Fix 2 — QEMU: structured console_log at key events
 
