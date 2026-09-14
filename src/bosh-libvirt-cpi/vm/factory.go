@@ -837,8 +837,11 @@ func (f Factory) Create(
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
 			"def console_log(msg):\n" +
-			"  try: open('/dev/console','a').write('[monit] '+msg+'\\n')\n" +
-			"  except: pass\n" +
+			"  line = '[monit] '+msg+'\\n'\n" +
+			"  try: open('/dev/console','a').write(line)\n" +
+			"  except:\n" +
+			"    try: open('/tmp/monit-console.log','a').write(line)\n" +
+			"    except: pass\n" +
 			"def load_bpm(path):\n" +
 			"  import re as _r\n" +
 			"  text = open(path).read()\n" +
@@ -953,12 +956,14 @@ func (f Factory) Create(
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  console_log('start_svc sync: '+svc)\n" +
 			"  # Run pre-start script as root so it can create required directories\n" +
 			"  pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
 			"  if os.path.exists(pre_start):\n" +
 			"    try:\n" +
 			"      r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
 			"      log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
+			"      console_log('pre-start '+svc+' rc='+str(r.returncode))\n" +
 			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
 			"  for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc, '/var/vcap/store/'+svc]:\n" +
@@ -1007,7 +1012,7 @@ func (f Factory) Create(
 			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
 			"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 			"      return\n" +
-			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
+			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n'); console_log('start failed '+svc+': '+str(e))\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
 			"  if os.path.exists(ctl):\n" +
 			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
