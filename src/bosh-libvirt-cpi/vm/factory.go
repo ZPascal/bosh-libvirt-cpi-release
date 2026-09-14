@@ -358,8 +358,33 @@ func (f Factory) Create(
 			"  except: _files = []\n" +
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
+			"def load_bpm(path):\n" +
+			"  import re as _r\n" +
+			"  text = open(path).read()\n" +
+			"  procs = []; cur = None; in_args = False; in_env = False\n" +
+			"  for line in text.splitlines():\n" +
+			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
+			"      if cur: procs.append(cur)\n" +
+			"      cur = {'name': line.split('name:',1)[1].strip().strip(\"'\\\"\" ), 'executable': '', 'args': [], 'env': {}}\n" +
+			"      in_args = False; in_env = False\n" +
+			"    elif cur is None: continue\n" +
+			"    elif _r.match(r'\\s+executable:', line):\n" +
+			"      cur['executable'] = line.split('executable:',1)[1].strip().strip(\"'\\\"\" ); in_args = False; in_env = False\n" +
+			"    elif _r.match(r'\\s+args:', line):\n" +
+			"      in_args = True; in_env = False\n" +
+			"      inline = line.split('args:',1)[1].strip()\n" +
+			"      if inline.startswith('['):\n" +
+			"        cur['args'] = [a.strip().strip(\"'\\\"\" ) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
+			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
+			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
+			"      cur['args'].append(line.split('-',1)[1].strip().strip(\"'\\\"\" ))\n" +
+			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
+			"      k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(\"'\\\"\" )\n" +
+			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
+			"  if cur: procs.append(cur)\n" +
+			"  return {'processes': procs}\n" +
 			"def start_svc(svc):\n" +
-			"  import glob, yaml, socket, time, re\n" +
+			"  import glob, socket, time\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
@@ -401,7 +426,7 @@ func (f Factory) Create(
 			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
-			"        cfg = yaml.safe_load(open(bpmyml))\n" +
+			"        cfg = load_bpm(bpmyml)\n" +
 			"        procs = cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
@@ -456,7 +481,7 @@ func (f Factory) Create(
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
-			"      cfg = yaml.safe_load(open(bpmyml))\n" +
+			"      cfg = load_bpm(bpmyml)\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +
@@ -809,8 +834,33 @@ func (f Factory) Create(
 			"def console_log(msg):\n" +
 			"  try: open('/dev/console','a').write('[monit] '+msg+'\\n')\n" +
 			"  except: pass\n" +
+			"def load_bpm(path):\n" +
+			"  import re as _r\n" +
+			"  text = open(path).read()\n" +
+			"  procs = []; cur = None; in_args = False; in_env = False\n" +
+			"  for line in text.splitlines():\n" +
+			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
+			"      if cur: procs.append(cur)\n" +
+			"      cur = {'name': line.split('name:',1)[1].strip().strip(\"'\\\"\" ), 'executable': '', 'args': [], 'env': {}}\n" +
+			"      in_args = False; in_env = False\n" +
+			"    elif cur is None: continue\n" +
+			"    elif _r.match(r'\\s+executable:', line):\n" +
+			"      cur['executable'] = line.split('executable:',1)[1].strip().strip(\"'\\\"\" ); in_args = False; in_env = False\n" +
+			"    elif _r.match(r'\\s+args:', line):\n" +
+			"      in_args = True; in_env = False\n" +
+			"      inline = line.split('args:',1)[1].strip()\n" +
+			"      if inline.startswith('['):\n" +
+			"        cur['args'] = [a.strip().strip(\"'\\\"\" ) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
+			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
+			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
+			"      cur['args'].append(line.split('-',1)[1].strip().strip(\"'\\\"\" ))\n" +
+			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
+			"      k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(\"'\\\"\" )\n" +
+			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
+			"  if cur: procs.append(cur)\n" +
+			"  return {'processes': procs}\n" +
 			"def start_svc(svc):\n" +
-			"  import glob, yaml, socket, time, re\n" +
+			"  import glob, socket, time\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 			"  console_log('start_svc called: '+svc)\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
@@ -857,7 +907,7 @@ func (f Factory) Create(
 			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
-			"        cfg = yaml.safe_load(open(bpmyml))\n" +
+			"        cfg = load_bpm(bpmyml)\n" +
 			"        procs = cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
@@ -912,7 +962,7 @@ func (f Factory) Create(
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
-			"      cfg = yaml.safe_load(open(bpmyml))\n" +
+			"      cfg = load_bpm(bpmyml)\n" +
 			"      proc = cfg.get('processes',[{}])[0]\n" +
 			"      exe = proc.get('executable','')\n" +
 			"      args = [exe] + proc.get('args',[])\n" +

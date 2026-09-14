@@ -506,7 +506,7 @@ jobs:
         # Wait up to 15 minutes for director to come up on port 25555
         echo "Waiting for director on port 25555..."
         for i in $(seq 1 180); do
-          if curl -sk --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
+          if curl -skf --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
             echo "Director is up!"
             cat /tmp/director-info.json
             break
@@ -526,7 +526,7 @@ jobs:
         [ -n "$VMDIR" ] && echo "=== director running? ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount --pid -- ps aux 2>/dev/null | grep -E "director|ruby" | grep -v grep || echo "no director process"
         [ -n "$VMDIR" ] && echo "=== monit-director head20 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | head -20 || true
         [ -n "$VMDIR" ] && echo "=== monit-director tail50 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -50 || true
-        if ! curl -sk --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
+        if ! curl -skf --max-time 5 https://192.168.122.11:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
