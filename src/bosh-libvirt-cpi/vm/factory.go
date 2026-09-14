@@ -423,6 +423,11 @@ func (f Factory) Create(
 			"            for f in filenames:\n" +
 			"              try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
 			"              except: pass\n" +
+			"      # Pre-create runtime-write dirs that services create lazily (e.g. blobstore-config).\n" +
+			"      for _rtdir in ['/var/vcap/data/'+svc+'/tmp', '/var/vcap/data/'+svc+'/run', '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc]:\n" +
+			"        os.makedirs(_rtdir, exist_ok=True)\n" +
+			"        try: os.chown(_rtdir, 1000, 1000)\n" +
+			"        except: pass\n" +
 			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
