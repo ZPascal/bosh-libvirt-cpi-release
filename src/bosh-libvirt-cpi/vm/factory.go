@@ -436,6 +436,22 @@ func (f Factory) Create(
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  # Run pre-start script as root so it can create required directories\n" +
+			"  pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"  if os.path.exists(pre_start):\n" +
+			"    try:\n" +
+			"      r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
+			"      log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
+			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
+			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
+			"  for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc, '/var/vcap/store/'+svc]:\n" +
+			"    if os.path.exists(chown_root):\n" +
+			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
+			"        try: os.chown(dirpath, 1000, 1000)\n" +
+			"        except: pass\n" +
+			"        for f in filenames:\n" +
+			"          try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
+			"          except: pass\n" +
 			"  # For postgres and other services: start directly via bpm.yml\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
@@ -790,15 +806,20 @@ func (f Factory) Create(
 			"  except: _files = []\n" +
 			"  open('/tmp/monit-svcs.log','a').write(inc+' svcs='+str(svcs)+' files='+str(_files)+'\\n')\n" +
 			"  return result.encode()\n" +
+			"def console_log(msg):\n" +
+			"  try: open('/dev/console','a').write('[monit] '+msg+'\\n')\n" +
+			"  except: pass\n" +
 			"def start_svc(svc):\n" +
 			"  import glob, yaml, socket, time, re\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
+			"  console_log('start_svc called: '+svc)\n" +
 			"  # For director-like services: start async so HTTP response returns immediately\n" +
 			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 			"      pg_host = '" + qemuStaticIP + "'\n" +
+			"      console_log('waiting for postgres for '+svc)\n" +
 			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 			"      for i in range(5400):\n" +
 			"        try:\n" +
@@ -812,8 +833,11 @@ func (f Factory) Create(
 			"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
 			"        time.sleep(2)\n" +
 			"      else:\n" +
-			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
+			"        log.write('postgres never ready\\n'); log.flush()\n" +
+			"        console_log('postgres never ready for '+svc)\n" +
+			"        return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      console_log('postgres ready, starting '+svc)\n" +
 			"      # Run the job pre-start script as root to set up required directories\n" +
 			"      pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
@@ -863,11 +887,28 @@ func (f Factory) Create(
 			"          p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
 			"          open(pf,'w').write(str(p.pid))\n" +
 			"          log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"          console_log('started '+pname+' pid='+str(p.pid))\n" +
 			"          time.sleep(1)\n" +
 			"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  # Run pre-start script as root so it can create required directories\n" +
+			"  pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"  if os.path.exists(pre_start):\n" +
+			"    try:\n" +
+			"      r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
+			"      log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
+			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
+			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
+			"  for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc, '/var/vcap/store/'+svc]:\n" +
+			"    if os.path.exists(chown_root):\n" +
+			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
+			"        try: os.chown(dirpath, 1000, 1000)\n" +
+			"        except: pass\n" +
+			"        for f in filenames:\n" +
+			"          try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
+			"          except: pass\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
@@ -884,6 +925,7 @@ func (f Factory) Create(
 			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
+			"      console_log('started '+svc+' pid='+str(p.pid))\n" +
 			"      if svc == 'postgres':\n" +
 			"        _pg_args = args; _pg_env = env; _pg_host = '" + qemuStaticIP + "'\n" +
 			"        def run_createdb():\n" +

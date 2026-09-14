@@ -215,13 +215,18 @@ jobs:
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -50 || true
             echo "=== QEMU postgres pre-start log ===" && \
               sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
-            echo "=== QEMU /usr/sbin wrappers ===" && \
-              MNTIMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1) && \
-              [ -n "$MNTIMG" ] && sudo mount -o loop,ro "$MNTIMG" /mnt 2>/dev/null && \
-              sudo ls -la /mnt/usr/sbin/sysctl /mnt/usr/sbin/su 2>/dev/null && \
-              sudo cat /mnt/usr/sbin/sysctl 2>/dev/null && \
-              sudo cat /mnt/usr/sbin/su 2>/dev/null && \
-              sudo umount /mnt 2>/dev/null || true
+            echo "=== QEMU /usr/sbin wrappers and service logs ===" && {
+              MNTIMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+              [ -n "$MNTIMG" ] && sudo mount -o loop,ro "$MNTIMG" /mnt 2>/dev/null && {
+                sudo ls -la /mnt/usr/sbin/sysctl /mnt/usr/sbin/su 2>/dev/null
+                sudo cat /mnt/usr/sbin/sysctl 2>/dev/null
+                sudo cat /mnt/usr/sbin/su 2>/dev/null
+                echo "=== monit-req.log ===" && sudo cat /mnt/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== monit-postgres.log ===" && sudo cat /mnt/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== bosh-agent/current ===" && sudo cat /mnt/var/vcap/bosh/log/current 2>/dev/null | tail -20 || echo "(not found)"
+                sudo umount /mnt 2>/dev/null
+              } || true
+            } || true
             echo "=== QEMU VM disk usage (df /var/vcap/data) ===" && \
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -E 'df |Filesystem|/dev/|vcap/data' | tail -10 || true
             echo "=== DHCP log ===" && \
@@ -242,12 +247,29 @@ jobs:
           echo "Attempt $i/180 - not ready yet, waiting 5s..."
           sleep 5
         done
-        echo "=== monit postgres log ===" && sudo find /tmp/bosh_libvirt_cpi -name 'monit-postgres.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || \
-          sudo find /tmp/bosh_libvirt_cpi -path '*/bosh/log/monit-postgres.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || true
-        echo "=== QEMU postgres pre-start log ===" && \
-          sudo find /tmp/bosh_libvirt_cpi -name 'pre-start.stderr.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
-        echo "=== QEMU console monit nats/director logs ===" && \
-          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "monit-\|postgres\|director\|nats\|Error\|5432\|25555" | tail -20 || true
+        echo "=== QEMU console log (monit/postgres/director events) ===" && \
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555" | tail -40 || true
+        echo "=== QEMU console log (last 30 lines) ===" && \
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+        echo "=== Mounting QEMU rootfs.img to read service logs ===" && {
+          QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+          if [ -n "$QEMU_IMG" ]; then
+            sudo mkdir -p /mnt/qemu-rootfs
+            sudo mount -o loop,ro "$QEMU_IMG" /mnt/qemu-rootfs 2>/dev/null && {
+              echo "=== monit-postgres.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-director.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-nats.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== monit-svcs.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-svcs.log 2>/dev/null | tail -10 || echo "(not found)"
+              echo "=== bosh-agent-init.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== bosh-agent/current log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/current 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== director nginx config check ===" && sudo ls /mnt/qemu-rootfs/var/vcap/jobs/director/config/ 2>/dev/null || echo "(not found)"
+              sudo umount /mnt/qemu-rootfs 2>/dev/null
+            } || echo "Mount failed - VM may still be running (expected)"
+          else
+            echo "No rootfs.img found"
+          fi
+        } || true
         if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - failing"
           exit 1
