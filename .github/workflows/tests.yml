@@ -261,7 +261,6 @@ jobs:
               echo "=== monit-postgres.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | tail -30 || echo "(not found)"
               echo "=== monit-director.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -30 || echo "(not found)"
               echo "=== monit-nats.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | tail -20 || echo "(not found)"
-              echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -20 || echo "(not found)"
               echo "=== monit-svcs.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-svcs.log 2>/dev/null | tail -10 || echo "(not found)"
               echo "=== bosh-agent-init.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null | tail -20 || echo "(not found)"
               echo "=== bosh-agent/current log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/current 2>/dev/null | tail -30 || echo "(not found)"
