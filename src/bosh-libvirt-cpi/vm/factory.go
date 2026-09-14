@@ -386,19 +386,22 @@ func (f Factory) Create(
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = yaml.safe_load(open(bpmyml))\n" +
-			"        proc = cfg.get('processes',[{}])[0]\n" +
-			"        exe = proc.get('executable','')\n" +
-			"        args = [exe] + proc.get('args',[])\n" +
-			"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"        procs = cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
-			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-			"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
-			"        open(pf,'w').write(str(p.pid))\n" +
-			"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"        for proc in procs:\n" +
+			"          pname = proc.get('name', svc)\n" +
+			"          exe = proc.get('executable','')\n" +
+			"          args = [exe] + proc.get('args',[])\n" +
+			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"          os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
+			"          open(pf,'w').write(str(p.pid))\n" +
+			"          log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"          time.sleep(1)\n" +
 			"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
@@ -520,10 +523,6 @@ func (f Factory) Create(
 				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
-				"# Redirect external IP:25555 -> 127.0.0.1:25556 (director nginx proxy)\n" +
-				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
-				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
-				"echo 'iptables dnat 25555->25556 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		} else {
@@ -789,19 +788,22 @@ func (f Factory) Create(
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = yaml.safe_load(open(bpmyml))\n" +
-			"        proc = cfg.get('processes',[{}])[0]\n" +
-			"        exe = proc.get('executable','')\n" +
-			"        args = [exe] + proc.get('args',[])\n" +
-			"        env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"        procs = cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
-			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-			"        p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
-			"        open(pf,'w').write(str(p.pid))\n" +
-			"        log.write('started '+svc+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"        for proc in procs:\n" +
+			"          pname = proc.get('name', svc)\n" +
+			"          exe = proc.get('executable','')\n" +
+			"          args = [exe] + proc.get('args',[])\n" +
+			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
+			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"          os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
+			"          open(pf,'w').write(str(p.pid))\n" +
+			"          log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"          time.sleep(1)\n" +
 			"      except Exception as e: log.write('start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
@@ -897,10 +899,6 @@ func (f Factory) Create(
 			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
-			"# Redirect external IP:25555 -> 127.0.0.1:25556 (director nginx proxy)\n" +
-			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
-			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 25555 -j DNAT --to-destination 127.0.0.1:25556 2>/dev/null || true\n" +
-			"echo 'iptables dnat 25555->25556 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
 		// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
