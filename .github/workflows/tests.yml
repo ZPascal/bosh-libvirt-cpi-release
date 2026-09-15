@@ -302,7 +302,14 @@ jobs:
         bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
-          -n --fix
+          -n --fix || {
+            echo "=== bosh deploy failed - dumping last task log ==="
+            TASK_ID=$(bosh -e qemu-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e qemu-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            echo "=== QEMU console log (last 30 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            exit 1
+          }
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
         timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
         echo "NATS port 4222 reachable - deployment verified"
@@ -570,7 +577,20 @@ jobs:
         bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
-          -n --fix
+          -n --fix || {
+            echo "=== bosh deploy failed - dumping last task log ==="
+            TASK_ID=$(bosh -e lxc-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e lxc-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | tail -2)
+            for vd in $VMDIR; do
+              echo "=== VM dir: $vd ==="
+              sudo ls -la "$vd/" 2>/dev/null | head -10 || true
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -30 || true
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || true
+            done
+            sudo virsh -c lxc:/// list --all 2>/dev/null || true
+            exit 1
+          }
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
         timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
         echo "NATS port 4222 reachable - deployment verified"
