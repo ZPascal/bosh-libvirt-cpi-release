@@ -391,7 +391,7 @@ func (f Factory) Create(
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"      pg_host = '" + staticIP + "'\n" +
+			"      pg_host = '127.0.0.1'\n" +
 			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 			"      for i in range(5400):\n" +
 			"        try:\n" +
@@ -502,7 +502,7 @@ func (f Factory) Create(
 			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"      open(pf,'w').write(str(p.pid))\n" +
 			"      if svc == 'postgres':\n" +
-			"        _pg_args = args; _pg_env = env; _pg_host = '" + staticIP + "'\n" +
+			"        _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
 			"        def run_createdb_and_watch():\n" +
 			"          for _ in range(60):\n" +
 			"            try:\n" +
@@ -878,7 +878,7 @@ func (f Factory) Create(
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"      pg_host = '" + qemuStaticIP + "'\n" +
+			"      pg_host = '127.0.0.1'\n" +
 			"      console_log('waiting for postgres for '+svc)\n" +
 			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
 			"      for i in range(5400):\n" +
@@ -996,7 +996,7 @@ func (f Factory) Create(
 			"      open(pf,'w').write(str(p.pid))\n" +
 			"      console_log('started '+svc+' pid='+str(p.pid))\n" +
 			"      if svc == 'postgres':\n" +
-			"        _pg_args = args; _pg_env = env; _pg_host = '" + qemuStaticIP + "'\n" +
+			"        _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
 			"        def run_createdb():\n" +
 			"          for _ in range(60):\n" +
 			"            try:\n" +
