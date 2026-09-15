@@ -569,6 +569,8 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+				"mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true\n" +
+				"mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true\n" +
 				"mkdir -p /sys/fs/cgroup\n" +
 				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
 				"# Ensure /var/vcap/sys/run/postgresql is on rootfs (not tmpfs) for postgres socket\n" +
@@ -610,6 +612,8 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+				"mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true\n" +
+				"mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true\n" +
 				"mkdir -p /sys/fs/cgroup\n" +
 				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
@@ -630,6 +634,8 @@ func (f Factory) Create(
 				"mount -t proc proc /proc 2>/dev/null || true\n" +
 				"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 				"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+				"mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true\n" +
+				"mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true\n" +
 				"# Remove stale supervise locks before starting runsv\n" +
 				"rm -rf /etc/sv/*/supervise\n" +
 				"# Start runsv directly for each service\n" +
@@ -800,6 +806,8 @@ func (f Factory) Create(
 			"mount -t proc proc /proc 2>/dev/null || true\n" +
 			"mount -t sysfs sysfs /sys 2>/dev/null || true\n" +
 			"mount -t devtmpfs devtmpfs /dev 2>/dev/null || true\n" +
+			"mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true\n" +
+			"mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true\n" +
 			"ip link set lo up 2>/dev/null || true\n" +
 			"# Set shared memory limits required by postgres pre-start\n" +
 			"sysctl -w kernel.shmmax=67108864 2>/dev/null || true\n" +
