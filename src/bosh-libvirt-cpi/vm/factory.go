@@ -1050,6 +1050,14 @@ func (f Factory) Create(
 			"done\n" +
 			"# Log disk usage periodically so we can see what fills up\n" +
 			"( while true; do echo \"=== df /var/vcap/data ===\"; df -h /var/vcap/data 2>/dev/null; sleep 60; done ) &\n" +
+			"# Periodically log process list and port 4222 binding for NATS diagnostics\n" +
+			"( sleep 30; while true; do\n" +
+			"  echo \"=== ps nats/postgres/director ===\"\n" +
+			"  ps aux 2>/dev/null | grep -E 'nats|postgres|director|bpm' | grep -v grep || true\n" +
+			"  echo \"=== ss port 4222/5432/25555 ===\"\n" +
+			"  ss -tlnp 2>/dev/null | grep -E '4222|5432|25555|2822' || true\n" +
+			"  sleep 30\n" +
+			"done ) &\n" +
 			"# Background watcher: replace post-start scripts with no-ops when installed.\n" +
 			"( while true; do\n" +
 			"  for JOB in director nats; do\n" +

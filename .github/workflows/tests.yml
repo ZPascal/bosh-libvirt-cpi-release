@@ -248,9 +248,9 @@ jobs:
           sleep 5
         done
         echo "=== QEMU console log (monit/postgres/director events - first 40) ===" && \
-          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid" | head -40 || true
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid\|4222\|ss port\|ps nats" | head -40 || true
         echo "=== QEMU console log (monit/postgres/director events - last 40) ===" && \
-          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid" | tail -40 || true
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid\|4222\|ss port\|ps nats" | tail -40 || true
         echo "=== QEMU console log (last 30 lines) ===" && \
           sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
         echo "=== Destroying QEMU VM so rootfs.img can be mounted ===" && \
@@ -260,15 +260,18 @@ jobs:
           QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
           if [ -n "$QEMU_IMG" ]; then
             sudo mkdir -p /mnt/qemu-rootfs
-            sudo mount -o loop,ro "$QEMU_IMG" /mnt/qemu-rootfs 2>/dev/null && {
+            sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs 2>/dev/null && {
               echo "=== monit-console-fallback.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-console.log 2>/dev/null | tail -30 || echo "(not found)"
-              echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-stub.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-stub.log 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -50 || echo "(not found)"
+              echo "=== monit-nats.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | tail -40 || echo "(not found)"
               echo "=== monit-postgres.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | tail -30 || echo "(not found)"
               echo "=== monit-director.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -30 || echo "(not found)"
-              echo "=== monit-nats.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | tail -20 || echo "(not found)"
               echo "=== monit-svcs.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-svcs.log 2>/dev/null | tail -10 || echo "(not found)"
               echo "=== bosh-agent-init.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null | tail -20 || echo "(not found)"
-              echo "=== bosh-agent/current log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/current 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== bosh-agent/current log (tail) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/current 2>/dev/null | grep -v "unlimitedRetry\|DelayedAudit" | tail -40 || echo "(not found)"
+              echo "=== nats job config dir ===" && sudo ls /mnt/qemu-rootfs/var/vcap/jobs/nats/config/ 2>/dev/null || echo "(not found)"
+              echo "=== nats bpm.yml ===" && sudo cat /mnt/qemu-rootfs/var/vcap/jobs/nats/config/bpm.yml 2>/dev/null | head -20 || echo "(not found)"
               echo "=== director nginx config check ===" && sudo ls /mnt/qemu-rootfs/var/vcap/jobs/director/config/ 2>/dev/null || echo "(not found)"
               sudo umount /mnt/qemu-rootfs 2>/dev/null
             } || echo "Mount failed - VM may still be running (expected)"
