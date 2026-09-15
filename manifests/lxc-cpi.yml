@@ -134,6 +134,12 @@ instance_groups:
       ssl:
         cert: ((director_ssl.certificate))
         key: ((director_ssl.private_key))
+      user_management:
+        provider: local
+        local:
+          users:
+          - name: admin
+            password: admin-password
     hm:
       director_account:
         user: admin

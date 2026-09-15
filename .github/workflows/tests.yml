@@ -247,10 +247,15 @@ jobs:
           echo "Attempt $i/180 - not ready yet, waiting 5s..."
           sleep 5
         done
-        echo "=== QEMU console log (monit/postgres/director events) ===" && \
+        echo "=== QEMU console log (monit/postgres/director events - first 40) ===" && \
+          sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid" | head -40 || true
+        echo "=== QEMU console log (monit/postgres/director events - last 40) ===" && \
           sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid" | tail -40 || true
         echo "=== QEMU console log (last 30 lines) ===" && \
           sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+        echo "=== Destroying QEMU VM so rootfs.img can be mounted ===" && \
+          QEMU_DOM=$(sudo virsh -c qemu:///system list --name 2>/dev/null | grep -v '^$' | head -1) && \
+          if [ -n "$QEMU_DOM" ]; then sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null && echo "Destroyed $QEMU_DOM" || echo "Destroy failed (ok)"; else echo "No running domains found"; fi
         echo "=== Mounting QEMU rootfs.img to read service logs ===" && {
           QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
           if [ -n "$QEMU_IMG" ]; then
@@ -535,6 +540,7 @@ jobs:
           -e "192.168.122.11" \
           --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
         bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
+          --client admin --client-secret admin-password \
           -n --fix
 
     - name: Clean up Director (LXC)
