@@ -292,9 +292,18 @@ jobs:
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
           --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+        bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
+          --client admin --client-secret admin-password \
+          -n
+        bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password
         bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
+          --vars-store /tmp/bosh-deploy-vars.yml \
           -n --fix
+        echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
+        timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
+        echo "NATS port 4222 reachable - deployment verified"
 
     - name: Clean up Director (QEMU)
       if: always()
@@ -549,9 +558,18 @@ jobs:
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \
           --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+        bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
+          --client admin --client-secret admin-password \
+          -n
+        bosh -e lxc-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password
         bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           --client admin --client-secret admin-password \
+          --vars-store /tmp/bosh-deploy-vars.yml \
           -n --fix
+        echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
+        timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
+        echo "NATS port 4222 reachable - deployment verified"
 
     - name: Clean up Director (LXC)
       if: always()
