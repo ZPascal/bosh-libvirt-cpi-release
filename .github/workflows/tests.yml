@@ -239,7 +239,7 @@ jobs:
       run: |
         echo "Waiting for director on port 25555..."
         for i in $(seq 1 180); do
-          if curl -sk --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
+          if curl -skf --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
             echo "Director is up!"
             cat /tmp/director-info.json
             break
@@ -285,7 +285,7 @@ jobs:
             echo "No rootfs.img found"
           fi
         } || true
-        if ! curl -sk --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
+        if ! curl -skf --max-time 5 https://192.168.122.10:25555/info > /dev/null 2>&1; then
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
