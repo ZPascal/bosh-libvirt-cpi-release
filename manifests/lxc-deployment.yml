@@ -1,11 +1,13 @@
 ---
 # Minimal single-instance deployment for LXC integration smoke test.
-# Deploys one nats instance to verify the Director can manage LXC containers.
+# Deploys a postgres instance to verify the Director can manage LXC containers.
 name: lxc-test-deployment
 
 releases:
-- name: bosh
-  version: latest
+- name: postgres
+  url: https://github.com/cloudfoundry-community/postgres-boshrelease/releases/download/v3.2.2/postgres-3.2.2.tgz
+  version: "3.2.2"
+  sha1: 7699715ed0b7ec129f60958e2864958030333cea
 
 stemcells:
 - alias: default
@@ -15,15 +17,23 @@ stemcells:
 update:
   canaries: 1
   max_in_flight: 1
-  canary_watch_time: 1000-30000
-  update_watch_time: 1000-30000
+  canary_watch_time: 1000-60000
+  update_watch_time: 1000-60000
 
 instance_groups:
-- name: nats
+- name: postgres
   instances: 1
   jobs:
-  - name: nats
-    release: bosh
+  - name: postgres
+    release: postgres
+    properties:
+      postgres:
+        port: 5432
+        databases:
+        - name: testdb
+        roles:
+        - name: testuser
+          password: testpassword
   vm_type: default
   stemcell: default
   networks:

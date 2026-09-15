@@ -474,7 +474,9 @@ func (f Factory) Create(
 			"      log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
-			"  for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc, '/var/vcap/store/'+svc]:\n" +
+			"  import glob as _glob\n" +
+			"  for chown_root in (['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc] +\n" +
+			"      _glob.glob('/var/vcap/store/'+svc+'*')):\n" +
 			"    if os.path.exists(chown_root):\n" +
 			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
 			"        try: os.chown(dirpath, 1000, 1000)\n" +
@@ -966,7 +968,9 @@ func (f Factory) Create(
 			"      console_log('pre-start '+svc+' rc='+str(r.returncode))\n" +
 			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
-			"  for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc, '/var/vcap/store/'+svc]:\n" +
+			"  import glob as _glob\n" +
+			"  for chown_root in (['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc] +\n" +
+			"      _glob.glob('/var/vcap/store/'+svc+'*')):\n" +
 			"    if os.path.exists(chown_root):\n" +
 			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
 			"        try: os.chown(dirpath, 1000, 1000)\n" +
