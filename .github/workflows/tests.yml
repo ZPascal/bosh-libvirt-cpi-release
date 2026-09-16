@@ -2,9 +2,9 @@ name: Tests and Build
 
 on:
   push:
-    branches: [ main, develop, feat/lxc-integration-tests ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
