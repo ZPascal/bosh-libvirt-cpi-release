@@ -2,9 +2,9 @@ name: Tests and Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop, feat/lxc-integration-tests ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
@@ -333,6 +333,8 @@ jobs:
         echo "=== Validating deployed VM is visible to director ==="
         bosh -e qemu-ci -d qemu-test-deployment vms --client admin --client-secret admin-password
         echo "=== All QEMU e2e checks passed ==="
+
+    - name: Clean up Director (QEMU)
       if: always()
       run: |
         sudo bosh delete-env manifests/qemu-cpi.yml \
@@ -632,6 +634,8 @@ jobs:
         echo "=== Validating deployed VM is visible to director ==="
         bosh -e lxc-ci -d lxc-test-deployment vms --client admin --client-secret admin-password
         echo "=== All LXC e2e checks passed ==="
+
+    - name: Clean up Director (LXC)
       if: always()
       run: |
         sudo bosh delete-env manifests/lxc-cpi.yml \
