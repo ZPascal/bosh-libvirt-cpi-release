@@ -222,25 +222,30 @@ jobs:
     - name: Deploy smoke test deployment (QEMU)
       shell: bash
       run: |
-        echo "Waiting for director on port 25555 (bosh create-env running in background)..."
+        echo "Waiting for bosh create-env to complete (sentinel file)..."
         DIRECTOR_UP=0
         DEADLINE=$(( $(date +%s) + 14400 ))
         i=0
         while [ "$(date +%s)" -lt "$DEADLINE" ]; do
           i=$(( i + 1 ))
-          # If bosh create-env failed, abort immediately
           if [ -f /tmp/bosh-create-env.failed ]; then
             echo "bosh create-env failed - aborting wait"
             echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
             break
           fi
-          if curl -skf --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
-            echo "Director is up!"
-            cat /tmp/director-info.json
-            DIRECTOR_UP=1
+          if [ -f /tmp/bosh-create-env.done ]; then
+            echo "bosh create-env completed (attempt $i)"
+            if curl -skf --max-time 10 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
+              echo "Director is up!"
+              cat /tmp/director-info.json
+              DIRECTOR_UP=1
+            else
+              echo "create-env done but /info unreachable - director failed to start"
+              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            fi
             break
           fi
-          echo "Attempt $i - not ready yet, waiting 15s..."
+          echo "Attempt $i - create-env still running, waiting 15s..."
           sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
@@ -501,25 +506,30 @@ jobs:
     - name: Deploy smoke test deployment (LXC)
       shell: bash
       run: |
-        echo "Waiting for director on port 25555 (bosh create-env running in background)..."
+        echo "Waiting for bosh create-env to complete (sentinel file)..."
         DIRECTOR_UP=0
         DEADLINE=$(( $(date +%s) + 14400 ))
         i=0
         while [ "$(date +%s)" -lt "$DEADLINE" ]; do
           i=$(( i + 1 ))
-          # If bosh create-env failed, abort immediately
           if [ -f /tmp/bosh-create-env.failed ]; then
             echo "bosh create-env failed - aborting wait"
             echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
             break
           fi
-          if curl -skf --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
-            echo "Director is up!"
-            cat /tmp/director-info.json
-            DIRECTOR_UP=1
+          if [ -f /tmp/bosh-create-env.done ]; then
+            echo "bosh create-env completed (attempt $i)"
+            if curl -skf --max-time 10 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
+              echo "Director is up!"
+              cat /tmp/director-info.json
+              DIRECTOR_UP=1
+            else
+              echo "create-env done but /info unreachable - director failed to start"
+              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            fi
             break
           fi
-          echo "Attempt $i - not ready yet, waiting 15s..."
+          echo "Attempt $i - create-env still running, waiting 15s..."
           sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
