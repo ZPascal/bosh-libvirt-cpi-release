@@ -2,9 +2,9 @@ name: Tests and Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, develop, feat/lxc-integration-tests ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:
@@ -291,9 +291,10 @@ jobs:
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
+        bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
-          --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+          --ca-cert /tmp/director-ca.crt
         bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
           -n
@@ -586,9 +587,10 @@ jobs:
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
+        bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \
-          --ca-cert <(bosh int /tmp/bosh-vars.yml --path /director_ssl/ca)
+          --ca-cert /tmp/director-ca.crt
         bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
           --client admin --client-secret admin-password \
           -n
