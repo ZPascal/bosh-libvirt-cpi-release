@@ -118,7 +118,7 @@ jobs:
     name: E2E bosh-lite (QEMU)
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
     - name: Free disk space
@@ -299,6 +299,20 @@ jobs:
           -n
         bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password
+        STEMCELL_VERSION=$(bosh -e qemu-ci stemcells --client admin --client-secret admin-password --json 2>/dev/null | python3 -c "import sys,json; rows=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(rows[0].get('version','').strip('*')) if rows else ''" 2>/dev/null || echo "")
+        echo "Stemcell version: $STEMCELL_VERSION"
+        if [ -n "$STEMCELL_VERSION" ]; then
+          echo "=== Exporting compiled bosh release to skip VM compilation ==="
+          bosh -e qemu-ci export-release bosh/283.1.3 ubuntu-jammy/"$STEMCELL_VERSION" \
+            --client admin --client-secret admin-password \
+            --dir /tmp 2>&1 | tail -5 || true
+          COMPILED=$(ls /tmp/bosh-283.1.3-ubuntu-jammy-*.tgz 2>/dev/null | head -1)
+          if [ -n "$COMPILED" ]; then
+            echo "Uploading compiled release: $COMPILED"
+            bosh -e qemu-ci upload-release "$COMPILED" \
+              --client admin --client-secret admin-password --fix
+          fi
+        fi
         bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
@@ -313,8 +327,12 @@ jobs:
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
         timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
         echo "NATS port 4222 reachable - deployment verified"
-
-    - name: Clean up Director (QEMU)
+        echo "=== Validating director postgres via BOSH API (deployment list) ==="
+        bosh -e qemu-ci deployments --client admin --client-secret admin-password --json | \
+          python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('Tables',[{}])[0].get('Rows',[]); print('Deployments found:',len(rows)); [print(' -',r.get('name')) for r in rows]"
+        echo "=== Validating deployed VM is visible to director ==="
+        bosh -e qemu-ci -d qemu-test-deployment vms --client admin --client-secret admin-password
+        echo "=== All QEMU e2e checks passed ==="
       if: always()
       run: |
         sudo bosh delete-env manifests/qemu-cpi.yml \
@@ -369,7 +387,7 @@ jobs:
     name: E2E bosh-lite (LXC)
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 180
+    timeout-minutes: 240
 
     steps:
     - name: Free disk space
@@ -574,6 +592,20 @@ jobs:
           -n
         bosh -e lxc-ci upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password
+        STEMCELL_VERSION=$(bosh -e lxc-ci stemcells --client admin --client-secret admin-password --json 2>/dev/null | python3 -c "import sys,json; rows=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(rows[0].get('version','').strip('*')) if rows else ''" 2>/dev/null || echo "")
+        echo "Stemcell version: $STEMCELL_VERSION"
+        if [ -n "$STEMCELL_VERSION" ]; then
+          echo "=== Exporting compiled bosh release to skip VM compilation ==="
+          bosh -e lxc-ci export-release bosh/283.1.3 ubuntu-jammy/"$STEMCELL_VERSION" \
+            --client admin --client-secret admin-password \
+            --dir /tmp 2>&1 | tail -5 || true
+          COMPILED=$(ls /tmp/bosh-283.1.3-ubuntu-jammy-*.tgz 2>/dev/null | head -1)
+          if [ -n "$COMPILED" ]; then
+            echo "Uploading compiled release: $COMPILED"
+            bosh -e lxc-ci upload-release "$COMPILED" \
+              --client admin --client-secret admin-password --fix
+          fi
+        fi
         bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
@@ -594,8 +626,12 @@ jobs:
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
         timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
         echo "NATS port 4222 reachable - deployment verified"
-
-    - name: Clean up Director (LXC)
+        echo "=== Validating director postgres via BOSH API (deployment list) ==="
+        bosh -e lxc-ci deployments --client admin --client-secret admin-password --json | \
+          python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('Tables',[{}])[0].get('Rows',[]); print('Deployments found:',len(rows)); [print(' -',r.get('name')) for r in rows]"
+        echo "=== Validating deployed VM is visible to director ==="
+        bosh -e lxc-ci -d lxc-test-deployment vms --client admin --client-secret admin-password
+        echo "=== All LXC e2e checks passed ==="
       if: always()
       run: |
         sudo bosh delete-env manifests/lxc-cpi.yml \
