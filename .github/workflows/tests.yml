@@ -193,44 +193,45 @@ jobs:
           --live --config || true
 
     - name: Bootstrap BOSH Director via QEMU (bosh-lite, direct kernel boot)
+      shell: bash
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
         sudo chmod -R 755 /tmp/bosh_libvirt_cpi
         sudo chown -R root:root /tmp/bosh_libvirt_cpi
-        nohup sudo bosh create-env manifests/qemu-cpi.yml \
-          -o manifests/ops/qemu-local.yml \
-          -o manifests/local-release.yml \
-          -o manifests/ops/local-store-dir.yml \
-          -o manifests/ops/qemu-mac.yml \
-          -o manifests/ops/qemu-kernel-boot.yml \
-          -v director_name=bosh-qemu-ci \
-          -v internal_ip=192.168.122.10 \
-          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
-          -v kernel_path="${KERNEL_PATH}" \
-          --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml \
-          > /tmp/bosh-create-env.log 2>&1 &
-        echo $! > /tmp/bosh-create-env.pid
-        echo "bosh create-env started in background (PID $(cat /tmp/bosh-create-env.pid))"
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        (
+          sudo bosh create-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-kernel-boot.yml \
+            -v director_name=bosh-qemu-ci \
+            -v internal_ip=192.168.122.10 \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v kernel_path="${KERNEL_PATH}" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ) &
+        echo "bosh create-env started in background (PID $!)"
 
     - name: Deploy smoke test deployment (QEMU)
+      shell: bash
       run: |
         echo "Waiting for director on port 25555 (bosh create-env running in background)..."
-        CREATE_ENV_PID=$(cat /tmp/bosh-create-env.pid 2>/dev/null || echo "")
         DIRECTOR_UP=0
         DEADLINE=$(( $(date +%s) + 14400 ))
         i=0
-        while [ $(date +%s) -lt $DEADLINE ]; do
+        while [ "$(date +%s)" -lt "$DEADLINE" ]; do
           i=$(( i + 1 ))
-          # If bosh create-env has exited with failure, abort immediately
-          if [ -n "$CREATE_ENV_PID" ] && ! kill -0 "$CREATE_ENV_PID" 2>/dev/null; then
-            wait "$CREATE_ENV_PID" 2>/dev/null; CE_EXIT=$?
-            if [ "$CE_EXIT" != "0" ]; then
-              echo "bosh create-env exited with code $CE_EXIT - aborting wait"
-              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
-              break
-            fi
-            CREATE_ENV_PID=""
+          # If bosh create-env failed, abort immediately
+          if [ -f /tmp/bosh-create-env.failed ]; then
+            echo "bosh create-env failed - aborting wait"
+            echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            break
           fi
           if curl -skf --max-time 5 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
             echo "Director is up!"
@@ -472,42 +473,43 @@ jobs:
         sudo arp -s 192.168.122.11 52:54:00:ab:cd:11 2>/dev/null || true
 
     - name: Bootstrap BOSH Director via LXC (bosh-lite)
+      shell: bash
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
         sudo chmod -R 755 /tmp/bosh_libvirt_cpi
         sudo chown -R root:root /tmp/bosh_libvirt_cpi
-        nohup sudo bosh create-env manifests/lxc-cpi.yml \
-          -o manifests/ops/lxc-local.yml \
-          -o manifests/local-release.yml \
-          -o manifests/ops/local-store-dir.yml \
-          -o manifests/ops/lxc-mac.yml \
-          -v director_name=bosh-lxc-ci \
-          -v internal_ip=192.168.122.11 \
-          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
-          --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml \
-          > /tmp/bosh-create-env.log 2>&1 &
-        echo $! > /tmp/bosh-create-env.pid
-        echo "bosh create-env started in background (PID $(cat /tmp/bosh-create-env.pid))"
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        (
+          sudo bosh create-env manifests/lxc-cpi.yml \
+            -o manifests/ops/lxc-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/lxc-mac.yml \
+            -v director_name=bosh-lxc-ci \
+            -v internal_ip=192.168.122.11 \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ) &
+        echo "bosh create-env started in background (PID $!)"
 
     - name: Deploy smoke test deployment (LXC)
+      shell: bash
       run: |
         echo "Waiting for director on port 25555 (bosh create-env running in background)..."
-        CREATE_ENV_PID=$(cat /tmp/bosh-create-env.pid 2>/dev/null || echo "")
         DIRECTOR_UP=0
         DEADLINE=$(( $(date +%s) + 14400 ))
         i=0
-        while [ $(date +%s) -lt $DEADLINE ]; do
+        while [ "$(date +%s)" -lt "$DEADLINE" ]; do
           i=$(( i + 1 ))
-          # If bosh create-env has exited with failure, abort immediately
-          if [ -n "$CREATE_ENV_PID" ] && ! kill -0 "$CREATE_ENV_PID" 2>/dev/null; then
-            wait "$CREATE_ENV_PID" 2>/dev/null; CE_EXIT=$?
-            if [ "$CE_EXIT" != "0" ]; then
-              echo "bosh create-env exited with code $CE_EXIT - aborting wait"
-              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
-              break
-            fi
-            CREATE_ENV_PID=""
+          # If bosh create-env failed, abort immediately
+          if [ -f /tmp/bosh-create-env.failed ]; then
+            echo "bosh create-env failed - aborting wait"
+            echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            break
           fi
           if curl -skf --max-time 5 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
             echo "Director is up!"
