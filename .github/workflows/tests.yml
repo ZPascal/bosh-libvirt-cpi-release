@@ -218,8 +218,11 @@ jobs:
         echo "Waiting for director on port 25555 (bosh create-env running in background)..."
         CREATE_ENV_PID=$(cat /tmp/bosh-create-env.pid 2>/dev/null || echo "")
         DIRECTOR_UP=0
-        for i in $(seq 1 180); do
-          # If bosh create-env has already exited with failure, abort early
+        DEADLINE=$(( $(date +%s) + 14400 ))
+        i=0
+        while [ $(date +%s) -lt $DEADLINE ]; do
+          i=$(( i + 1 ))
+          # If bosh create-env has exited with failure, abort immediately
           if [ -n "$CREATE_ENV_PID" ] && ! kill -0 "$CREATE_ENV_PID" 2>/dev/null; then
             wait "$CREATE_ENV_PID" 2>/dev/null; CE_EXIT=$?
             if [ "$CE_EXIT" != "0" ]; then
@@ -235,8 +238,8 @@ jobs:
             DIRECTOR_UP=1
             break
           fi
-          echo "Attempt $i/180 - not ready yet, waiting 5s..."
-          sleep 5
+          echo "Attempt $i - not ready yet, waiting 15s..."
+          sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
           echo "=== bosh create-env log (last 80 lines) ===" && tail -80 /tmp/bosh-create-env.log || true
@@ -492,8 +495,11 @@ jobs:
         echo "Waiting for director on port 25555 (bosh create-env running in background)..."
         CREATE_ENV_PID=$(cat /tmp/bosh-create-env.pid 2>/dev/null || echo "")
         DIRECTOR_UP=0
-        for i in $(seq 1 180); do
-          # If bosh create-env has already exited with failure, abort early
+        DEADLINE=$(( $(date +%s) + 14400 ))
+        i=0
+        while [ $(date +%s) -lt $DEADLINE ]; do
+          i=$(( i + 1 ))
+          # If bosh create-env has exited with failure, abort immediately
           if [ -n "$CREATE_ENV_PID" ] && ! kill -0 "$CREATE_ENV_PID" 2>/dev/null; then
             wait "$CREATE_ENV_PID" 2>/dev/null; CE_EXIT=$?
             if [ "$CE_EXIT" != "0" ]; then
@@ -509,8 +515,8 @@ jobs:
             DIRECTOR_UP=1
             break
           fi
-          echo "Attempt $i/180 - not ready yet, waiting 5s..."
-          sleep 5
+          echo "Attempt $i - not ready yet, waiting 15s..."
+          sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
           echo "=== bosh create-env log (last 80 lines) ===" && tail -80 /tmp/bosh-create-env.log || true
