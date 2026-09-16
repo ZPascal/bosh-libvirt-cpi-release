@@ -199,7 +199,7 @@ jobs:
         sudo chmod -R 755 /tmp/bosh_libvirt_cpi
         sudo chown -R root:root /tmp/bosh_libvirt_cpi
         rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
-        (
+        setsid bash -c '
           sudo bosh create-env manifests/qemu-cpi.yml \
             -o manifests/ops/qemu-local.yml \
             -o manifests/local-release.yml \
@@ -209,14 +209,15 @@ jobs:
             -v director_name=bosh-qemu-ci \
             -v internal_ip=192.168.122.10 \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
-            -v kernel_path="${KERNEL_PATH}" \
+            -v "kernel_path='"${KERNEL_PATH}"'" \
             --state /tmp/bosh-state.json \
             --vars-store /tmp/bosh-vars.yml \
             > /tmp/bosh-create-env.log 2>&1 \
             && touch /tmp/bosh-create-env.done \
             || touch /tmp/bosh-create-env.failed
-        ) &
-        echo "bosh create-env started in background (PID $!)"
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
 
     - name: Deploy smoke test deployment (QEMU)
       shell: bash
@@ -479,7 +480,7 @@ jobs:
         sudo chmod -R 755 /tmp/bosh_libvirt_cpi
         sudo chown -R root:root /tmp/bosh_libvirt_cpi
         rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
-        (
+        setsid bash -c '
           sudo bosh create-env manifests/lxc-cpi.yml \
             -o manifests/ops/lxc-local.yml \
             -o manifests/local-release.yml \
@@ -493,8 +494,9 @@ jobs:
             > /tmp/bosh-create-env.log 2>&1 \
             && touch /tmp/bosh-create-env.done \
             || touch /tmp/bosh-create-env.failed
-        ) &
-        echo "bosh create-env started in background (PID $!)"
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
 
     - name: Deploy smoke test deployment (LXC)
       shell: bash
