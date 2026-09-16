@@ -191,6 +191,7 @@ jobs:
         sudo virsh net-update default add ip-dhcp-host \
           "<host mac='52:54:00:ab:cd:10' ip='192.168.122.10'/>" \
           --live --config || true
+        sudo arp -s 192.168.122.10 52:54:00:ab:cd:10 2>/dev/null || true
 
     - name: Bootstrap BOSH Director via QEMU (bosh-lite, direct kernel boot)
       shell: bash
@@ -234,21 +235,26 @@ jobs:
             break
           fi
           if [ -f /tmp/bosh-create-env.done ]; then
-            echo "bosh create-env completed (attempt $i)"
             if curl -skf --max-time 10 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
-              echo "Director is up!"
+              echo "Director is up! (attempt $i, create-env done)"
               cat /tmp/director-info.json
               DIRECTOR_UP=1
-            else
-              echo "create-env done but /info unreachable - director failed to start"
-              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+              break
             fi
-            break
+            if [ $(( i % 4 )) -eq 0 ]; then
+              echo "Attempt $i - create-env done but /info not yet reachable (ping: $(ping -c1 -W2 192.168.122.10 2>&1 | grep -o 'time=.*ms\|100% packet loss\|Network unreachable' | head -1 || echo unknown))"
+            fi
+          else
+            echo "Attempt $i - create-env still running, waiting 15s..."
           fi
-          echo "Attempt $i - create-env still running, waiting 15s..."
           sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
+          echo "=== network diagnostics ==="
+          ip route show || true
+          sudo arp -n | grep "192.168.122" || true
+          ping -c3 -W2 192.168.122.10 2>&1 || true
+          curl -svk --max-time 10 https://192.168.122.10:25555/info 2>&1 | tail -20 || true
           echo "=== bosh create-env log (last 80 lines) ===" && tail -80 /tmp/bosh-create-env.log || true
           echo "=== QEMU console log (monit/postgres/director events - first 40) ===" && \
             sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid\|4222\|ss port\|ps nats" | head -40 || true
@@ -518,18 +524,18 @@ jobs:
             break
           fi
           if [ -f /tmp/bosh-create-env.done ]; then
-            echo "bosh create-env completed (attempt $i)"
             if curl -skf --max-time 10 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
-              echo "Director is up!"
+              echo "Director is up! (attempt $i, create-env done)"
               cat /tmp/director-info.json
               DIRECTOR_UP=1
-            else
-              echo "create-env done but /info unreachable - director failed to start"
-              echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+              break
             fi
-            break
+            if [ $(( i % 4 )) -eq 0 ]; then
+              echo "Attempt $i - create-env done but /info not yet reachable (ping: $(ping -c1 -W2 192.168.122.11 2>&1 | grep -o 'time=.*ms\|100% packet loss\|Network unreachable' | head -1 || echo unknown))"
+            fi
+          else
+            echo "Attempt $i - create-env still running, waiting 15s..."
           fi
-          echo "Attempt $i - create-env still running, waiting 15s..."
           sleep 15
         done
         if [ "$DIRECTOR_UP" = "0" ]; then
