@@ -301,6 +301,19 @@ jobs:
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
           --ca-cert /tmp/director-ca.crt
+        echo "Waiting for director API (DB migration may still be running)..."
+        API_DEADLINE=$(( $(date +%s) + 1800 ))
+        until curl -skf --max-time 15 \
+          --user admin:admin-password \
+          https://192.168.122.10:25555/deployments > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$API_DEADLINE" ]; then
+            echo "Director API not ready after 30min - failing"
+            exit 1
+          fi
+          echo "Director API not yet ready (migration running?), retrying in 15s..."
+          sleep 15
+        done
+        echo "Director API ready"
         bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
           -n
@@ -559,6 +572,19 @@ jobs:
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \
           --ca-cert /tmp/director-ca.crt
+        echo "Waiting for director API (DB migration may still be running)..."
+        API_DEADLINE=$(( $(date +%s) + 1800 ))
+        until curl -skf --max-time 15 \
+          --user admin:admin-password \
+          https://192.168.122.11:25555/deployments > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$API_DEADLINE" ]; then
+            echo "Director API not ready after 30min - failing"
+            exit 1
+          fi
+          echo "Director API not yet ready (migration running?), retrying in 15s..."
+          sleep 15
+        done
+        echo "Director API ready"
         bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
           --client admin --client-secret admin-password \
           -n
