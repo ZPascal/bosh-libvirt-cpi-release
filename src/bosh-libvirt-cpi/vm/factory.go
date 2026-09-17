@@ -407,8 +407,10 @@ func (f Factory) Create(
 			"      else:\n" +
 			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      # workers share the director job dir; resolve the job name for path lookups\n" +
+			"      job_name = 'director' if svc in ('worker_1','worker_2','worker_3','director_scheduler') else svc\n" +
 			"      # Run the job pre-start script as root to set up required directories\n" +
-			"      pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"      pre_start = '/var/vcap/jobs/' + job_name + '/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
@@ -428,11 +430,13 @@ func (f Factory) Create(
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
 			"        except: pass\n" +
-			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"      bpmyml = '/var/vcap/jobs/' + job_name + '/config/bpm.yml'\n" +
+			"      if not os.path.exists(bpmyml):\n" +
+			"        bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = load_bpm(bpmyml)\n" +
-			"        procs = cfg.get('processes',[])\n" +
+			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == svc] or cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
 			"        for proc in procs:\n" +
@@ -906,8 +910,9 @@ func (f Factory) Create(
 			"        return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
 			"      console_log('postgres ready, starting '+svc)\n" +
+			"      job_name = 'director' if svc in ('worker_1','worker_2','worker_3','director_scheduler') else svc\n" +
 			"      # Run the job pre-start script as root to set up required directories\n" +
-			"      pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"      pre_start = '/var/vcap/jobs/' + job_name + '/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
@@ -927,11 +932,13 @@ func (f Factory) Create(
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
 			"        except: pass\n" +
-			"      bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"      bpmyml = '/var/vcap/jobs/' + job_name + '/config/bpm.yml'\n" +
+			"      if not os.path.exists(bpmyml):\n" +
+			"        bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = load_bpm(bpmyml)\n" +
-			"        procs = cfg.get('processes',[])\n" +
+			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == svc] or cfg.get('processes',[])\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
 			"        for proc in procs:\n" +
