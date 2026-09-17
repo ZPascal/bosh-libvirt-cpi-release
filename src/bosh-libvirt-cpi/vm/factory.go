@@ -407,36 +407,45 @@ func (f Factory) Create(
 			"      else:\n" +
 			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
-			"      # workers share the director job dir; resolve the job name for path lookups\n" +
-			"      job_name = 'director' if svc in ('worker_1','worker_2','worker_3','director_scheduler') else svc\n" +
-			"      # Run the job pre-start script as root to set up required directories\n" +
-			"      pre_start = '/var/vcap/jobs/' + job_name + '/bin/pre-start'\n" +
+			"      # Run pre-start from the director job (workers share the director job dir)\n" +
+			"      pre_start = '/var/vcap/jobs/director/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
 			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
-			"      # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
-			"      for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc]:\n" +
-			"        if os.path.exists(chown_root):\n" +
-			"          for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
-			"            try: os.chown(dirpath, 1000, 1000)\n" +
-			"            except: pass\n" +
-			"            for f in filenames:\n" +
-			"              try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
-			"              except: pass\n" +
-			"      # Pre-create runtime-write dirs that services create lazily (e.g. blobstore-config).\n" +
-			"      for _rtdir in ['/var/vcap/data/'+svc+'/tmp', '/var/vcap/data/'+svc+'/run', '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc]:\n" +
+			"      # Pre-create runtime-write dirs\n" +
+			"      for _rtdir in ['/var/vcap/data/director/tmp', '/var/vcap/sys/log/director', '/var/vcap/sys/run/director']:\n" +
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
 			"        except: pass\n" +
-			"      bpmyml = '/var/vcap/jobs/' + job_name + '/config/bpm.yml'\n" +
-			"      if not os.path.exists(bpmyml):\n" +
-			"        bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
+			"      # worker_N: use worker_ctl (use_bpm_for_workers=false is the default)\n" +
+			"      if svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'):\n" +
+			"        worker_ctl = '/var/vcap/jobs/director/bin/worker_ctl'\n" +
+			"        if os.path.exists(worker_ctl):\n" +
+			"          log_dir = '/var/vcap/sys/log/director'\n" +
+			"          os.makedirs(log_dir, exist_ok=True)\n" +
+			"          try: os.chown(log_dir, 1000, 1000)\n" +
+			"          except: pass\n" +
+			"          data_dir = '/var/vcap/data/director/tmp'\n" +
+			"          os.makedirs(data_dir, exist_ok=True)\n" +
+			"          try: os.chown(data_dir, 1000, 1000)\n" +
+			"          except: pass\n" +
+			"          try:\n" +
+			"            p = subprocess.Popen([worker_ctl, svc, 'start'],\n" +
+			"              stdout=log, stderr=log, start_new_session=True)\n" +
+			"            log.write('started '+svc+' via worker_ctl pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"          except Exception as e: log.write('worker_ctl failed: '+str(e)+'\\n'); log.flush()\n" +
+			"          return\n" +
+			"      # director or director_scheduler: use bpm.yml\n" +
+			"      # director_scheduler monit name maps to bpm process named 'scheduler'\n" +
+			"      bpm_proc_name = 'scheduler' if svc == 'director_scheduler' else svc\n" +
+			"      bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = load_bpm(bpmyml)\n" +
-			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == svc] or cfg.get('processes',[])\n" +
+			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == bpm_proc_name]\n" +
+			"        if not procs: log.write('no bpm process named '+bpm_proc_name+'\\n'); log.flush(); return\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
 			"        for proc in procs:\n" +
@@ -445,13 +454,11 @@ func (f Factory) Create(
 			"          if not exe or not os.path.exists(exe): log.write('skip '+pname+': exe not found\\n'); log.flush(); continue\n" +
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
-			"          # Ensure nginx temp dirs exist and are writable by vcap\n" +
 			"          if 'nginx' in exe or 'nginx' in pname:\n" +
 			"            for d in ['/var/vcap/data/'+svc+'/tmp/client_body','/var/vcap/data/'+svc+'/tmp/proxy','/var/vcap/data/'+svc+'/tmp/fastcgi','/var/vcap/data/'+svc+'/tmp/uwsgi','/var/vcap/data/'+svc+'/tmp/scgi','/var/vcap/sys/log/'+svc]:\n" +
 			"              os.makedirs(d, exist_ok=True)\n" +
 			"              try: os.chown(d, 1000, 1000)\n" +
 			"              except: pass\n" +
-			"            # nginx compiled-in default error log - must be writable before config is parsed\n" +
 			"            ng_log_dir = '/var/vcap/packages/nginx/logs'\n" +
 			"            if not os.path.exists(ng_log_dir): os.makedirs(ng_log_dir, exist_ok=True)\n" +
 			"            ng_log = ng_log_dir + '/error.log'\n" +
@@ -910,35 +917,46 @@ func (f Factory) Create(
 			"        return\n" +
 			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
 			"      console_log('postgres ready, starting '+svc)\n" +
-			"      job_name = 'director' if svc in ('worker_1','worker_2','worker_3','director_scheduler') else svc\n" +
-			"      # Run the job pre-start script as root to set up required directories\n" +
-			"      pre_start = '/var/vcap/jobs/' + job_name + '/bin/pre-start'\n" +
+			"      # Run pre-start from the director job (workers share the director job dir)\n" +
+			"      pre_start = '/var/vcap/jobs/director/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
 			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
-			"      # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
-			"      for chown_root in ['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc]:\n" +
-			"        if os.path.exists(chown_root):\n" +
-			"          for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
-			"            try: os.chown(dirpath, 1000, 1000)\n" +
-			"            except: pass\n" +
-			"            for f in filenames:\n" +
-			"              try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
-			"              except: pass\n" +
-			"      # Pre-create runtime-write dirs that services create lazily (e.g. blobstore writes to data/<svc>/tmp).\n" +
-			"      for _rtdir in ['/var/vcap/data/'+svc+'/tmp', '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc]:\n" +
+			"      # Pre-create runtime-write dirs\n" +
+			"      for _rtdir in ['/var/vcap/data/director/tmp', '/var/vcap/sys/log/director', '/var/vcap/sys/run/director']:\n" +
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
 			"        except: pass\n" +
-			"      bpmyml = '/var/vcap/jobs/' + job_name + '/config/bpm.yml'\n" +
-			"      if not os.path.exists(bpmyml):\n" +
-			"        bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
+			"      # worker_N: use worker_ctl (use_bpm_for_workers=false is the default)\n" +
+			"      if svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'):\n" +
+			"        worker_ctl = '/var/vcap/jobs/director/bin/worker_ctl'\n" +
+			"        if os.path.exists(worker_ctl):\n" +
+			"          log_dir = '/var/vcap/sys/log/director'\n" +
+			"          os.makedirs(log_dir, exist_ok=True)\n" +
+			"          try: os.chown(log_dir, 1000, 1000)\n" +
+			"          except: pass\n" +
+			"          data_dir = '/var/vcap/data/director/tmp'\n" +
+			"          os.makedirs(data_dir, exist_ok=True)\n" +
+			"          try: os.chown(data_dir, 1000, 1000)\n" +
+			"          except: pass\n" +
+			"          try:\n" +
+			"            p = subprocess.Popen([worker_ctl, svc, 'start'],\n" +
+			"              stdout=log, stderr=log, start_new_session=True)\n" +
+			"            log.write('started '+svc+' via worker_ctl pid='+str(p.pid)+'\\n'); log.flush()\n" +
+			"            console_log('started '+svc+' via worker_ctl pid='+str(p.pid))\n" +
+			"          except Exception as e: log.write('worker_ctl failed: '+str(e)+'\\n'); log.flush()\n" +
+			"          return\n" +
+			"      # director or director_scheduler: use bpm.yml\n" +
+			"      # director_scheduler monit name maps to bpm process named 'scheduler'\n" +
+			"      bpm_proc_name = 'scheduler' if svc == 'director_scheduler' else svc\n" +
+			"      bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
 			"        cfg = load_bpm(bpmyml)\n" +
-			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == svc] or cfg.get('processes',[])\n" +
+			"        procs = [p for p in cfg.get('processes',[]) if p.get('name','') == bpm_proc_name]\n" +
+			"        if not procs: log.write('no bpm process named '+bpm_proc_name+'\\n'); log.flush(); return\n" +
 			"        setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"        if not setpriv_bin: return\n" +
 			"        for proc in procs:\n" +
@@ -947,13 +965,11 @@ func (f Factory) Create(
 			"          if not exe or not os.path.exists(exe): log.write('skip '+pname+': exe not found\\n'); log.flush(); continue\n" +
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
-			"          # Ensure nginx temp dirs exist and are writable by vcap\n" +
 			"          if 'nginx' in exe or 'nginx' in pname:\n" +
 			"            for d in ['/var/vcap/data/'+svc+'/tmp/client_body','/var/vcap/data/'+svc+'/tmp/proxy','/var/vcap/data/'+svc+'/tmp/fastcgi','/var/vcap/data/'+svc+'/tmp/uwsgi','/var/vcap/data/'+svc+'/tmp/scgi','/var/vcap/sys/log/'+svc]:\n" +
 			"              os.makedirs(d, exist_ok=True)\n" +
 			"              try: os.chown(d, 1000, 1000)\n" +
 			"              except: pass\n" +
-			"            # nginx compiled-in default error log - must be writable before config is parsed\n" +
 			"            ng_log_dir = '/var/vcap/packages/nginx/logs'\n" +
 			"            if not os.path.exists(ng_log_dir): os.makedirs(ng_log_dir, exist_ok=True)\n" +
 			"            ng_log = ng_log_dir + '/error.log'\n" +

@@ -321,6 +321,26 @@ jobs:
             > /dev/null 2>&1; do
           if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
             echo "Director worker not ready after 10min - failing"
+            echo "=== QEMU console log (worker/monit events) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "worker\|monit\|start_svc\|started\|failed\|error" | tail -40 || true
+            QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+            if [ -n "$QEMU_IMG" ]; then
+              QEMU_DOM=$(sudo virsh -c qemu:///system list --name 2>/dev/null | grep -v '^$' | head -1)
+              [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null || true
+              sudo mkdir -p /mnt/qemu-rootfs-w
+              sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-w 2>/dev/null && {
+                echo "=== monit-req.log (last 30) ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-worker_1.log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-worker_1.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-worker_2.log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-worker_2.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== monit-director.log (tail) ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_1 stdout log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/sys/log/director/worker_1.stdout.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_1 stderr log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/sys/log/director/worker_1.stderr.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_ctl script exists ===" && sudo ls -la /mnt/qemu-rootfs-w/var/vcap/jobs/director/bin/worker_ctl 2>/dev/null || echo "(not found)"
+                echo "=== bpm.yml processes ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/jobs/director/config/bpm.yml 2>/dev/null | grep "name:" | head -20 || echo "(not found)"
+                echo "=== /var/vcap/sys/run/director/ ===" && sudo ls -la /mnt/qemu-rootfs-w/var/vcap/sys/run/director/ 2>/dev/null || echo "(not found)"
+                sudo umount /mnt/qemu-rootfs-w 2>/dev/null || true
+              } || echo "Mount failed"
+            fi
             exit 1
           fi
           echo "Director worker not yet ready, retrying in 15s..."
@@ -591,6 +611,19 @@ jobs:
             > /dev/null 2>&1; do
           if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
             echo "Director worker not ready after 10min - failing"
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 2 -name 'rootfs' -type d 2>/dev/null | head -1)
+            if [ -n "$VMDIR" ]; then
+              echo "=== monit-req.log (last 30) ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-req.log" 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-worker_1.log ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-worker_1.log" 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-worker_2.log ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-worker_2.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== monit-director.log (tail) ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_1 stdout log ===" && sudo cat "$VMDIR/var/vcap/sys/log/director/worker_1.stdout.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_1 stderr log ===" && sudo cat "$VMDIR/var/vcap/sys/log/director/worker_1.stderr.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_ctl exists ===" && sudo ls -la "$VMDIR/var/vcap/jobs/director/bin/worker_ctl" 2>/dev/null || echo "(not found)"
+              echo "=== bpm.yml processes ===" && sudo cat "$VMDIR/var/vcap/jobs/director/config/bpm.yml" 2>/dev/null | grep "name:" | head -20 || echo "(not found)"
+              echo "=== /var/vcap/sys/run/director/ ===" && sudo ls -la "$VMDIR/var/vcap/sys/run/director/" 2>/dev/null || echo "(not found)"
+              echo "=== LXC console log (worker events) ===" && sudo cat "$VMDIR/../../console.log" 2>/dev/null | grep -i "worker\|monit\|start_svc\|started\|failed" | tail -30 || true
+            fi
             exit 1
           fi
           echo "Director worker not yet ready, retrying in 15s..."
