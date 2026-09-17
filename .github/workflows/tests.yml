@@ -314,17 +314,19 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
-        echo "Waiting for director NATS worker (port 4222 on 192.168.122.10)..."
-        NATS_DEADLINE=$(( $(date +%s) + 300 ))
-        until nc -z -w5 192.168.122.10 4222 2>/dev/null; do
-          if [ "$(date +%s)" -ge "$NATS_DEADLINE" ]; then
-            echo "NATS not reachable after 5min - failing"
+        echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
+        WORKER_DEADLINE=$(( $(date +%s) + 600 ))
+        until timeout 30 bosh -e qemu-ci cloud-config \
+            --client admin --client-secret admin-password \
+            > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
+            echo "Director worker not ready after 10min - failing"
             exit 1
           fi
-          echo "NATS not yet ready, retrying in 10s..."
-          sleep 10
+          echo "Director worker not yet ready, retrying in 15s..."
+          sleep 15
         done
-        echo "NATS ready"
+        echo "Director worker ready"
         timeout 120 bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
           -n
@@ -582,17 +584,19 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
-        echo "Waiting for director NATS worker (port 4222 on 192.168.122.11)..."
-        NATS_DEADLINE=$(( $(date +%s) + 300 ))
-        until nc -z -w5 192.168.122.11 4222 2>/dev/null; do
-          if [ "$(date +%s)" -ge "$NATS_DEADLINE" ]; then
-            echo "NATS not reachable after 5min - failing"
+        echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
+        WORKER_DEADLINE=$(( $(date +%s) + 600 ))
+        until timeout 30 bosh -e lxc-ci cloud-config \
+            --client admin --client-secret admin-password \
+            > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
+            echo "Director worker not ready after 10min - failing"
             exit 1
           fi
-          echo "NATS not yet ready, retrying in 10s..."
-          sleep 10
+          echo "Director worker not yet ready, retrying in 15s..."
+          sleep 15
         done
-        echo "NATS ready"
+        echo "Director worker ready"
         timeout 120 bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
           --client admin --client-secret admin-password \
           -n
