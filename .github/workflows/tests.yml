@@ -314,6 +314,17 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
+        echo "Waiting for director NATS worker (port 4222 on 192.168.122.10)..."
+        NATS_DEADLINE=$(( $(date +%s) + 300 ))
+        until nc -z -w5 192.168.122.10 4222 2>/dev/null; do
+          if [ "$(date +%s)" -ge "$NATS_DEADLINE" ]; then
+            echo "NATS not reachable after 5min - failing"
+            exit 1
+          fi
+          echo "NATS not yet ready, retrying in 10s..."
+          sleep 10
+        done
+        echo "NATS ready"
         bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
           -n
@@ -571,6 +582,17 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
+        echo "Waiting for director NATS worker (port 4222 on 192.168.122.11)..."
+        NATS_DEADLINE=$(( $(date +%s) + 300 ))
+        until nc -z -w5 192.168.122.11 4222 2>/dev/null; do
+          if [ "$(date +%s)" -ge "$NATS_DEADLINE" ]; then
+            echo "NATS not reachable after 5min - failing"
+            exit 1
+          fi
+          echo "NATS not yet ready, retrying in 10s..."
+          sleep 10
+        done
+        echo "NATS ready"
         bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
           --client admin --client-secret admin-password \
           -n
