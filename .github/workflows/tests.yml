@@ -325,12 +325,12 @@ jobs:
           sleep 10
         done
         echo "NATS ready"
-        bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
+        timeout 120 bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
           -n
-        bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+        timeout 600 bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password
-        bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
+        timeout 3600 bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
           -n --fix || {
@@ -593,12 +593,12 @@ jobs:
           sleep 10
         done
         echo "NATS ready"
-        bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
+        timeout 120 bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
           --client admin --client-secret admin-password \
           -n
-        bosh -e lxc-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+        timeout 600 bosh -e lxc-ci upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password
-        bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
+        timeout 3600 bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
           -n --fix || {
