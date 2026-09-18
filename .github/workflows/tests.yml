@@ -383,7 +383,24 @@ jobs:
           --client admin --client-secret admin-password \
           -n
         timeout 600 bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
-          --client admin --client-secret admin-password
+          --client admin --client-secret admin-password || {
+            echo "=== upload-stemcell failed - dumping CPI task log ==="
+            TASK_ID=$(bosh -e qemu-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e qemu-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -60 || true
+            echo "=== CPI config inside VM ===" && \
+              QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1) && \
+              [ -n "$QEMU_IMG" ] && sudo mkdir -p /mnt/qemu-rootfs-cpi && \
+              sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-cpi 2>/dev/null && {
+                echo "--- cpi.json (redacted) ---"
+                sudo python3 -c "import json,sys; d=json.load(open('/mnt/qemu-rootfs-cpi/var/vcap/jobs/libvirt_cpi/config/cpi.json')); d.get('PrivateKey') and d.__setitem__('PrivateKey','(redacted)'); print(json.dumps(d, indent=2))" 2>/dev/null || sudo cat /mnt/qemu-rootfs-cpi/var/vcap/jobs/libvirt_cpi/config/cpi.json 2>/dev/null | head -20 || echo "(not found)"
+                echo "--- CPI job template (bin/cpi) ---"
+                sudo cat /mnt/qemu-rootfs-cpi/var/vcap/jobs/libvirt_cpi/bin/cpi 2>/dev/null | head -10 || echo "(not found)"
+                sudo umount /mnt/qemu-rootfs-cpi 2>/dev/null || true
+              } || echo "(mount failed)"
+            echo "=== QEMU console log (last 30 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            exit 1
+          }
         timeout 3600 bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
