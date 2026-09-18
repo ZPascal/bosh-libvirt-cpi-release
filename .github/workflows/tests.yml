@@ -203,11 +203,14 @@ jobs:
         sudo chmod 700 /root/.ssh
         sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
         sudo chmod 600 /root/.ssh/authorized_keys
-        # Start sshd if not already running.
-        sudo systemctl start ssh 2>/dev/null || sudo systemctl start sshd 2>/dev/null || true
+        # Enable root login and configure sshd.
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        # Start sshd if not already running; restart to pick up config changes.
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true
         # Wait for sshd to be ready.
-        for i in $(seq 1 10); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
-        # Capture the host key so the CPI can verify the host identity.
+        for i in $(seq 1 20); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        # Capture the host key for 192.168.122.1 (virbr0 gateway = this host).
         LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
         if [ -z "${LIBVIRT_HOST_KEY}" ]; then
           echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
@@ -559,8 +562,10 @@ jobs:
         sudo chmod 700 /root/.ssh
         sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
         sudo chmod 600 /root/.ssh/authorized_keys
-        sudo systemctl start ssh 2>/dev/null || sudo systemctl start sshd 2>/dev/null || true
-        for i in $(seq 1 10); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true
+        for i in $(seq 1 20); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
         LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
         if [ -z "${LIBVIRT_HOST_KEY}" ]; then
           echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
