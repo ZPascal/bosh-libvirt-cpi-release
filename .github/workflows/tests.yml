@@ -316,7 +316,7 @@ jobs:
         echo "Director API ready"
         echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
         WORKER_DEADLINE=$(( $(date +%s) + 600 ))
-        until timeout 30 bosh -e qemu-ci cloud-config \
+        until timeout 30 bosh -e qemu-ci deployments \
             --client admin --client-secret admin-password \
             > /dev/null 2>&1; do
           if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
@@ -606,7 +606,7 @@ jobs:
         echo "Director API ready"
         echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
         WORKER_DEADLINE=$(( $(date +%s) + 600 ))
-        until timeout 30 bosh -e lxc-ci cloud-config \
+        until timeout 30 bosh -e lxc-ci deployments \
             --client admin --client-secret admin-password \
             > /dev/null 2>&1; do
           if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
