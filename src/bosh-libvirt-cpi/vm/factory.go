@@ -386,35 +386,48 @@ func (f Factory) Create(
 			"def start_svc(svc):\n" +
 			"  import glob, socket, time\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
-			"  # For director-like services: start async so HTTP response returns immediately\n" +
-			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
+			"  # Map monit service names that live under the director job to their bpm process names.\n" +
+			"  # director_* and metrics_server are all bpm processes inside the director job.\n" +
+			"  DIRECTOR_BPM_MAP = {\n" +
+			"    'director': 'director',\n" +
+			"    'director_nginx': 'nginx',\n" +
+			"    'director_scheduler': 'scheduler',\n" +
+			"    'director_sync_dns': 'sync_dns',\n" +
+			"    'metrics_server': 'metrics_server',\n" +
+			"  }\n" +
+			"  # Services that need postgres to be ready before they can start\n" +
+			"  NEEDS_POSTGRES = ('director', 'director_scheduler')\n" +
+			"  is_director_svc = (svc in DIRECTOR_BPM_MAP or svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'))\n" +
+			"  needs_pg = (svc in NEEDS_POSTGRES or svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'))\n" +
+			"  if is_director_svc:\n" +
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"      pg_host = '127.0.0.1'\n" +
-			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
-			"      for i in range(5400):\n" +
-			"        try:\n" +
-			"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
-			"          import subprocess as _sp\n" +
-			"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
-			"            capture_output=True, timeout=5)\n" +
-			"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-			"          if r.returncode == 0: break\n" +
-			"        except Exception as e:\n" +
-			"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
-			"        time.sleep(2)\n" +
-			"      else:\n" +
-			"        log.write('postgres never ready\\n'); log.flush(); return\n" +
-			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
-			"      # Run pre-start from the director job (workers share the director job dir)\n" +
+			"      if needs_pg:\n" +
+			"        pg_host = '127.0.0.1'\n" +
+			"        log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
+			"        for i in range(5400):\n" +
+			"          try:\n" +
+			"            s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
+			"            import subprocess as _sp\n" +
+			"            r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
+			"              capture_output=True, timeout=5)\n" +
+			"            log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+			"            if r.returncode == 0: break\n" +
+			"          except Exception as e:\n" +
+			"            if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
+			"          time.sleep(2)\n" +
+			"        else:\n" +
+			"          log.write('postgres never ready\\n'); log.flush(); return\n" +
+			"        log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"      # Run pre-start from the director job\n" +
 			"      pre_start = '/var/vcap/jobs/director/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
 			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
-			"      # Pre-create runtime-write dirs\n" +
+			"      # Pre-create runtime-write dirs for the director job\n" +
 			"      for _rtdir in ['/var/vcap/data/director/tmp', '/var/vcap/sys/log/director', '/var/vcap/sys/run/director']:\n" +
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
@@ -437,9 +450,8 @@ func (f Factory) Create(
 			"            log.write('started '+svc+' via worker_ctl pid='+str(p.pid)+'\\n'); log.flush()\n" +
 			"          except Exception as e: log.write('worker_ctl failed: '+str(e)+'\\n'); log.flush()\n" +
 			"          return\n" +
-			"      # director or director_scheduler: use bpm.yml\n" +
-			"      # director_scheduler monit name maps to bpm process named 'scheduler'\n" +
-			"      bpm_proc_name = 'scheduler' if svc == 'director_scheduler' else svc\n" +
+			"      # director bpm services: look up by mapped process name\n" +
+			"      bpm_proc_name = DIRECTOR_BPM_MAP.get(svc, svc)\n" +
 			"      bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
@@ -455,7 +467,7 @@ func (f Factory) Create(
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
 			"          if 'nginx' in exe or 'nginx' in pname:\n" +
-			"            for d in ['/var/vcap/data/'+svc+'/tmp/client_body','/var/vcap/data/'+svc+'/tmp/proxy','/var/vcap/data/'+svc+'/tmp/fastcgi','/var/vcap/data/'+svc+'/tmp/uwsgi','/var/vcap/data/'+svc+'/tmp/scgi','/var/vcap/sys/log/'+svc]:\n" +
+			"            for d in ['/var/vcap/data/director/tmp/client_body','/var/vcap/data/director/tmp/proxy','/var/vcap/data/director/tmp/fastcgi','/var/vcap/data/director/tmp/uwsgi','/var/vcap/data/director/tmp/scgi','/var/vcap/sys/log/director']:\n" +
 			"              os.makedirs(d, exist_ok=True)\n" +
 			"              try: os.chown(d, 1000, 1000)\n" +
 			"              except: pass\n" +
@@ -466,9 +478,10 @@ func (f Factory) Create(
 			"            try: os.chmod(ng_log, 0o666)\n" +
 			"            except: pass\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"          pf = '/var/vcap/sys/run/bpm/director/'+pname+'.pid'\n" +
 			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"          os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          try: os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          except: pass\n" +
 			"          p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
 			"          open(pf,'w').write(str(p.pid))\n" +
 			"          log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
@@ -892,44 +905,52 @@ func (f Factory) Create(
 			"  import glob, socket, time\n" +
 			"  import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)\n" +
 			"  console_log('start_svc called: '+svc)\n" +
-			"  # For director-like services: start async so HTTP response returns immediately\n" +
-			"  if svc in ('director', 'worker_1', 'worker_2', 'worker_3', 'director_scheduler'):\n" +
+			"  DIRECTOR_BPM_MAP = {\n" +
+			"    'director': 'director',\n" +
+			"    'director_nginx': 'nginx',\n" +
+			"    'director_scheduler': 'scheduler',\n" +
+			"    'director_sync_dns': 'sync_dns',\n" +
+			"    'metrics_server': 'metrics_server',\n" +
+			"  }\n" +
+			"  NEEDS_POSTGRES = ('director', 'director_scheduler')\n" +
+			"  is_director_svc = (svc in DIRECTOR_BPM_MAP or svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'))\n" +
+			"  needs_pg = (svc in NEEDS_POSTGRES or svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'))\n" +
+			"  if is_director_svc:\n" +
 			"    import threading\n" +
 			"    def _start_async():\n" +
 			"      log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
-			"      pg_host = '127.0.0.1'\n" +
-			"      console_log('waiting for postgres for '+svc)\n" +
-			"      log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
-			"      for i in range(5400):\n" +
-			"        try:\n" +
-			"          s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
-			"          import subprocess as _sp\n" +
-			"          r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
-			"            capture_output=True, timeout=5)\n" +
-			"          log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
-			"          if r.returncode == 0: break\n" +
-			"        except Exception as e:\n" +
-			"          if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
-			"        time.sleep(2)\n" +
-			"      else:\n" +
-			"        log.write('postgres never ready\\n'); log.flush()\n" +
-			"        console_log('postgres never ready for '+svc)\n" +
-			"        return\n" +
-			"      log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
-			"      console_log('postgres ready, starting '+svc)\n" +
-			"      # Run pre-start from the director job (workers share the director job dir)\n" +
+			"      if needs_pg:\n" +
+			"        pg_host = '127.0.0.1'\n" +
+			"        console_log('waiting for postgres for '+svc)\n" +
+			"        log.write('waiting for postgres on '+pg_host+':5432\\n'); log.flush()\n" +
+			"        for i in range(5400):\n" +
+			"          try:\n" +
+			"            s = socket.create_connection((pg_host, 5432), 1); s.close()\n" +
+			"            import subprocess as _sp\n" +
+			"            r = _sp.run(['/var/vcap/packages/postgres-15/bin/pg_isready','-h',pg_host,'-p','5432'],\n" +
+			"              capture_output=True, timeout=5)\n" +
+			"            log.write('pg_isready rc='+str(r.returncode)+' out='+r.stdout.decode()[:60]+'\\n'); log.flush()\n" +
+			"            if r.returncode == 0: break\n" +
+			"          except Exception as e:\n" +
+			"            if i % 30 == 0: log.write('pg wait err (i='+str(i)+'): '+str(e)+'\\n'); log.flush()\n" +
+			"          time.sleep(2)\n" +
+			"        else:\n" +
+			"          log.write('postgres never ready\\n'); log.flush()\n" +
+			"          console_log('postgres never ready for '+svc)\n" +
+			"          return\n" +
+			"        log.write('postgres ready, starting '+svc+'\\n'); log.flush()\n" +
+			"        console_log('postgres ready, starting '+svc)\n" +
+			"      # Run pre-start from the director job\n" +
 			"      pre_start = '/var/vcap/jobs/director/bin/pre-start'\n" +
 			"      if os.path.exists(pre_start):\n" +
 			"        try:\n" +
 			"          r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
 			"          log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"        except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
-			"      # Pre-create runtime-write dirs\n" +
 			"      for _rtdir in ['/var/vcap/data/director/tmp', '/var/vcap/sys/log/director', '/var/vcap/sys/run/director']:\n" +
 			"        os.makedirs(_rtdir, exist_ok=True)\n" +
 			"        try: os.chown(_rtdir, 1000, 1000)\n" +
 			"        except: pass\n" +
-			"      # worker_N: use worker_ctl (use_bpm_for_workers=false is the default)\n" +
 			"      if svc.startswith('worker_') or svc.startswith('dynamic_disks_worker_'):\n" +
 			"        worker_ctl = '/var/vcap/jobs/director/bin/worker_ctl'\n" +
 			"        if os.path.exists(worker_ctl):\n" +
@@ -948,9 +969,7 @@ func (f Factory) Create(
 			"            console_log('started '+svc+' via worker_ctl pid='+str(p.pid))\n" +
 			"          except Exception as e: log.write('worker_ctl failed: '+str(e)+'\\n'); log.flush()\n" +
 			"          return\n" +
-			"      # director or director_scheduler: use bpm.yml\n" +
-			"      # director_scheduler monit name maps to bpm process named 'scheduler'\n" +
-			"      bpm_proc_name = 'scheduler' if svc == 'director_scheduler' else svc\n" +
+			"      bpm_proc_name = DIRECTOR_BPM_MAP.get(svc, svc)\n" +
 			"      bpmyml = '/var/vcap/jobs/director/config/bpm.yml'\n" +
 			"      if not os.path.exists(bpmyml): return\n" +
 			"      try:\n" +
@@ -966,7 +985,7 @@ func (f Factory) Create(
 			"          args = [exe] + proc.get('args',[])\n" +
 			"          env2 = dict(os.environ); env2.update(proc.get('env',{}))\n" +
 			"          if 'nginx' in exe or 'nginx' in pname:\n" +
-			"            for d in ['/var/vcap/data/'+svc+'/tmp/client_body','/var/vcap/data/'+svc+'/tmp/proxy','/var/vcap/data/'+svc+'/tmp/fastcgi','/var/vcap/data/'+svc+'/tmp/uwsgi','/var/vcap/data/'+svc+'/tmp/scgi','/var/vcap/sys/log/'+svc]:\n" +
+			"            for d in ['/var/vcap/data/director/tmp/client_body','/var/vcap/data/director/tmp/proxy','/var/vcap/data/director/tmp/fastcgi','/var/vcap/data/director/tmp/uwsgi','/var/vcap/data/director/tmp/scgi','/var/vcap/sys/log/director']:\n" +
 			"              os.makedirs(d, exist_ok=True)\n" +
 			"              try: os.chown(d, 1000, 1000)\n" +
 			"              except: pass\n" +
@@ -977,9 +996,10 @@ func (f Factory) Create(
 			"            try: os.chmod(ng_log, 0o666)\n" +
 			"            except: pass\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"          pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"          pf = '/var/vcap/sys/run/bpm/director/'+pname+'.pid'\n" +
 			"          os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"          os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          try: os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"          except: pass\n" +
 			"          p = subprocess.Popen(args, env=env2, stdout=log, stderr=log, start_new_session=True)\n" +
 			"          open(pf,'w').write(str(p.pid))\n" +
 			"          log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
