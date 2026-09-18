@@ -1,0 +1,17 @@
+---
+# Adds SSH credentials for the director-deployed CPI so it can SSH-tunnel
+# back to the host's libvirt socket from inside the director LXC container.
+# Cloud-provider properties are intentionally left without SSH (create-env
+# runs on the host and connects to lxc:/// directly).
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host?
+  value: ((libvirt_host))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/username?
+  value: ((libvirt_username))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/private_key?
+  value: ((libvirt_private_key))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
+  value: ((libvirt_host_key))

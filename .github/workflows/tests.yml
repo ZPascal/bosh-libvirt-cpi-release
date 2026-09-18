@@ -193,6 +193,30 @@ jobs:
           --live --config || true
         sudo arp -s 192.168.122.10 52:54:00:ab:cd:10 2>/dev/null || true
 
+    - name: Setup SSH for director VM to host libvirt tunnel (QEMU)
+      run: |
+        # Generate an SSH key pair that the director VM will use to SSH back to
+        # this runner and access qemu:///system via Unix socket forwarding.
+        ssh-keygen -t ed25519 -f /tmp/bosh-libvirt-ssh-key -N "" -C "bosh-director-libvirt"
+        # Authorise the key on this runner as root (the CPI runs as vcap/root in the VM).
+        sudo mkdir -p /root/.ssh
+        sudo chmod 700 /root/.ssh
+        sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
+        sudo chmod 600 /root/.ssh/authorized_keys
+        # Start sshd if not already running.
+        sudo systemctl start ssh 2>/dev/null || sudo systemctl start sshd 2>/dev/null || true
+        # Wait for sshd to be ready.
+        for i in $(seq 1 10); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        # Capture the host key so the CPI can verify the host identity.
+        LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
+        if [ -z "${LIBVIRT_HOST_KEY}" ]; then
+          echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
+          sudo ss -tlnp | grep ':22' || true
+          exit 1
+        fi
+        echo "LIBVIRT_HOST_KEY=${LIBVIRT_HOST_KEY}" >> $GITHUB_ENV
+        echo "Libvirt SSH host key: ${LIBVIRT_HOST_KEY}"
+
     - name: Bootstrap BOSH Director via QEMU (bosh-lite, direct kernel boot)
       shell: bash
       run: |
@@ -207,10 +231,15 @@ jobs:
             -o manifests/ops/local-store-dir.yml \
             -o manifests/ops/qemu-mac.yml \
             -o manifests/ops/qemu-kernel-boot.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
             -v director_name=bosh-qemu-ci \
             -v internal_ip=192.168.122.10 \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
             -v "kernel_path='"${KERNEL_PATH}"'" \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
             --state /tmp/bosh-state.json \
             --vars-store /tmp/bosh-vars.yml \
             > /tmp/bosh-create-env.log 2>&1 \
@@ -382,12 +411,17 @@ jobs:
           -o manifests/ops/local-store-dir.yml \
           -o manifests/ops/qemu-mac.yml \
           -o manifests/ops/qemu-kernel-boot.yml \
+          -o manifests/ops/qemu-director-ssh.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
           -v internal_ip=192.168.122.10 \
           -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
-          -v kernel_path="${KERNEL_PATH}" || true
+          -v kernel_path="${KERNEL_PATH}" \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
 
   integration-tests-lxc:
     name: Integration Tests (LXC)
@@ -516,6 +550,26 @@ jobs:
         # static IP immediately, without waiting for an ARP reply from inside.
         sudo arp -s 192.168.122.11 52:54:00:ab:cd:11 2>/dev/null || true
 
+    - name: Setup SSH for director container to host libvirt tunnel (LXC)
+      run: |
+        # Generate an SSH key pair that the director LXC container will use to
+        # SSH back to this runner and access lxc:/// via Unix socket forwarding.
+        ssh-keygen -t ed25519 -f /tmp/bosh-libvirt-ssh-key -N "" -C "bosh-director-libvirt"
+        sudo mkdir -p /root/.ssh
+        sudo chmod 700 /root/.ssh
+        sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
+        sudo chmod 600 /root/.ssh/authorized_keys
+        sudo systemctl start ssh 2>/dev/null || sudo systemctl start sshd 2>/dev/null || true
+        for i in $(seq 1 10); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
+        if [ -z "${LIBVIRT_HOST_KEY}" ]; then
+          echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
+          sudo ss -tlnp | grep ':22' || true
+          exit 1
+        fi
+        echo "LIBVIRT_HOST_KEY=${LIBVIRT_HOST_KEY}" >> $GITHUB_ENV
+        echo "Libvirt SSH host key: ${LIBVIRT_HOST_KEY}"
+
     - name: Bootstrap BOSH Director via LXC (bosh-lite)
       shell: bash
       run: |
@@ -529,9 +583,14 @@ jobs:
             -o manifests/local-release.yml \
             -o manifests/ops/local-store-dir.yml \
             -o manifests/ops/lxc-mac.yml \
+            -o manifests/ops/lxc-director-ssh.yml \
             -v director_name=bosh-lxc-ci \
             -v internal_ip=192.168.122.11 \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
             --state /tmp/bosh-state.json \
             --vars-store /tmp/bosh-vars.yml \
             > /tmp/bosh-create-env.log 2>&1 \
@@ -670,11 +729,16 @@ jobs:
           -o manifests/local-release.yml \
           -o manifests/ops/local-store-dir.yml \
           -o manifests/ops/lxc-mac.yml \
+          -o manifests/ops/lxc-director-ssh.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \
           -v internal_ip=192.168.122.11 \
-          -v stemcell_url=file:///tmp/bosh-stemcell.tgz || true
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
 
   code-quality:
     name: Code Quality
