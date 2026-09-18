@@ -64,8 +64,8 @@ func sshLibvirtURI(
 	}
 
 	cleanup = func() {
-		ln.Close()        //nolint:errcheck
-		sshClient.Close() //nolint:errcheck
+		ln.Close()         //nolint:errcheck
+		sshClient.Close()  //nolint:errcheck
 		os.Remove(tmpSock) //nolint:errcheck
 	}
 
