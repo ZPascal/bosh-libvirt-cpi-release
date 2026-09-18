@@ -170,15 +170,30 @@ jobs:
         chmod +x packages/golang-1-linux/packaging
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
 
+    - name: Inject libvirt runtime libs into CPI package
+      run: |
+        # The Ubuntu Jammy warden BOSH stemcell does not ship libvirt0.
+        # Bundle libvirt.so.0 (and QEMU/LXC variants) from the GHA runner into the
+        # BOSH package so the packaging script can install them into the director VM.
+        mkdir -p packages/libvirt_cpi/lib
+        for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
+          libpath=$(ldconfig -p 2>/dev/null | awk -v n="$libname" '$0 ~ n {print $NF}' | head -1 || true)
+          [ -z "$libpath" ] && libpath=$(find /usr/lib /usr/local/lib -name "$libname" 2>/dev/null | head -1 || true)
+          if [ -n "$libpath" ]; then
+            cp -L "$libpath" packages/libvirt_cpi/lib/"$libname"
+            echo "Injected $libname from $libpath ($(du -sh packages/libvirt_cpi/lib/$libname | cut -f1))"
+          else
+            echo "WARNING: $libname not found on build machine"
+          fi
+        done
+        ls -lh packages/libvirt_cpi/lib/
+
     - name: Build CPI release tarball
       run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
 
     - name: Download BOSH stemcell
       run: |
         curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
-          -o /tmp/bosh-stemcell.tgz
-
-    - name: Prepare host kernel for direct boot
       run: |
         KERNEL=$(ls /boot/vmlinuz-* | sort -V | tail -1)
         echo "Using kernel: $KERNEL"
@@ -552,6 +567,24 @@ jobs:
         printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
         chmod +x packages/golang-1-linux/packaging
         printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+
+    - name: Inject libvirt runtime libs into CPI package
+      run: |
+        # The Ubuntu Jammy warden BOSH stemcell does not ship libvirt0.
+        # Bundle libvirt.so.0 (and QEMU/LXC variants) from the GHA runner into the
+        # BOSH package so the packaging script can install them into the director VM.
+        mkdir -p packages/libvirt_cpi/lib
+        for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
+          libpath=$(ldconfig -p 2>/dev/null | awk -v n="$libname" '$0 ~ n {print $NF}' | head -1 || true)
+          [ -z "$libpath" ] && libpath=$(find /usr/lib /usr/local/lib -name "$libname" 2>/dev/null | head -1 || true)
+          if [ -n "$libpath" ]; then
+            cp -L "$libpath" packages/libvirt_cpi/lib/"$libname"
+            echo "Injected $libname from $libpath ($(du -sh packages/libvirt_cpi/lib/$libname | cut -f1))"
+          else
+            echo "WARNING: $libname not found on build machine"
+          fi
+        done
+        ls -lh packages/libvirt_cpi/lib/
 
     - name: Build CPI release tarball
       run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
