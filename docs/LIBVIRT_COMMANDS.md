@@ -1,46 +1,46 @@
 # Libvirt Command Reference - BOSH CPI
 
-## Verwendete native libvirt/virsh Befehle
+## Native libvirt/virsh Commands Used
 
-### VM-Lifecycle
+### VM Lifecycle
 
 ```bash
-# Domain definieren (aus XML)
+# Define domain (from XML)
 virsh define /path/to/domain.xml
 
-# Domain starten
+# Start domain
 virsh start <domain-name>
 
-# Domain stoppen (sofort)
+# Stop domain (immediately)
 virsh destroy <domain-name>
 
-# Domain herunterfahren (sauber)
+# Shut down domain (gracefully)
 virsh shutdown <domain-name>
 
-# Domain neu starten
+# Restart domain
 virsh reboot <domain-name>
 
-# Domain löschen (mit Storage)
+# Delete domain (with storage)
 virsh undefine <domain-name> --remove-all-storage --snapshots-metadata
 
-# Domain-Status
+# Domain status
 virsh domstate <domain-name>
 
-# Domain-Info
+# Domain info
 virsh dominfo <domain-name>
 
-# Domain-XML exportieren
+# Export domain XML
 virsh dumpxml <domain-name>
 ```
 
-### Konfiguration
+### Configuration
 
 ```bash
-# Speicher setzen (in KB)
+# Set memory (in KB)
 virsh setmaxmem <domain> 2097152 --config  # 2GB
 virsh setmem <domain> 2097152 --config
 
-# vCPUs setzen
+# Set vCPUs
 virsh setvcpus <domain> 2 --config --maximum
 virsh setvcpus <domain> 2 --config
 ```
@@ -48,21 +48,21 @@ virsh setvcpus <domain> 2 --config
 ### Disks
 
 ```bash
-# Disk anhängen
+# Attach disk
 virsh attach-disk <domain> \
     /path/to/disk.qcow2 \
     vda \
     --persistent \
     --subdriver qcow2
 
-# Disk entfernen
+# Detach disk
 virsh detach-disk <domain> vda --persistent
 ```
 
-### Netzwerk
+### Network
 
 ```bash
-# Netzwerk-Interface anhängen
+# Attach network interface
 virsh attach-interface <domain> \
     network \
     --source default \
@@ -74,53 +74,53 @@ virsh attach-interface <domain> \
 ### Snapshots
 
 ```bash
-# Snapshot erstellen
+# Create snapshot
 virsh snapshot-create-as <domain> \
     snapshot-name \
     --description "Description"
 
-# Snapshot löschen
+# Delete snapshot
 virsh snapshot-delete <domain> snapshot-name
 
-# Zu Snapshot zurückkehren
+# Revert to snapshot
 virsh snapshot-revert <domain> snapshot-name
 ```
 
-### Disk-Tools (qemu-img)
+### Disk Tools (qemu-img)
 
 ```bash
-# qcow2-Disk erstellen
+# Create qcow2 disk
 qemu-img create -f qcow2 /path/to/disk.qcow2 10G
 
-# VMDK zu qcow2 konvertieren
+# Convert VMDK to qcow2
 qemu-img convert -f vmdk -O qcow2 input.vmdk output.qcow2
 
-# Disk-Info
+# Disk info
 qemu-img info /path/to/disk.qcow2
 ```
 
-## Device-Naming-Konventionen
+## Device Naming Conventions
 
-### Virtio (empfohlen)
+### Virtio (recommended)
 - vda, vdb, vdc, vdd, ...
-- Beste Performance
-- Paravirtualisierung
+- Best performance
+- Paravirtualization
 
 ### SCSI
 - sda, sdb, sdc, sdd, ...
-- Kompatibilität
+- Compatibility
 
 ### IDE
 - hda, hdb, hdc, hdd
 - Legacy
 
-## Netzwerk-Typen
+## Network Types
 
 - **network**: Libvirt-managed network (NAT, routed)
 - **bridge**: Direct bridge attachment
 - **direct**: Direct macvtap connection
 
-## Beispiel Domain-XML (Minimal)
+## Example Domain XML (Minimal)
 
 ```xml
 <domain type='kvm'>
@@ -145,43 +145,43 @@ qemu-img info /path/to/disk.qcow2
 </domain>
 ```
 
-## Verwendung im CPI
+## Usage in CPI
 
-| Operation | Verwendet |
-|-----------|-----------|
-| **VM erstellen** | `define` |
-| **VM starten** | `start` |
-| **VM stoppen** | `destroy` |
-| **VM löschen** | `undefine --remove-all-storage` |
-| **Speicher ändern** | `setmem`, `setmaxmem` |
-| **CPUs ändern** | `setvcpus` |
-| **Disk erstellen** | `qemu-img create` |
-| **Disk anhängen** | `attach-disk` |
-| **Disk entfernen** | `detach-disk` |
-| **NIC anhängen** | `attach-interface` |
+| Operation | Uses |
+|-----------|------|
+| **Create VM** | `define` |
+| **Start VM** | `start` |
+| **Stop VM** | `destroy` |
+| **Delete VM** | `undefine --remove-all-storage` |
+| **Change memory** | `setmem`, `setmaxmem` |
+| **Change CPUs** | `setvcpus` |
+| **Create disk** | `qemu-img create` |
+| **Attach disk** | `attach-disk` |
+| **Detach disk** | `detach-disk` |
+| **Attach NIC** | `attach-interface` |
 | **Snapshot** | `snapshot-create-as` |
 | **Status** | `domstate` |
 | **Info** | `dominfo` |
 
-## Performance-Tipps
+## Performance Tips
 
-1. **Virtio verwenden**: Immer virtio-Geräte für beste Performance
-2. **qcow2-Format**: Native Snapshots, Kompression, Thin Provisioning
-3. **KVM-Beschleunigung**: CPU host-passthrough mode
-4. **Cache-Modi**: Für Disks writeback/writethrough je nach Bedarf
+1. **Use Virtio**: Always use virtio devices for best performance
+2. **qcow2 format**: Native snapshots, compression, thin provisioning
+3. **KVM acceleration**: CPU host-passthrough mode
+4. **Cache modes**: For disks use writeback/writethrough as needed
 
 ## Troubleshooting
 
 ```bash
-# Alle Domains auflisten
+# List all domains
 virsh list --all
 
-# Domain-XML prüfen
+# Check domain XML
 virsh dumpxml <domain> | less
 
-# Libvirt-Logs
+# Libvirt logs
 journalctl -u libvirtd -f
 
-# QEMU-Logs
+# QEMU logs
 tail -f /var/log/libvirt/qemu/<domain>.log
 ```

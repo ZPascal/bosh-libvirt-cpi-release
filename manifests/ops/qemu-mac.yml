@@ -1,0 +1,10 @@
+---
+# Sets a fixed MAC address and kernel path on the Director VM for CI use.
+# The DHCP reservation pins 192.168.122.10 to this MAC.
+# The kernel path enables direct-kernel boot via virtio-9p rootfs.
+- type: replace
+  path: /resource_pools/name=vms/cloud_properties/mac?
+  value: "52:54:00:ab:cd:10"
+- type: replace
+  path: /resource_pools/name=vms/cloud_properties/kernel?
+  value: ((kernel_path))

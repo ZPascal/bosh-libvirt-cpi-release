@@ -75,3 +75,13 @@ properties:
     description: HTTPS proxy for outbound connections.
   env.no_proxy:
     description: Comma-separated list of hosts to bypass the proxy.
+
+  mbus_bootstrap_ssl.ca:
+    description: CA certificate for the mbus bootstrap TLS listener (from mbus_bootstrap_ssl variable).
+    default: ""
+  mbus_bootstrap_ssl.certificate:
+    description: Certificate for the mbus bootstrap TLS listener.
+    default: ""
+  mbus_bootstrap_ssl.private_key:
+    description: Private key for the mbus bootstrap TLS listener.
+    default: ""

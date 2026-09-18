@@ -8,9 +8,9 @@ fi
 
 source ${pkg_dir}/bosh/compile.env
 
-# CGO_ENABLED=1 is required by libvirt.org/go/libvirt (cgo bindings).
-# The build host must have libvirt-dev installed:
-#   apt-get install -y libvirt-dev
+# libvirt_dlopen: load libvirt.so at runtime via dlopen instead of linking
+# at compile time. This avoids needing pkg-config/libvirt-dev headers in
+# the stemcell during BOSH package compilation.
 export CGO_ENABLED=1
 
 mkdir -p /tmp/go/.cache
@@ -19,8 +19,29 @@ export GOCACHE=${GOPATH}/.cache
 
 cd ${BOSH_COMPILE_TARGET}/bosh-libvirt-cpi
 mkdir -p ${BOSH_INSTALL_TARGET}/bin
+mkdir -p ${BOSH_INSTALL_TARGET}/lib
 
 export GOARCH=amd64
 export GOOS=linux
 
-go build -mod=vendor -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go
+go build -mod=vendor -tags libvirt_dlopen -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go
+
+# Copy bundled libvirt runtime libraries from the package source tree.
+# These are injected into the BOSH release at create-release time by the CI
+# workflow (see .github/workflows/tests.yml "Inject libvirt runtime libs" step).
+for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
+  srclib=${BOSH_COMPILE_TARGET}/libvirt_cpi/lib/${libname}
+  if [ -f "$srclib" ]; then
+    cp "$srclib" ${BOSH_INSTALL_TARGET}/lib/"$libname"
+    echo "Installed bundled $libname"
+  else
+    echo "WARNING: $libname not found in package source (${srclib}) - skipping"
+  fi
+done
+
+# The CPI requires libvirt.so.0 at runtime.
+if [ ! -f "${BOSH_INSTALL_TARGET}/lib/libvirt.so.0" ]; then
+  echo "ERROR: libvirt.so.0 missing from package bundle"
+  exit 1
+fi
+

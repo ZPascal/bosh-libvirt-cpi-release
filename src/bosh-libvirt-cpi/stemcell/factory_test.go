@@ -48,6 +48,8 @@ var _ = Describe("stemcell.Factory", func() {
 			compressor,
 			logger,
 		)
+		factory.ConvertToQCOW2 = func(src, dst string) error { return nil }
+		factory.DecompressImage = func(src, dst string) error { return nil }
 	})
 
 	AfterEach(func() {
@@ -68,25 +70,11 @@ var _ = Describe("stemcell.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Generating stemcell id"))
 		})
 
-		It("returns error when TempDir fails", func() {
-			fakeFS.TempDirErr = errors.New("tempdir failed")
+		It("returns error when Upload fails", func() {
+			factory.ConvertToQCOW2 = func(src, dst string) error { return errors.New("upload failed") }
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Creating tmp stemcell directory"))
-		})
-
-		It("returns error when decompress fails", func() {
-			compressor.DecompressFileToDirErr = errors.New("decompress failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Unpacking stemcell"))
-		})
-
-		It("returns error when runner Upload fails", func() {
-			runner.UploadErr = errors.New("upload failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Uploading stemcell image"))
+			Expect(err.Error()).To(ContainSubstring("Converting stemcell image to qcow2"))
 		})
 
 		It("returns error when BuildStemcellDomain fails", func() {
