@@ -194,6 +194,9 @@ jobs:
     - name: Download BOSH stemcell
       run: |
         curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Prepare host kernel for direct boot
       run: |
         KERNEL=$(ls /boot/vmlinuz-* | sort -V | tail -1)
         echo "Using kernel: $KERNEL"
