@@ -1,18 +1,9 @@
 ---
-# Removes SSH connection fields from the cloud_provider section so bosh create-env
-# can bootstrap locally (qemu:///system) without SSH.  The instance_groups properties
-# are intentionally kept so the deployed director's CPI job receives the SSH credentials
-# needed to tunnel back to the host's libvirt socket at runtime.
-# Also restores the libvirt default NAT network (192.168.122.0/24)
+# SSH credentials remain in both cloud_provider and instance_groups so
+# both the bootstrap CPI (running on this host via SSH tunnel to 192.168.122.1)
+# and the deployed director's CPI can reach libvirtd.
+# Restores the libvirt default NAT network (192.168.122.0/24)
 # so the QEMU Director VM gets a reachable IP.
-- type: remove
-  path: /cloud_provider/properties/host?
-- type: remove
-  path: /cloud_provider/properties/username?
-- type: remove
-  path: /cloud_provider/properties/private_key?
-- type: remove
-  path: /cloud_provider/properties/host_key?
 - type: replace
   path: /networks/name=default/type
   value: manual
