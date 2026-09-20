@@ -46,9 +46,10 @@ func sshLibvirtURI(
 	}
 
 	clientCfg := &ssh.ClientConfig{
-		User:            username,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
-		HostKeyCallback: ssh.FixedHostKey(pubKey),
+		User:              username,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
+		HostKeyCallback:   ssh.FixedHostKey(pubKey),
+		HostKeyAlgorithms: []string{pubKey.Type()},
 	}
 	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, sshPort), clientCfg)
 	if err != nil {
