@@ -18,8 +18,4 @@ export NO_PROXY=<%= no_proxy.shellescape %>
 export no_proxy=<%= no_proxy.shellescape %>
 <% end %>
 
-# Prepend the bundled libvirt.so.0 so the CPI works inside BOSH VMs that
-# don't have libvirt0 installed (e.g. the Ubuntu Jammy warden stemcell).
-export LD_LIBRARY_PATH=$BOSH_PACKAGES_DIR/libvirt_cpi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
-
 exec $BOSH_PACKAGES_DIR/libvirt_cpi/bin/cpi -configPath $BOSH_JOBS_DIR/libvirt_cpi/config/cpi.json

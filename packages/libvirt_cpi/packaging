@@ -8,9 +8,13 @@ fi
 
 source ${pkg_dir}/bosh/compile.env
 
-# libvirt_dlopen: load libvirt.so at runtime via dlopen instead of linking
-# at compile time. This avoids needing pkg-config/libvirt-dev headers in
-# the stemcell during BOSH package compilation.
+# Install libvirt development headers (needed for CGO compilation) and the
+# runtime library.  Running apt-get here is safe: BOSH compiles packages on
+# the target VM which has internet access on GHA runners.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y --no-install-recommends libvirt-dev libvirt0
+
 export CGO_ENABLED=1
 
 mkdir -p /tmp/go/.cache
@@ -19,29 +23,12 @@ export GOCACHE=${GOPATH}/.cache
 
 cd ${BOSH_COMPILE_TARGET}/bosh-libvirt-cpi
 mkdir -p ${BOSH_INSTALL_TARGET}/bin
-mkdir -p ${BOSH_INSTALL_TARGET}/lib
 
 export GOARCH=amd64
 export GOOS=linux
 
-go build -mod=vendor -tags libvirt_dlopen -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go
-
-# Copy bundled libvirt runtime libraries from the package source tree.
-# These are injected into the BOSH release at create-release time by the CI
-# workflow (see .github/workflows/tests.yml "Inject libvirt runtime libs" step).
-for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
-  srclib=${BOSH_COMPILE_TARGET}/libvirt_cpi/lib/${libname}
-  if [ -f "$srclib" ]; then
-    cp "$srclib" ${BOSH_INSTALL_TARGET}/lib/"$libname"
-    echo "Installed bundled $libname"
-  else
-    echo "WARNING: $libname not found in package source (${srclib}) - skipping"
-  fi
-done
-
-# The CPI requires libvirt.so.0 at runtime.
-if [ ! -f "${BOSH_INSTALL_TARGET}/lib/libvirt.so.0" ]; then
-  echo "ERROR: libvirt.so.0 missing from package bundle"
-  exit 1
-fi
-
+# Build without libvirt_dlopen: libvirt-dev is now installed so we can link
+# against the system libvirt.so at compile time.  libvirt0 installed above
+# provides the runtime library in the standard system path (/usr/lib/...) so
+# LD_LIBRARY_PATH manipulation is unnecessary.
+go build -mod=vendor -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go

@@ -21,8 +21,5 @@ Library
 src/bosh_libvirt_cpi/vendor/cache/
 manifests/bosh-state.json
 
-# libvirt runtime libs injected by CI at create-release time — never commit binaries
-src/libvirt_cpi/lib/
-
 /pkg
 /bin

@@ -11,8 +11,3 @@ files:
 - "bosh-libvirt-cpi/**/*.c"
 - "bosh-libvirt-cpi/go.{mod,sum}"
 - "bosh-libvirt-cpi/vendor/modules.txt"
-# libvirt runtime libraries injected by the CI workflow at create-release time
-# so the CPI can load libvirt.so.0 inside the director VM stemcell.
-- "libvirt_cpi/lib/libvirt.so.0"
-- "libvirt_cpi/lib/libvirt-qemu.so.0"
-- "libvirt_cpi/lib/libvirt-lxc.so.0"
