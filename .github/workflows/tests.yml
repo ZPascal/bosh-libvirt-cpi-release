@@ -234,7 +234,6 @@ jobs:
             -o manifests/ops/local-store-dir.yml \
             -o manifests/ops/qemu-mac.yml \
             -o manifests/ops/qemu-kernel-boot.yml \
-            -o manifests/ops/qemu-director-ssh.yml \
             -v director_name=bosh-qemu-ci \
             -v internal_ip=192.168.122.10 \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -440,7 +439,6 @@ jobs:
           -o manifests/ops/local-store-dir.yml \
           -o manifests/ops/qemu-mac.yml \
           -o manifests/ops/qemu-kernel-boot.yml \
-          -o manifests/ops/qemu-director-ssh.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-qemu-ci \
@@ -614,7 +612,6 @@ jobs:
             -o manifests/local-release.yml \
             -o manifests/ops/local-store-dir.yml \
             -o manifests/ops/lxc-mac.yml \
-            -o manifests/ops/lxc-director-ssh.yml \
             -v director_name=bosh-lxc-ci \
             -v internal_ip=192.168.122.11 \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -784,7 +781,6 @@ jobs:
           -o manifests/local-release.yml \
           -o manifests/ops/local-store-dir.yml \
           -o manifests/ops/lxc-mac.yml \
-          -o manifests/ops/lxc-director-ssh.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name=bosh-lxc-ci \

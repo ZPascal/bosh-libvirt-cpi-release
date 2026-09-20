@@ -1,14 +1,8 @@
 ---
-# Removes SSH connection fields from lxc-cpi.yml so bosh create-env
-# can run locally (lxc:///) without any SSH secrets.
-- type: remove
-  path: /instance_groups/name=bosh/properties/libvirt_cpi/host?
-- type: remove
-  path: /instance_groups/name=bosh/properties/libvirt_cpi/username?
-- type: remove
-  path: /instance_groups/name=bosh/properties/libvirt_cpi/private_key?
-- type: remove
-  path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
+# Removes SSH connection fields from the cloud_provider section so bosh create-env
+# can bootstrap locally (lxc:///) without SSH.  The instance_groups properties are
+# intentionally kept so the deployed director's CPI job receives the SSH credentials
+# needed to tunnel back to the host's libvirt socket at runtime.
 - type: remove
   path: /cloud_provider/properties/host?
 - type: remove
