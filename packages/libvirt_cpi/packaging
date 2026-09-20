@@ -13,7 +13,7 @@ source ${pkg_dir}/bosh/compile.env
 # the target VM which has internet access on GHA runners.
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y --no-install-recommends libvirt-dev libvirt0
+apt-get install -y --no-install-recommends libvirt-dev libvirt0 pkg-config
 
 export CGO_ENABLED=1
 
