@@ -60,10 +60,10 @@ func (o FactoryOpts) buildCPIInjectJSON() []byte {
 		return nil
 	}
 	m := map[string]interface{}{
-		"Host":      o.CPIHost,
-		"Username":  o.CPIUsername,
+		"Host":       o.CPIHost,
+		"Username":   o.CPIUsername,
 		"PrivateKey": o.CPIPrivateKey,
-		"HostKey":   o.CPIHostKey,
+		"HostKey":    o.CPIHostKey,
 	}
 	if o.CPIStoreDir != "" {
 		m["StoreDir"] = o.CPIStoreDir
