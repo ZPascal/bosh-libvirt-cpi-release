@@ -1221,6 +1221,24 @@ func (f Factory) Create(
 			"  done\n" +
 			"  sleep 2\n" +
 			"done ) &\n" +
+			"# Background watcher: once bosh-agent installs the libvirt_cpi package, install\n" +
+			"# the CPI binary wrapper so cpi-inject.json is merged at every invocation.\n" +
+			"# (The package dir doesn't exist in the stemcell; bosh-agent creates it later.)\n" +
+			"( INJ=/var/vcap/bosh/cpi-inject.json\n" +
+			"  if [ -f \"$INJ\" ]; then\n" +
+			"    while true; do\n" +
+			"      CPI=/var/vcap/packages/libvirt_cpi/bin/cpi\n" +
+			"      CPIR=/var/vcap/packages/libvirt_cpi/bin/cpi.real\n" +
+			"      if [ -f \"$CPI\" ] && [ ! -f \"$CPIR\" ]; then\n" +
+			"        mv \"$CPI\" \"$CPIR\"\n" +
+			"        printf '%s' '" + shellEscape(cpiWrapperScript()) + "' > \"$CPI\"\n" +
+			"        chmod 755 \"$CPI\"\n" +
+			"        echo 'cpi-inject: installed wrapper at '$CPI >> /var/vcap/bosh/log/cpi-inject.log\n" +
+			"        break\n" +
+			"      fi\n" +
+			"      sleep 3\n" +
+			"    done\n" +
+			"  fi ) &\n" +
 			"# Background watcher: once the agent renders libvirt_cpi/cpi.json, merge\n" +
 			"# pre-baked CPI credentials so the deployed director reaches libvirtd.\n" +
 			"( INJ=/var/vcap/bosh/cpi-inject.json\n" +
@@ -1458,8 +1476,6 @@ func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 // This is immune to bosh-agent re-rendering cpi.json after initial boot.
 func cpiWrapperScript() string {
 	return "#!/bin/sh\n" +
-		"# Merge /var/vcap/bosh/cpi-inject.json into the config at each invocation.\n" +
-		"# Ensures correct BackendURI/Host/etc even after bosh-agent re-renders cpi.json.\n" +
 		"INJ=/var/vcap/bosh/cpi-inject.json\n" +
 		"if [ -f \"$INJ\" ]; then\n" +
 		"  PREV=''; CFG=''\n" +
@@ -1477,4 +1493,10 @@ func cpiWrapperScript() string {
 		"  fi\n" +
 		"fi\n" +
 		"exec /var/vcap/packages/libvirt_cpi/bin/cpi.real \"$@\"\n"
+}
+
+// shellEscape single-quote-escapes s for embedding in a shell printf '%s' '...'
+// by replacing each ' with '\''.
+func shellEscape(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
 }

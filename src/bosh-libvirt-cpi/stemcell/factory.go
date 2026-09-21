@@ -180,10 +180,13 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	case "dir":
 		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
+		// --no-same-devices prevents tar from trying to mknod device files, which
+		// fails with EPERM inside unprivileged containers. libvirt-lxc creates the
+		// necessary /dev entries via its own devtmpfs mount.
 		if err := os.MkdirAll(dstImage, 0755); err != nil {
 			return bosherr.WrapError(err, "Creating stemcell rootfs directory")
 		}
-		out, err := exec.Command("tar", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
+		out, err := exec.Command("tar", "--no-same-devices", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
 		if err != nil {
 			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
 		}
