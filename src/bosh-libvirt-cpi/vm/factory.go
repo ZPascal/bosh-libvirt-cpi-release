@@ -31,6 +31,16 @@ type FactoryOpts struct {
 	DirPath string
 	Network string // libvirt network name; defaults to "default" if empty
 
+	// CPIHost/Username/PrivateKey/HostKey are the SSH credentials used by the
+	// deployed director's CPI to reach libvirtd. Injected into cpi.json inside
+	// the VM rootfs during create_vm so the agent-rendered template is
+	// overwritten with the correct values on first boot.
+	CPIHost       string
+	CPIUsername   string
+	CPIPrivateKey string
+	CPIHostKey    string
+	CPIStoreDir   string
+
 	// MbusBootstrapSSL is the cert/key to inject into the agent env for the
 	// mbus bootstrap TLS listener. When set (from cloud_provider.properties.
 	// mbus_bootstrap_ssl), bosh create-env can verify the mbus via
@@ -40,6 +50,29 @@ type FactoryOpts struct {
 		Certificate string
 		PrivateKey  string
 	}
+}
+
+// buildCPIInjectJSON returns JSON bytes containing the CPI connection fields
+// that should be merged into the deployed director's cpi.json. Returns nil
+// when no SSH credentials are configured (local libvirt connection).
+func (o FactoryOpts) buildCPIInjectJSON() []byte {
+	if o.CPIHost == "" {
+		return nil
+	}
+	m := map[string]interface{}{
+		"Host":      o.CPIHost,
+		"Username":  o.CPIUsername,
+		"PrivateKey": o.CPIPrivateKey,
+		"HostKey":   o.CPIHostKey,
+	}
+	if o.CPIStoreDir != "" {
+		m["StoreDir"] = o.CPIStoreDir
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 type Factory struct {
@@ -217,6 +250,13 @@ func (f Factory) Create(
 		agentEnvBytes := f.injectMbusCert(addBlobstoreToEnv(envBytes))
 		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
 			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
+		}
+		// Pre-bake CPI connection config so the deployed director's libvirt_cpi
+		// job uses the correct credentials. The BOSH agent renders cpi.json from
+		// job spec defaults (empty SSH fields) — a background watcher in the init
+		// script merges this file into the rendered cpi.json after template render.
+		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
+			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
 		}
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
@@ -623,7 +663,31 @@ func (f Factory) Create(
 				"  done\n" +
 				"  sleep 2\n" +
 				"done ) &\n" +
-				"# Redirect external IP:5432 -> 127.0.0.1:5432 so monit stub can check postgres\n" +
+				"# Background watcher: once the agent renders libvirt_cpi/cpi.json, merge\n" +
+				"# pre-baked CPI credentials so the deployed director reaches libvirtd.\n" +
+				"( INJ=/var/vcap/bosh/cpi-inject.json\n" +
+				"  if [ -f \"$INJ\" ]; then\n" +
+				"    while true; do\n" +
+				"      for CJ in /var/vcap/data/jobs/libvirt_cpi/*/config/cpi.json; do\n" +
+				"        [ -f \"$CJ\" ] || continue\n" +
+				"        grep -q '\"patched_by_cpi\"' \"$CJ\" 2>/dev/null && continue\n" +
+				"        TMP=$(mktemp)\n" +
+				"        python3 -c \"import json,sys; a=json.load(open('$CJ')); b=json.load(open('$INJ')); a.update(b); a['patched_by_cpi']=True; json.dump(a,sys.stdout,indent=2)\" > \"$TMP\" 2>/dev/null\n" +
+				"        if [ -s \"$TMP\" ]; then\n" +
+				"          cp \"$TMP\" \"$CJ\"\n" +
+				"          echo \"cpi-inject: patched $CJ\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
+				"          # Also update the /var/vcap/jobs symlink target\n" +
+				"          JLINK=/var/vcap/jobs/libvirt_cpi/config/cpi.json\n" +
+				"          if [ -L \"$JLINK\" ]; then\n" +
+				"            REAL=$(readlink -f \"$JLINK\" 2>/dev/null)\n" +
+				"            [ -n \"$REAL\" ] && [ \"$REAL\" != \"$CJ\" ] && cp \"$CJ\" \"$REAL\"\n" +
+				"          fi\n" +
+				"        fi\n" +
+				"        rm -f \"$TMP\"\n" +
+				"      done\n" +
+				"      sleep 5\n" +
+				"    done\n" +
+				"  fi ) &\n" +
 				"iptables -t nat -A PREROUTING -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"iptables -t nat -A OUTPUT -p tcp -d " + staticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
@@ -749,6 +813,11 @@ func (f Factory) Create(
 			_ = os.RemoveAll(mntDir)
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(writeErr, "Writing agent env to ext4 rootfs")
+		}
+		// Pre-bake CPI connection credentials so the deployed director's
+		// libvirt_cpi job uses the correct settings. See LXC case for details.
+		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
+			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
 		}
 		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
@@ -1125,6 +1194,30 @@ func (f Factory) Create(
 			"  done\n" +
 			"  sleep 2\n" +
 			"done ) &\n" +
+			"# Background watcher: once the agent renders libvirt_cpi/cpi.json, merge\n" +
+			"# pre-baked CPI credentials so the deployed director reaches libvirtd.\n" +
+			"( INJ=/var/vcap/bosh/cpi-inject.json\n" +
+			"  if [ -f \"$INJ\" ]; then\n" +
+			"    while true; do\n" +
+			"      for CJ in /var/vcap/data/jobs/libvirt_cpi/*/config/cpi.json; do\n" +
+			"        [ -f \"$CJ\" ] || continue\n" +
+			"        grep -q '\"patched_by_cpi\"' \"$CJ\" 2>/dev/null && continue\n" +
+			"        TMP=$(mktemp)\n" +
+			"        python3 -c \"import json,sys; a=json.load(open('$CJ')); b=json.load(open('$INJ')); a.update(b); a['patched_by_cpi']=True; json.dump(a,sys.stdout,indent=2)\" > \"$TMP\" 2>/dev/null\n" +
+			"        if [ -s \"$TMP\" ]; then\n" +
+			"          cp \"$TMP\" \"$CJ\"\n" +
+			"          echo \"cpi-inject: patched $CJ\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
+			"          JLINK=/var/vcap/jobs/libvirt_cpi/config/cpi.json\n" +
+			"          if [ -L \"$JLINK\" ]; then\n" +
+			"            REAL=$(readlink -f \"$JLINK\" 2>/dev/null)\n" +
+			"            [ -n \"$REAL\" ] && [ \"$REAL\" != \"$CJ\" ] && cp \"$CJ\" \"$REAL\"\n" +
+			"          fi\n" +
+			"        fi\n" +
+			"        rm -f \"$TMP\"\n" +
+			"      done\n" +
+			"      sleep 5\n" +
+			"    done\n" +
+			"  fi ) &\n" +
 			"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub\n" +
 			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +

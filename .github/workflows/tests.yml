@@ -329,49 +329,7 @@ jobs:
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
-        echo "Patching deployed director cpi.json with correct SSH credentials and StoreDir..."
-        PATCH_PRIVATE_KEY=$(cat /tmp/bosh-libvirt-ssh-key)
-        PATCH_JSON=$(jq -n \
-          --arg h  "192.168.122.1" \
-          --arg u  "root" \
-          --arg pk "$PATCH_PRIVATE_KEY" \
-          --arg hk "$LIBVIRT_HOST_KEY" \
-          --arg sd "/tmp/bosh_libvirt_cpi" \
-          '{Host:$h,Username:$u,PrivateKey:$pk,HostKey:$hk,StoreDir:$sd}')
-        QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
-        if [ -n "$QEMU_IMG" ]; then
-          QEMU_DOM=$(sudo virsh -c qemu:///system list --name 2>/dev/null | grep -v '^$' | head -1)
-          echo "Stopping QEMU domain $QEMU_DOM to patch cpi.json..."
-          [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null && sleep 2 || true
-          sudo mkdir -p /mnt/qemu-cpi-patch
-          sudo mount -o loop "$QEMU_IMG" /mnt/qemu-cpi-patch 2>/dev/null && {
-            CPI_JSON_PATH=$(sudo find /mnt/qemu-cpi-patch/var/vcap -name 'cpi.json' -path '*/libvirt_cpi/*' 2>/dev/null | head -1)
-            if [ -n "$CPI_JSON_PATH" ]; then
-              echo "Patching $CPI_JSON_PATH"
-              echo "$PATCH_JSON" | sudo tee /tmp/cpi-patch.json > /dev/null
-              sudo jq --slurpfile p /tmp/cpi-patch.json '. * $p[0]' "$CPI_JSON_PATH" | sudo tee "${CPI_JSON_PATH}.tmp" > /dev/null && sudo mv "${CPI_JSON_PATH}.tmp" "$CPI_JSON_PATH" && echo "cpi.json patched OK"
-            else
-              echo "WARNING: cpi.json not found inside QEMU rootfs.img"
-              sudo find /mnt/qemu-cpi-patch/var/vcap -name 'cpi.json' 2>/dev/null || true
-            fi
-            sudo umount /mnt/qemu-cpi-patch 2>/dev/null || true
-          } || echo "WARNING: failed to mount QEMU rootfs.img for patching"
-          echo "Restarting QEMU domain $QEMU_DOM..."
-          [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system start "$QEMU_DOM" 2>/dev/null || true
-          echo "Waiting for director to come back up after restart (up to 20min)..."
-          RESTART_DEADLINE=$(( $(date +%s) + 1200 ))
-          until curl -skf --max-time 10 https://192.168.122.10:25555/info > /dev/null 2>&1; do
-            if [ "$(date +%s)" -ge "$RESTART_DEADLINE" ]; then
-              echo "Director did not come back up after patch+restart - failing"
-              echo "=== QEMU console log (last 30 lines) ===" && sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "Director back up after patch"
-        else
-          echo "WARNING: rootfs.img not found - cannot patch QEMU cpi.json"
-        fi
+        echo "CPI credentials injected at create_vm time via cpi-inject.json watcher in /bosh-init"
         bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
@@ -389,6 +347,7 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
+        echo "=== cpi-inject log (QEMU) ===" && sudo find /tmp/bosh_libvirt_cpi/vms -name 'cpi-inject.log' -path '*/bosh/log/*' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || echo "(no cpi-inject.log yet)"
         echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
         WORKER_DEADLINE=$(( $(date +%s) + 600 ))
         until timeout 30 bosh -e qemu-ci deployments \
@@ -720,25 +679,7 @@ jobs:
           echo "Director not reachable after waiting - failing"
           exit 1
         fi
-        echo "Patching deployed director cpi.json with correct SSH credentials and StoreDir..."
-        PATCH_PRIVATE_KEY=$(cat /tmp/bosh-libvirt-ssh-key)
-        PATCH_JSON=$(jq -n \
-          --arg h  "192.168.122.1" \
-          --arg u  "root" \
-          --arg pk "$PATCH_PRIVATE_KEY" \
-          --arg hk "$LIBVIRT_HOST_KEY" \
-          --arg sd "/tmp/bosh_libvirt_cpi" \
-          '{Host:$h,Username:$u,PrivateKey:$pk,HostKey:$hk,StoreDir:$sd}')
-        echo "$PATCH_JSON" | sudo tee /tmp/cpi-patch.json > /dev/null
-        LXC_CPI_JSON=$(sudo find /tmp/bosh_libvirt_cpi/vms -name cpi.json 2>/dev/null | grep libvirt_cpi | head -1)
-        if [ -n "$LXC_CPI_JSON" ]; then
-          echo "Found cpi.json at $LXC_CPI_JSON"
-          sudo jq --slurpfile p /tmp/cpi-patch.json '. * $p[0]' "$LXC_CPI_JSON" | sudo tee "${LXC_CPI_JSON}.tmp" > /dev/null && sudo mv "${LXC_CPI_JSON}.tmp" "$LXC_CPI_JSON" && echo "cpi.json patched OK" || echo "WARNING: failed to patch cpi.json - continuing anyway"
-        else
-          echo "WARNING: cpi.json not found in LXC VM store - listing for debug:"
-          sudo find /tmp/bosh_libvirt_cpi/vms -name 'cpi.json' 2>/dev/null || echo "(none found)"
-          echo "WARNING: continuing without patch"
-        fi
+        echo "CPI credentials injected at create_vm time via cpi-inject.json watcher in /bosh-lxc-init"
         bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
         bosh alias-env lxc-ci \
           -e "192.168.122.11" \
@@ -756,6 +697,7 @@ jobs:
           sleep 15
         done
         echo "Director API ready"
+        echo "=== cpi-inject log (LXC) ===" && sudo find /tmp/bosh_libvirt_cpi/vms -name 'cpi-inject.log' -path '*/bosh/log/*' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || echo "(no cpi-inject.log yet)"
         echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
         WORKER_DEADLINE=$(( $(date +%s) + 600 ))
         until timeout 30 bosh -e lxc-ci deployments \

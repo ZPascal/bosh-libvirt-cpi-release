@@ -121,8 +121,13 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	disks := bdisk.NewFactory(f.opts.DisksDir(), f.uuidGen, d, runner, f.logger)
 
 	vmsOpts := bvm.FactoryOpts{
-		DirPath: f.opts.VMsDir(),
-		Network: f.opts.Network,
+		DirPath:       f.opts.VMsDir(),
+		Network:       f.opts.Network,
+		CPIHost:       f.opts.Host,
+		CPIUsername:   f.opts.Username,
+		CPIPrivateKey: f.opts.PrivateKey,
+		CPIHostKey:    f.opts.HostKey,
+		CPIStoreDir:   f.opts.StoreDir,
 	}
 	vmsOpts.MbusBootstrapSSL.CA = f.opts.MbusBootstrapSSL.CA
 	vmsOpts.MbusBootstrapSSL.Certificate = f.opts.MbusBootstrapSSL.Certificate
