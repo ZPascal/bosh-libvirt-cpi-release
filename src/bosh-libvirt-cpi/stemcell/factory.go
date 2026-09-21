@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -180,15 +181,26 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	case "dir":
 		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
-		// --no-same-devices prevents tar from trying to mknod device files, which
-		// fails with EPERM inside unprivileged containers. libvirt-lxc creates the
-		// necessary /dev entries via its own devtmpfs mount.
+		// Inside an unprivileged container the stemcell's /dev/* entries can't be
+		// mknod'd (EPERM). GNU tar's --no-same-devices skips them cleanly; older/
+		// BSD tars don't know that flag. Try it first, fall back to plain tar and
+		// accept exit code 2 (warnings-only, which covers the EPERM mknod errors).
 		if err := os.MkdirAll(dstImage, 0755); err != nil {
 			return bosherr.WrapError(err, "Creating stemcell rootfs directory")
 		}
 		out, err := exec.Command("tar", "--no-same-devices", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
 		if err != nil {
-			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+			if strings.Contains(string(out), "unrecognized option") || strings.Contains(string(out), "unknown option") {
+				// tar doesn't support --no-same-devices (BusyBox/BSD); run without it.
+				// Exit code 2 means warnings (e.g. mknod EPERM) but extraction succeeded.
+				cmd := exec.Command("tar", "-xzf", imagePath, "-C", dstImage)
+				out2, err2 := cmd.CombinedOutput()
+				if err2 != nil && cmd.ProcessState.ExitCode() != 2 {
+					return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs: %s", string(out2))
+				}
+			} else {
+				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+			}
 		}
 	default:
 		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
