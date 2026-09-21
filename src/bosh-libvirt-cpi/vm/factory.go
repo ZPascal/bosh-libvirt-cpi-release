@@ -1496,7 +1496,7 @@ func cpiWrapperScript() string {
 }
 
 // shellEscape single-quote-escapes s for embedding in a shell printf '%s' '...'
-// by replacing each ' with '\''.
+// by replacing each ' with '\”.
 func shellEscape(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }
