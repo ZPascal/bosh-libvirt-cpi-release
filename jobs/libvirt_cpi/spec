@@ -47,6 +47,12 @@ properties:
       The '~' prefix is expanded to the connecting user's home directory.
     default: "~/.bosh_libvirt_cpi"
 
+  inject_backend_uri:
+    description: >
+      Libvirt connection URI for the deployed director's CPI. Injected at create_vm time
+      so the agent-rendered cpi.json (which defaults to qemu:///system) is overwritten
+      with the correct backend. Falls back to backend_uri if unset.
+    default: ""
   inject_host:
     description: >
       SSH host for the deployed director's CPI to use when tunnelling to libvirtd.

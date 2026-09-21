@@ -18,6 +18,9 @@
   path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
   value: ((libvirt_host_key))
 - type: replace
+  path: /cloud_provider/properties/inject_backend_uri?
+  value: lxc:///
+- type: replace
   path: /cloud_provider/properties/inject_host?
   value: ((libvirt_host))
 - type: replace

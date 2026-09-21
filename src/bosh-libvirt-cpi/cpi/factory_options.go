@@ -28,6 +28,7 @@ type FactoryOpts struct {
 	// first boot. When unset they fall back to Host/Username/PrivateKey/HostKey/
 	// StoreDir respectively (useful when bootstrap and deployed CPI share the
 	// same credentials, e.g. the QEMU case).
+	InjectBackendURI string
 	InjectHost       string
 	InjectUsername   string
 	InjectPrivateKey string

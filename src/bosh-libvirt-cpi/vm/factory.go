@@ -31,10 +31,12 @@ type FactoryOpts struct {
 	DirPath string
 	Network string // libvirt network name; defaults to "default" if empty
 
-	// CPIHost/Username/PrivateKey/HostKey are the SSH credentials used by the
-	// deployed director's CPI to reach libvirtd. Injected into cpi.json inside
-	// the VM rootfs during create_vm so the agent-rendered template is
-	// overwritten with the correct values on first boot.
+	// CPIBackendURI/CPIHost/Username/PrivateKey/HostKey are the connection settings
+	// used by the deployed director's CPI. Injected into cpi.json inside the VM
+	// rootfs during create_vm so the agent-rendered template (which uses spec
+	// defaults like "qemu:///system") is overwritten with the correct values on
+	// first boot.
+	CPIBackendURI string
 	CPIHost       string
 	CPIUsername   string
 	CPIPrivateKey string
@@ -56,14 +58,18 @@ type FactoryOpts struct {
 // that should be merged into the deployed director's cpi.json. Returns nil
 // when no SSH credentials are configured (local libvirt connection).
 func (o FactoryOpts) buildCPIInjectJSON() []byte {
-	if o.CPIHost == "" {
+	if o.CPIHost == "" && o.CPIBackendURI == "" {
 		return nil
 	}
-	m := map[string]interface{}{
-		"Host":       o.CPIHost,
-		"Username":   o.CPIUsername,
-		"PrivateKey": o.CPIPrivateKey,
-		"HostKey":    o.CPIHostKey,
+	m := map[string]interface{}{}
+	if o.CPIBackendURI != "" {
+		m["BackendURI"] = o.CPIBackendURI
+	}
+	if o.CPIHost != "" {
+		m["Host"] = o.CPIHost
+		m["Username"] = o.CPIUsername
+		m["PrivateKey"] = o.CPIPrivateKey
+		m["HostKey"] = o.CPIHostKey
 	}
 	if o.CPIStoreDir != "" {
 		m["StoreDir"] = o.CPIStoreDir
@@ -675,7 +681,8 @@ func (f Factory) Create(
 				"        python3 -c \"import json,sys; a=json.load(open('$CJ')); b=json.load(open('$INJ')); a.update(b); a['patched_by_cpi']=True; json.dump(a,sys.stdout,indent=2)\" > \"$TMP\" 2>/dev/null\n" +
 				"        if [ -s \"$TMP\" ]; then\n" +
 				"          cp \"$TMP\" \"$CJ\"\n" +
-				"          echo \"cpi-inject: patched $CJ\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
+				"          BACKEND=$(python3 -c \"import json; print(json.load(open('$CJ')).get('BackendURI','(missing)'))\" 2>/dev/null || echo '(err)')\n" +
+				"          echo \"cpi-inject: patched $CJ BackendURI=$BACKEND\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
 				"          # Also update the /var/vcap/jobs symlink target\n" +
 				"          JLINK=/var/vcap/jobs/libvirt_cpi/config/cpi.json\n" +
 				"          if [ -L \"$JLINK\" ]; then\n" +
@@ -1206,7 +1213,8 @@ func (f Factory) Create(
 			"        python3 -c \"import json,sys; a=json.load(open('$CJ')); b=json.load(open('$INJ')); a.update(b); a['patched_by_cpi']=True; json.dump(a,sys.stdout,indent=2)\" > \"$TMP\" 2>/dev/null\n" +
 			"        if [ -s \"$TMP\" ]; then\n" +
 			"          cp \"$TMP\" \"$CJ\"\n" +
-			"          echo \"cpi-inject: patched $CJ\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
+			"          BACKEND=$(python3 -c \"import json; print(json.load(open('$CJ')).get('BackendURI','(missing)'))\" 2>/dev/null || echo '(err)')\n" +
+			"          echo \"cpi-inject: patched $CJ BackendURI=$BACKEND\" >> /var/vcap/bosh/log/cpi-inject.log\n" +
 			"          JLINK=/var/vcap/jobs/libvirt_cpi/config/cpi.json\n" +
 			"          if [ -L \"$JLINK\" ]; then\n" +
 			"            REAL=$(readlink -f \"$JLINK\" 2>/dev/null)\n" +
