@@ -259,10 +259,23 @@ func (f Factory) Create(
 		}
 		// Pre-bake CPI connection config so the deployed director's libvirt_cpi
 		// job uses the correct credentials. The BOSH agent renders cpi.json from
-		// job spec defaults (empty SSH fields) — a background watcher in the init
-		// script merges this file into the rendered cpi.json after template render.
+		// job spec defaults — a background watcher in the init script merges this
+		// file into the rendered cpi.json. Also install a wrapper around the CPI
+		// binary that merges cpi-inject.json at invocation time, making the fix
+		// immune to bosh-agent re-renders overwriting the patched cpi.json.
 		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
 			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
+			// Move real CPI binary to cpi.real and install a shell wrapper that
+			// merges cpi-inject.json into the config at every invocation.
+			// /var/vcap/packages/ is set up by the package install script and is
+			// never re-written by bosh-agent on apply-spec, so this wrapper persists.
+			cpiPkgDir := vmRootfs + "/var/vcap/packages/libvirt_cpi/bin"
+			if _, statErr := os.Stat(cpiPkgDir + "/cpi"); statErr == nil {
+				if _, statErr2 := os.Stat(cpiPkgDir + "/cpi.real"); statErr2 != nil {
+					_, _ = ExecCommand("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
+				}
+				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
+			}
 		}
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
@@ -825,6 +838,13 @@ func (f Factory) Create(
 		// libvirt_cpi job uses the correct settings. See LXC case for details.
 		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
 			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
+			cpiPkgDir := mntDir + "/var/vcap/packages/libvirt_cpi/bin"
+			if _, statErr := os.Stat(cpiPkgDir + "/cpi"); statErr == nil {
+				if _, statErr2 := os.Stat(cpiPkgDir + "/cpi.real"); statErr2 != nil {
+					_, _ = ExecCommand("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
+				}
+				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
+			}
 		}
 		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
@@ -1429,4 +1449,32 @@ func injectCert(envBytes []byte, ca, cert, key string) []byte {
 
 func (f Factory) Find(cid apiv1.VMCID) (VM, error) {
 	return f.newVM(cid), nil
+}
+
+// cpiWrapperScript returns the shell wrapper that is installed as
+// /var/vcap/packages/libvirt_cpi/bin/cpi in the director VM rootfs.
+// At each CPI invocation it merges /var/vcap/bosh/cpi-inject.json into
+// the config file, then execs the real binary (renamed to cpi.real).
+// This is immune to bosh-agent re-rendering cpi.json after initial boot.
+func cpiWrapperScript() string {
+	return "#!/bin/sh\n" +
+		"# Merge /var/vcap/bosh/cpi-inject.json into the config at each invocation.\n" +
+		"# Ensures correct BackendURI/Host/etc even after bosh-agent re-renders cpi.json.\n" +
+		"INJ=/var/vcap/bosh/cpi-inject.json\n" +
+		"if [ -f \"$INJ\" ]; then\n" +
+		"  PREV=''; CFG=''\n" +
+		"  for a in \"$@\"; do\n" +
+		"    [ \"$PREV\" = '-configPath' ] && CFG=$a\n" +
+		"    PREV=$a\n" +
+		"  done\n" +
+		"  if [ -n \"$CFG\" ] && [ -f \"$CFG\" ]; then\n" +
+		"    TMP=$(mktemp /tmp/cpi-cfg.XXXXXX.json)\n" +
+		"    python3 -c \"import json,sys; a=json.load(open(sys.argv[1])); b=json.load(open(sys.argv[2])); a.update(b); json.dump(a,sys.stdout)\" \"$CFG\" \"$INJ\" > \"$TMP\" 2>/dev/null\n" +
+		"    if [ -s \"$TMP\" ]; then\n" +
+		"      exec /var/vcap/packages/libvirt_cpi/bin/cpi.real -configPath \"$TMP\"\n" +
+		"    fi\n" +
+		"    rm -f \"$TMP\"\n" +
+		"  fi\n" +
+		"fi\n" +
+		"exec /var/vcap/packages/libvirt_cpi/bin/cpi.real \"$@\"\n"
 }
