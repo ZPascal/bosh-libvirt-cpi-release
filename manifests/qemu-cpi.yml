@@ -78,9 +78,6 @@ instance_groups:
       password: nats-password
       tls:
         ca: ((nats_ca.ca))
-        client_ca:
-          certificate: ((nats_ca.certificate))
-          private_key: ((nats_ca.private_key))
         server:
           certificate: ((nats_server_tls.certificate))
           private_key: ((nats_server_tls.private_key))
