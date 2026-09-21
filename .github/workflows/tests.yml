@@ -345,14 +345,11 @@ jobs:
           [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null && sleep 2 || true
           sudo mkdir -p /mnt/qemu-cpi-patch
           sudo mount -o loop "$QEMU_IMG" /mnt/qemu-cpi-patch 2>/dev/null && {
-            CPI_JSON_PATH=""
-            for try in "/mnt/qemu-cpi-patch/var/vcap/jobs/libvirt_cpi/config/cpi.json" \
-                       "/mnt/qemu-cpi-patch/var/vcap/data/jobs/libvirt_cpi/config/cpi.json"; do
-              [ -f "$try" ] && CPI_JSON_PATH="$try" && break
-            done
+            CPI_JSON_PATH=$(sudo find /mnt/qemu-cpi-patch/var/vcap -name 'cpi.json' -path '*/libvirt_cpi/*' 2>/dev/null | head -1)
             if [ -n "$CPI_JSON_PATH" ]; then
+              echo "Patching $CPI_JSON_PATH"
               echo "$PATCH_JSON" | sudo tee /tmp/cpi-patch.json > /dev/null
-              sudo jq --slurpfile p /tmp/cpi-patch.json '. * $p[0]' "$CPI_JSON_PATH" | sudo tee "${CPI_JSON_PATH}.tmp" > /dev/null && sudo mv "${CPI_JSON_PATH}.tmp" "$CPI_JSON_PATH" && echo "cpi.json patched OK at $CPI_JSON_PATH"
+              sudo jq --slurpfile p /tmp/cpi-patch.json '. * $p[0]' "$CPI_JSON_PATH" | sudo tee "${CPI_JSON_PATH}.tmp" > /dev/null && sudo mv "${CPI_JSON_PATH}.tmp" "$CPI_JSON_PATH" && echo "cpi.json patched OK"
             else
               echo "WARNING: cpi.json not found inside QEMU rootfs.img"
               sudo find /mnt/qemu-cpi-patch/var/vcap -name 'cpi.json' 2>/dev/null || true
@@ -361,11 +358,12 @@ jobs:
           } || echo "WARNING: failed to mount QEMU rootfs.img for patching"
           echo "Restarting QEMU domain $QEMU_DOM..."
           [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system start "$QEMU_DOM" 2>/dev/null || true
-          echo "Waiting for director to come back up after restart..."
-          RESTART_DEADLINE=$(( $(date +%s) + 600 ))
+          echo "Waiting for director to come back up after restart (up to 20min)..."
+          RESTART_DEADLINE=$(( $(date +%s) + 1200 ))
           until curl -skf --max-time 10 https://192.168.122.10:25555/info > /dev/null 2>&1; do
             if [ "$(date +%s)" -ge "$RESTART_DEADLINE" ]; then
               echo "Director did not come back up after patch+restart - failing"
+              echo "=== QEMU console log (last 30 lines) ===" && sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
               exit 1
             fi
             sleep 10
