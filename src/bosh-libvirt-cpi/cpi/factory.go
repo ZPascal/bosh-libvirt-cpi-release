@@ -123,11 +123,11 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	vmsOpts := bvm.FactoryOpts{
 		DirPath:       f.opts.VMsDir(),
 		Network:       f.opts.Network,
-		CPIHost:       f.opts.Host,
-		CPIUsername:   f.opts.Username,
-		CPIPrivateKey: f.opts.PrivateKey,
-		CPIHostKey:    f.opts.HostKey,
-		CPIStoreDir:   f.opts.StoreDir,
+		CPIHost:       coalesce(f.opts.InjectHost, f.opts.Host),
+		CPIUsername:   coalesce(f.opts.InjectUsername, f.opts.Username),
+		CPIPrivateKey: coalesce(f.opts.InjectPrivateKey, f.opts.PrivateKey),
+		CPIHostKey:    coalesce(f.opts.InjectHostKey, f.opts.HostKey),
+		CPIStoreDir:   coalesce(f.opts.InjectStoreDir, f.opts.StoreDir),
 	}
 	vmsOpts.MbusBootstrapSSL.CA = f.opts.MbusBootstrapSSL.CA
 	vmsOpts.MbusBootstrapSSL.Certificate = f.opts.MbusBootstrapSSL.Certificate
@@ -144,4 +144,12 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 		NewDisks(disks, disks, vms),
 		NewSnapshots(),
 	}, nil
+}
+
+// coalesce returns the first non-empty string.
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
