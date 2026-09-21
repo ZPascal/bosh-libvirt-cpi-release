@@ -330,30 +330,19 @@ jobs:
           exit 1
         fi
         echo "Patching deployed director cpi.json with correct SSH credentials and StoreDir..."
-        python3 -c "
-import json, sys
-patch = {
-  'Host':       '192.168.122.1',
-  'Username':   'root',
-  'PrivateKey': open('/tmp/bosh-libvirt-ssh-key').read(),
-  'HostKey':    sys.argv[1],
-  'StoreDir':   '/tmp/bosh_libvirt_cpi',
-}
-print(json.dumps(patch))
-" "${LIBVIRT_HOST_KEY}" | \
-        ssh -i /tmp/bosh-libvirt-ssh-key \
+        PATCH_PRIVATE_KEY=$(cat /tmp/bosh-libvirt-ssh-key)
+        PATCH_JSON=$(jq -n \
+          --arg h  "192.168.122.1" \
+          --arg u  "root" \
+          --arg pk "$PATCH_PRIVATE_KEY" \
+          --arg hk "$LIBVIRT_HOST_KEY" \
+          --arg sd "/tmp/bosh_libvirt_cpi" \
+          '{Host:$h,Username:$u,PrivateKey:$pk,HostKey:$hk,StoreDir:$sd}')
+        echo "$PATCH_JSON" | ssh -i /tmp/bosh-libvirt-ssh-key \
           -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
-          root@192.168.122.10 'python3 -c "
-import json, sys
-patch = json.load(sys.stdin)
-path  = \"/var/vcap/jobs/libvirt_cpi/config/cpi.json\"
-with open(path) as f:
-    d = json.load(f)
-d.update(patch)
-with open(path, \"w\") as f:
-    json.dump(d, f, indent=2)
-print(\"cpi.json patched OK\")
-"' 2>&1 || { echo "WARNING: failed to patch cpi.json via SSH - continuing anyway"; }
+          root@192.168.122.10 \
+          'P=/var/vcap/jobs/libvirt_cpi/config/cpi.json; jq --argjson p "$(cat)" ". * \$p" "$P" > "$P.tmp" && mv "$P.tmp" "$P" && echo "cpi.json patched OK"' \
+          2>&1 || { echo "WARNING: failed to patch cpi.json via SSH - continuing anyway"; }
         bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
         bosh alias-env qemu-ci \
           -e "192.168.122.10" \
@@ -703,29 +692,18 @@ print(\"cpi.json patched OK\")
           exit 1
         fi
         echo "Patching deployed director cpi.json with correct SSH credentials and StoreDir..."
+        PATCH_PRIVATE_KEY=$(cat /tmp/bosh-libvirt-ssh-key)
+        PATCH_JSON=$(jq -n \
+          --arg h  "192.168.122.1" \
+          --arg u  "root" \
+          --arg pk "$PATCH_PRIVATE_KEY" \
+          --arg hk "$LIBVIRT_HOST_KEY" \
+          --arg sd "/tmp/bosh_libvirt_cpi" \
+          '{Host:$h,Username:$u,PrivateKey:$pk,HostKey:$hk,StoreDir:$sd}')
         LXC_CPI_JSON=$(sudo find /tmp/bosh_libvirt_cpi/vms -name cpi.json -path '*/libvirt_cpi/config/*' 2>/dev/null | head -1)
         if [ -n "$LXC_CPI_JSON" ]; then
-          python3 -c "
-import json, sys
-patch = {
-  'Host':       '192.168.122.1',
-  'Username':   'root',
-  'PrivateKey': open('/tmp/bosh-libvirt-ssh-key').read(),
-  'HostKey':    sys.argv[1],
-  'StoreDir':   '/tmp/bosh_libvirt_cpi',
-}
-print(json.dumps(patch))
-" "${LIBVIRT_HOST_KEY}" | sudo python3 -c "
-import json, sys
-patch = json.load(sys.stdin)
-path  = sys.argv[1]
-with open(path) as f:
-    d = json.load(f)
-d.update(patch)
-with open(path, 'w') as f:
-    json.dump(d, f, indent=2)
-print('cpi.json patched OK')
-" "$LXC_CPI_JSON" 2>&1 || echo "WARNING: failed to patch cpi.json - continuing anyway"
+          echo "$PATCH_JSON" | sudo tee /tmp/cpi-patch.json > /dev/null
+          sudo jq --slurpfile p /tmp/cpi-patch.json '. * $p[0]' "$LXC_CPI_JSON" | sudo tee "${LXC_CPI_JSON}.tmp" > /dev/null && sudo mv "${LXC_CPI_JSON}.tmp" "$LXC_CPI_JSON" && echo "cpi.json patched OK" || echo "WARNING: failed to patch cpi.json - continuing anyway"
         else
           echo "WARNING: cpi.json not found in LXC rootfs - continuing anyway"
         fi
