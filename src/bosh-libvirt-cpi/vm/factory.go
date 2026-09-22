@@ -593,7 +593,7 @@ func (f Factory) Create(
 			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real '+_D+'@\\n'\n" +
 			"        '  _rc='+_D+'?\\n'\n" +
 			"        '  _elapsed='+_D+'(('+_D+'(date +%s)-_start))\\n'\n" +
-			"        '  echo '+_D+'(date)\": bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting...\" >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
+			"        '  echo '+_D+'(date): bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
 			"        '  [ '+_D+'_elapsed -lt 10 ] && sleep 5\\n'\n" +
 			"        'done\\n')\n" +
 			"      os.chmod(_ns_orig, 0o755)\n" +
@@ -1187,7 +1187,7 @@ func (f Factory) Create(
 			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real '+_D+'@\\n'\n" +
 			"        '  _rc='+_D+'?\\n'\n" +
 			"        '  _elapsed='+_D+'(('+_D+'(date +%s)-_start))\\n'\n" +
-			"        '  echo '+_D+'(date)\": bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting...\" >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
+			"        '  echo '+_D+'(date): bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
 			"        '  [ '+_D+'_elapsed -lt 10 ] && sleep 5\\n'\n" +
 			"        'done\\n')\n" +
 			"      os.chmod(_ns_orig, 0o755)\n" +
