@@ -555,8 +555,18 @@ func (f Factory) Create(
 			"    threading.Thread(target=_start_async, daemon=True).start()\n" +
 			"    return\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
+			"  # Resolve job directory: monitrc service names like blobstore_nginx live in\n" +
+			"  # the 'blobstore' job dir. Scan monitrc files to find which job owns this svc.\n" +
+			"  job = svc\n" +
+			"  if not os.path.isdir('/var/vcap/jobs/'+svc):\n" +
+			"    import re as _re2\n" +
+			"    for _mf in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
+			"      if _re2.search(r'check process '+_re2.escape(svc)+r'\\b', open(_mf).read()):\n" +
+			"        _jname = _re2.sub(r'^\\d+_','',os.path.basename(_mf).replace('.monitrc',''))\n" +
+			"        if os.path.isdir('/var/vcap/jobs/'+_jname): job = _jname; break\n" +
+			"  log.write('start_svc svc='+svc+' job='+job+'\\n'); log.flush()\n" +
 			"  # Run pre-start script as root so it can create required directories\n" +
-			"  pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"  pre_start = '/var/vcap/jobs/' + job + '/bin/pre-start'\n" +
 			"  if os.path.exists(pre_start):\n" +
 			"    try:\n" +
 			"      r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
@@ -602,7 +612,7 @@ func (f Factory) Create(
 			"      os.chmod(_ns_orig, 0o755)\n" +
 			"      log.write('installed bosh_nats_sync retry wrapper\\n'); log.flush()\n" +
 			"  # For postgres and other services: start all processes in bpm.yml\n" +
-			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"  bpmyml = '/var/vcap/jobs/' + job + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
 			"      cfg = load_bpm(bpmyml)\n" +
@@ -1160,8 +1170,18 @@ func (f Factory) Create(
 			"    return\n" +
 			"  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')\n" +
 			"  console_log('start_svc sync: '+svc)\n" +
+			"  # Resolve job directory: monitrc service names like blobstore_nginx live in\n" +
+			"  # the 'blobstore' job dir. Scan monitrc files to find which job owns this svc.\n" +
+			"  job = svc\n" +
+			"  if not os.path.isdir('/var/vcap/jobs/'+svc):\n" +
+			"    import re as _re2\n" +
+			"    for _mf in sorted(glob.glob('/var/vcap/monit/job/*.monitrc')):\n" +
+			"      if _re2.search(r'check process '+_re2.escape(svc)+r'\\b', open(_mf).read()):\n" +
+			"        _jname = _re2.sub(r'^\\d+_','',os.path.basename(_mf).replace('.monitrc',''))\n" +
+			"        if os.path.isdir('/var/vcap/jobs/'+_jname): job = _jname; break\n" +
+			"  log.write('start_svc svc='+svc+' job='+job+'\\n'); log.flush()\n" +
 			"  # Run pre-start script as root so it can create required directories\n" +
-			"  pre_start = '/var/vcap/jobs/' + svc + '/bin/pre-start'\n" +
+			"  pre_start = '/var/vcap/jobs/' + job + '/bin/pre-start'\n" +
 			"  if os.path.exists(pre_start):\n" +
 			"    try:\n" +
 			"      r = subprocess.run([pre_start], capture_output=True, timeout=120)\n" +
@@ -1204,7 +1224,7 @@ func (f Factory) Create(
 			"        'done\\n')\n" +
 			"      os.chmod(_ns_orig, 0o755)\n" +
 			"      log.write('installed bosh_nats_sync retry wrapper\\n'); log.flush()\n" +
-			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
+			"  bpmyml = '/var/vcap/jobs/' + job + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
 			"      cfg = load_bpm(bpmyml)\n" +

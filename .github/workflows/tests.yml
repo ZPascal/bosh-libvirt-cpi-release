@@ -418,7 +418,25 @@ jobs:
             exit 1
           }
         echo "Waiting for blobstore (port 25250)..."
-        timeout 120 bash -c 'until nc -z 192.168.122.10 25250 2>/dev/null; do sleep 3; done'
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z 192.168.122.10 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+          if [ -n "$QEMU_IMG" ]; then
+            sudo mkdir -p /mnt/qemu-rootfs-blob
+            sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-blob 2>/dev/null && {
+              echo "=== monit-blobstore.log ===" && sudo tail -50 /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore.log)"
+              echo "=== /var/vcap/sys/run/bpm/blobstore/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/sys/run/bpm/blobstore/ 2>/dev/null || echo "(no blobstore run dir)"
+              echo "=== /var/vcap/packages/nginx/logs/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/packages/nginx/logs/ 2>/dev/null || echo "(no nginx logs dir)"
+              sudo umount /mnt/qemu-rootfs-blob 2>/dev/null
+            } || echo "Mount failed"
+          fi
+          exit 1
+        fi
         echo "Blobstore ready"
         timeout 300 bosh -e qemu-ci upload-release \
           https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
