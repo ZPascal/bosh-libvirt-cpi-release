@@ -218,9 +218,17 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	}
 
 	// chmod only applies to file-based images, not directory/ext4-based ones.
+	// For qcow2 with an SSH runner the image lives on the remote host, so use
+	// runner.Execute; for all other cases use the local filesystem.
 	if format != "dir" && format != "ext4" {
-		if err := f.fs.Chmod(dstImage, 0644); err != nil {
-			return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+		if format == "qcow2" && isSSHRunner(f.runner) {
+			if _, _, err := f.runner.Execute("chmod", "0644", dstImage); err != nil {
+				return bosherr.WrapErrorf(err, "Setting stemcell image permissions (remote)")
+			}
+		} else {
+			if err := f.fs.Chmod(dstImage, 0644); err != nil {
+				return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+			}
 		}
 	}
 
