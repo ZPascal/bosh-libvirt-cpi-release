@@ -771,11 +771,14 @@ jobs:
             done
             DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
             [ -n "$DIRVM" ] && echo "=== NATS auth.json (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
-            [ -n "$DIRVM" ] && echo "=== monit-nats.log (last 40 lines) ===" && sudo tail -40 "$DIRVM/rootfs/var/vcap/bosh/log/monit-nats.log" 2>/dev/null || echo "(no monit-nats.log)"
+            [ -n "$DIRVM" ] && echo "=== monit-nats.log (last 100 lines) ===" && sudo tail -100 "$DIRVM/rootfs/var/vcap/bosh/log/monit-nats.log" 2>/dev/null || echo "(no monit-nats.log)"
+            [ -n "$DIRVM" ] && echo "=== bosh-nats-sync.log (last 50 lines) ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/sys/log/nats/bosh-nats-sync.log" 2>/dev/null || echo "(no bosh-nats-sync.log)"
             [ -n "$DIRVM" ] && echo "=== bosh_nats_sync running? ===" && sudo cat "$DIRVM/rootfs/var/vcap/sys/run/bpm/nats/bosh_nats_sync.pid" 2>/dev/null | xargs -I{} sh -c 'kill -0 {} 2>/dev/null && echo "pid {} alive" || echo "pid {} dead/missing"' || echo "(no bosh_nats_sync pid file)"
             [ -n "$DIRVM" ] && echo "=== director_ca_cert.pem (via data/jobs symlink) ===" && sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "director_ca_cert.pem" 2>/dev/null | head -1 | xargs -I{} sudo head -5 {} 2>/dev/null || echo "(no director_ca_cert.pem found)"
             [ -n "$DIRVM" ] && echo "=== bosh_nats_sync binary ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/jobs/nats/bin/bosh_nats_sync" 2>/dev/null || echo "(no bosh_nats_sync binary)"
-            [ -n "$DIRVM" ] && echo "=== nats bpm.yml processes ===" && sudo grep -E "name:|executable:" "$DIRVM/rootfs/var/vcap/jobs/nats/config/bpm.yml" 2>/dev/null || sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bpm.yml" 2>/dev/null | xargs sudo grep -E "name:|executable:" 2>/dev/null || echo "(no bpm.yml found)"
+            [ -n "$DIRVM" ] && echo "=== nats bpm.yml processes ===" && sudo grep -E "name:|executable:|privileged:" "$DIRVM/rootfs/var/vcap/jobs/nats/config/bpm.yml" 2>/dev/null || sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bpm.yml" 2>/dev/null | xargs sudo grep -E "name:|executable:|privileged:" 2>/dev/null || echo "(no bpm.yml found)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync_config.yml ===" && sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bosh_nats_sync_config.yml" 2>/dev/null | head -1 | xargs -I{} sudo cat {} 2>/dev/null | head -30 || echo "(no bosh_nats_sync_config.yml found)"
+            [ -n "$DIRVM" ] && echo "=== /var/vcap/sys/log/nats/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/sys/log/nats/" 2>/dev/null || echo "(no /var/vcap/sys/log/nats/ dir)"
             sudo virsh -c lxc:/// list --all 2>/dev/null || true
             exit 1
           }

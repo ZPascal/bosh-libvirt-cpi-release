@@ -420,26 +420,28 @@ func (f Factory) Create(
 			"def load_bpm(path):\n" +
 			"  import re as _r\n" +
 			"  text = open(path).read()\n" +
-			"  procs = []; cur = None; in_args = False; in_env = False\n" +
+			"  procs = []; cur = None; in_args = False; in_env = False; in_unsafe = False\n" +
 			"  for line in text.splitlines():\n" +
 			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
 			"      if cur: procs.append(cur)\n" +
-			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}}\n" +
-			"      in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}, 'privileged': False}\n" +
+			"      in_args = False; in_env = False; in_unsafe = False\n" +
 			"    elif cur is None: continue\n" +
 			"    elif _r.match(r'\\s+executable:', line):\n" +
-			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False; in_unsafe = False\n" +
 			"    elif _r.match(r'\\s+args:', line):\n" +
-			"      in_args = True; in_env = False\n" +
+			"      in_args = True; in_env = False; in_unsafe = False\n" +
 			"      inline = line.split('args:',1)[1].strip()\n" +
 			"      if inline.startswith('['):\n" +
 			"        _q = chr(34); cur['args'] = [a.strip().strip(_q+chr(39)) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
-			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
+			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False; in_unsafe = False\n" +
+			"    elif _r.match(r'\\s+unsafe:', line): in_unsafe = True; in_args = False; in_env = False\n" +
+			"    elif in_unsafe and _r.match(r'\\s+privileged:\\s+true', line): cur['privileged'] = True\n" +
 			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
 			"      _q = chr(34); cur['args'].append(line.split('-',1)[1].strip().strip(_q+chr(39)))\n" +
 			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
 			"      _q = chr(34); k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(_q+chr(39))\n" +
-			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
+			"    elif _r.match(r'\\s+(executable|name|args|env|unsafe):', line): in_args = False; in_env = False; in_unsafe = False\n" +
 			"  if cur: procs.append(cur)\n" +
 			"  return {'processes': procs}\n" +
 			"def start_svc(svc):\n" +
@@ -581,12 +583,15 @@ func (f Factory) Create(
 			"        if not exe: continue\n" +
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
-			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        if not proc.get('privileged', False):\n" +
+			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        log.write('starting '+pname+' privileged='+str(proc.get('privileged',False))+' exe='+exe+'\\n'); log.flush()\n" +
 			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"        open(pf,'w').write(str(p.pid))\n" +
+			"        log.write('started '+pname+' pid='+str(p.pid)+'\\n'); log.flush()\n" +
 			"        if svc == 'postgres' and pname == svc:\n" +
 			"          _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
 			"          def run_createdb_and_watch():\n" +
@@ -661,7 +666,9 @@ func (f Factory) Create(
 				"mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true\n" +
 				"# Ensure /var/vcap/sys/run/postgresql is on rootfs (not tmpfs) for postgres socket\n" +
 				"mkdir -p /var/vcap/sys/run/postgresql /var/vcap/sys/run/bpm /var/vcap/sys/log\n" +
-				"chown -R 1000:1000 /var/vcap/sys/run/postgresql /var/vcap/sys/log 2>/dev/null || true\n" +
+				"# Pre-create per-job log dirs so BPM processes can open their logfiles\n" +
+				"mkdir -p /var/vcap/sys/log/nats /var/vcap/data/nats\n" +
+				"chown -R 1000:1000 /var/vcap/sys/run/postgresql /var/vcap/sys/log /var/vcap/data/nats 2>/dev/null || true\n" +
 				"cat /proc/mounts > /bosh-mounts.txt 2>/dev/null || true\n" +
 				"cat /proc/mounts > /var/vcap/bosh/log/container-mounts.txt 2>/dev/null || true\n" +
 				"ip link set lo up 2>/dev/null || true\n" +
@@ -978,26 +985,28 @@ func (f Factory) Create(
 			"def load_bpm(path):\n" +
 			"  import re as _r\n" +
 			"  text = open(path).read()\n" +
-			"  procs = []; cur = None; in_args = False; in_env = False\n" +
+			"  procs = []; cur = None; in_args = False; in_env = False; in_unsafe = False\n" +
 			"  for line in text.splitlines():\n" +
 			"    if _r.match(r'^\\s*-\\s+name:', line):\n" +
 			"      if cur: procs.append(cur)\n" +
-			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}}\n" +
-			"      in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur = {'name': line.split('name:',1)[1].strip().strip(_q+chr(39)), 'executable': '', 'args': [], 'env': {}, 'privileged': False}\n" +
+			"      in_args = False; in_env = False; in_unsafe = False\n" +
 			"    elif cur is None: continue\n" +
 			"    elif _r.match(r'\\s+executable:', line):\n" +
-			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False\n" +
+			"      _q = chr(34); cur['executable'] = line.split('executable:',1)[1].strip().strip(_q+chr(39)); in_args = False; in_env = False; in_unsafe = False\n" +
 			"    elif _r.match(r'\\s+args:', line):\n" +
-			"      in_args = True; in_env = False\n" +
+			"      in_args = True; in_env = False; in_unsafe = False\n" +
 			"      inline = line.split('args:',1)[1].strip()\n" +
 			"      if inline.startswith('['):\n" +
 			"        _q = chr(34); cur['args'] = [a.strip().strip(_q+chr(39)) for a in inline.strip('[]').split(',') if a.strip()]; in_args = False\n" +
-			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False\n" +
+			"    elif _r.match(r'\\s+env:', line): in_env = True; in_args = False; in_unsafe = False\n" +
+			"    elif _r.match(r'\\s+unsafe:', line): in_unsafe = True; in_args = False; in_env = False\n" +
+			"    elif in_unsafe and _r.match(r'\\s+privileged:\\s+true', line): cur['privileged'] = True\n" +
 			"    elif in_args and _r.match(r'\\s+-\\s+', line):\n" +
 			"      _q = chr(34); cur['args'].append(line.split('-',1)[1].strip().strip(_q+chr(39)))\n" +
 			"    elif in_env and ':' in line and _r.match(r'\\s+\\w', line):\n" +
 			"      _q = chr(34); k,v = line.split(':',1); cur['env'][k.strip()] = v.strip().strip(_q+chr(39))\n" +
-			"    elif _r.match(r'\\s+(executable|name|args|env):', line): in_args = False; in_env = False\n" +
+			"    elif _r.match(r'\\s+(executable|name|args|env|unsafe):', line): in_args = False; in_env = False; in_unsafe = False\n" +
 			"  if cur: procs.append(cur)\n" +
 			"  return {'processes': procs}\n" +
 			"def start_svc(svc):\n" +
@@ -1141,10 +1150,12 @@ func (f Factory) Create(
 			"        if not exe: continue\n" +
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
-			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        if not proc.get('privileged', False):\n" +
+			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
 			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        console_log('starting '+pname+' privileged='+str(proc.get('privileged',False))+' exe='+exe)\n" +
 			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"        open(pf,'w').write(str(p.pid))\n" +
 			"        console_log('started '+pname+' pid='+str(p.pid))\n" +
