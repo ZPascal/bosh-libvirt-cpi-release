@@ -65,9 +65,9 @@ func NewFactory(
 		compressor: compressor,
 
 		ConvertToQCOW2: func(src, dst string) error {
-			out, err := exec.Command("qemu-img", "convert", "-f", "raw", "-O", "qcow2", src, dst).CombinedOutput()
+			out, _, err := runner.Execute("qemu-img", "convert", "-f", "raw", "-O", "qcow2", src, dst)
 			if err != nil {
-				return bosherr.WrapErrorf(err, "qemu-img: %s", string(out))
+				return bosherr.WrapErrorf(err, "qemu-img: %s", out)
 			}
 			return nil
 		},
