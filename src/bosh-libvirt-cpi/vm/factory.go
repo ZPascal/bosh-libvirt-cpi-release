@@ -580,21 +580,21 @@ func (f Factory) Create(
 			"    if os.path.exists(_ns_orig) and not os.path.exists(_ns_real):\n" +
 			"      import shutil as _shutil; _shutil.move(_ns_orig, _ns_real)\n" +
 			"    if not os.path.exists(_ns_orig) and os.path.exists(_ns_real):\n" +
+			"      _D=chr(36)\n" +
 			"      open(_ns_orig,'w').write(\n" +
 			"        '#!/bin/sh\\n'\n" +
-			"        'for i in $(seq 1 60); do\\n'\n" +
+			"        'for i in '+_D+'(seq 1 60); do\\n'\n" +
 			"        '  nc -z 127.0.0.1 4222 2>/dev/null && break\\n'\n" +
 			"        '  sleep 1\\n'\n" +
 			"        'done\\n'\n" +
 			"        'mkdir -p /var/vcap/bosh/log\\n'\n" +
 			"        'while true; do\\n'\n" +
-			"        '  _start=$(date +%s)\\n'\n" +
-			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real \"$@\"\\n'\n" +
-			"        '  _rc=$?\\n'\n" +
-			"        '  _elapsed=$(( $(date +%s) - _start ))\\n'\n" +
-			"        '  echo \"$(date): bosh_nats_sync exited rc=$_rc after ${_elapsed}s, restarting...\"'\n" +
-			"        ' >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
-			"        '  [ \"$_elapsed\" -lt 10 ] && sleep 5\\n'\n" +
+			"        '  _start='+_D+'(date +%s)\\n'\n" +
+			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real '+_D+'@\\n'\n" +
+			"        '  _rc='+_D+'?\\n'\n" +
+			"        '  _elapsed='+_D+'(('+_D+'(date +%s)-_start))\\n'\n" +
+			"        '  echo '+_D+'(date)\": bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting...\" >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
+			"        '  [ '+_D+'_elapsed -lt 10 ] && sleep 5\\n'\n" +
 			"        'done\\n')\n" +
 			"      os.chmod(_ns_orig, 0o755)\n" +
 			"      log.write('installed bosh_nats_sync retry wrapper\\n'); log.flush()\n" +
@@ -1174,21 +1174,21 @@ func (f Factory) Create(
 			"    if os.path.exists(_ns_orig) and not os.path.exists(_ns_real):\n" +
 			"      import shutil as _shutil; _shutil.move(_ns_orig, _ns_real)\n" +
 			"    if not os.path.exists(_ns_orig) and os.path.exists(_ns_real):\n" +
+			"      _D=chr(36)\n" +
 			"      open(_ns_orig,'w').write(\n" +
 			"        '#!/bin/sh\\n'\n" +
-			"        'for i in $(seq 1 60); do\\n'\n" +
+			"        'for i in '+_D+'(seq 1 60); do\\n'\n" +
 			"        '  nc -z 127.0.0.1 4222 2>/dev/null && break\\n'\n" +
 			"        '  sleep 1\\n'\n" +
 			"        'done\\n'\n" +
 			"        'mkdir -p /var/vcap/bosh/log\\n'\n" +
 			"        'while true; do\\n'\n" +
-			"        '  _start=$(date +%s)\\n'\n" +
-			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real \"$@\"\\n'\n" +
-			"        '  _rc=$?\\n'\n" +
-			"        '  _elapsed=$(( $(date +%s) - _start ))\\n'\n" +
-			"        '  echo \"$(date): bosh_nats_sync exited rc=$_rc after ${_elapsed}s, restarting...\"'\n" +
-			"        ' >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
-			"        '  [ \"$_elapsed\" -lt 10 ] && sleep 5\\n'\n" +
+			"        '  _start='+_D+'(date +%s)\\n'\n" +
+			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real '+_D+'@\\n'\n" +
+			"        '  _rc='+_D+'?\\n'\n" +
+			"        '  _elapsed='+_D+'(('+_D+'(date +%s)-_start))\\n'\n" +
+			"        '  echo '+_D+'(date)\": bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting...\" >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
+			"        '  [ '+_D+'_elapsed -lt 10 ] && sleep 5\\n'\n" +
 			"        'done\\n')\n" +
 			"      os.chmod(_ns_orig, 0o755)\n" +
 			"      log.write('installed bosh_nats_sync retry wrapper\\n'); log.flush()\n" +
