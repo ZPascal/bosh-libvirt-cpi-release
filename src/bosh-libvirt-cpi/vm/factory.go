@@ -1229,13 +1229,16 @@ func (f Factory) Create(
 			"done ) &\n" +
 			"# Background watcher: once bosh-agent installs the libvirt_cpi package, install\n" +
 			"# the CPI binary wrapper so cpi-inject.json is merged at every invocation.\n" +
-			"# (The package dir doesn't exist in the stemcell; bosh-agent creates it later.)\n" +
+			"# Wait for cpi.json to exist first — that file is rendered only after ALL packages\n" +
+			"# are compiled AND uploaded to the blobstore, so the package tarball is frozen by\n" +
+			"# then and we won't race with tar reading bin/cpi during compression.\n" +
 			"( INJ=/var/vcap/bosh/cpi-inject.json\n" +
 			"  if [ -f \"$INJ\" ]; then\n" +
 			"    while true; do\n" +
 			"      CPI=/var/vcap/packages/libvirt_cpi/bin/cpi\n" +
 			"      CPIR=/var/vcap/packages/libvirt_cpi/bin/cpi.real\n" +
-			"      if [ -f \"$CPI\" ] && [ ! -f \"$CPIR\" ]; then\n" +
+			"      CJ=$(ls /var/vcap/data/jobs/libvirt_cpi/*/config/cpi.json 2>/dev/null | head -1)\n" +
+			"      if [ -f \"$CPI\" ] && [ ! -f \"$CPIR\" ] && [ -n \"$CJ\" ]; then\n" +
 			"        mv \"$CPI\" \"$CPIR\"\n" +
 			"        printf '%s' '" + shellEscape(cpiWrapperScript()) + "' > \"$CPI\"\n" +
 			"        chmod 755 \"$CPI\"\n" +
