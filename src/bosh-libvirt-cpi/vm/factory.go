@@ -277,6 +277,7 @@ func (f Factory) Create(
 				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
 			}
 		}
+		installNatsSyncWrapper(vmRootfs)
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
 		svStub := "#!/bin/sh\n" +
