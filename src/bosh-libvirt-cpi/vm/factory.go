@@ -381,6 +381,9 @@ func (f Factory) Create(
 		}
 		_ = os.WriteFile(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper), 0755)
 		_ = os.WriteFile(vmRootfs+"/usr/bin/curl", []byte(curlWrapper), 0755)
+		// Ensure DNS resolution works inside the LXC container so package
+		// compilation scripts can download from the internet (e.g. dl.google.com).
+		_ = os.WriteFile(vmRootfs+"/etc/resolv.conf", []byte("nameserver 8.8.8.8\nnameserver 8.8.4.4\n"), 0644)
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
