@@ -72,4 +72,13 @@ fi
 
 # Patch the binary's RPATH so it finds bundled libs at $ORIGIN/../lib
 # regardless of what is or isn't installed on the target system.
-patchelf --set-rpath '$ORIGIN/../lib' "${BOSH_INSTALL_TARGET}/bin/cpi"
+# cpi.real exists when create_vm already replaced bin/cpi with a shell wrapper
+# (bootstrap re-compilation inside the running director VM). Patchelf the real
+# ELF in that case; skip silently if neither exists.
+CPI_ELF="${BOSH_INSTALL_TARGET}/bin/cpi"
+[ -f "${BOSH_INSTALL_TARGET}/bin/cpi.real" ] && CPI_ELF="${BOSH_INSTALL_TARGET}/bin/cpi.real"
+if file "$CPI_ELF" 2>/dev/null | grep -q ELF; then
+  patchelf --set-rpath '$ORIGIN/../lib' "$CPI_ELF"
+else
+  echo "WARNING: $CPI_ELF is not an ELF binary, skipping patchelf"
+fi

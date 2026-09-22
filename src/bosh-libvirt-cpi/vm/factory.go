@@ -567,44 +567,47 @@ func (f Factory) Create(
 			"        for f in filenames:\n" +
 			"          try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
 			"          except: pass\n" +
-			"  # For postgres and other services: start directly via bpm.yml\n" +
+			"  # For postgres and other services: start all processes in bpm.yml\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
 			"      cfg = load_bpm(bpmyml)\n" +
-			"      proc = cfg.get('processes',[{}])[0]\n" +
-			"      exe = proc.get('executable','')\n" +
-			"      args = [exe] + proc.get('args',[])\n" +
-			"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"      procs = cfg.get('processes',[])\n" +
 			"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
-			"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
-			"      open(pf,'w').write(str(p.pid))\n" +
-			"      if svc == 'postgres':\n" +
-			"        _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
-			"        def run_createdb_and_watch():\n" +
-			"          for _ in range(60):\n" +
-			"            try:\n" +
-			"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
-			"            except: time.sleep(2)\n" +
-			"          import glob\n" +
-			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
-			"            subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
-			"          while True:\n" +
-			"            time.sleep(5)\n" +
-			"            try:\n" +
-			"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
-			"            except:\n" +
-			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"      for proc in procs:\n" +
+			"        pname = proc.get('name', svc)\n" +
+			"        exe = proc.get('executable','')\n" +
+			"        if not exe: continue\n" +
+			"        args = [exe] + proc.get('args',[])\n" +
+			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"        open(pf,'w').write(str(p.pid))\n" +
+			"        if svc == 'postgres' and pname == svc:\n" +
+			"          _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
+			"          def run_createdb_and_watch():\n" +
+			"            for _ in range(60):\n" +
 			"              try:\n" +
-			"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
-			"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
-			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
-			"        import threading; threading.Thread(target=run_createdb_and_watch, daemon=True).start()\n" +
+			"                s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
+			"              except: time.sleep(2)\n" +
+			"            import glob\n" +
+			"            for f in glob.glob('/var/vcap/jobs/*/bin/create-database'):\n" +
+			"              subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+			"            while True:\n" +
+			"              time.sleep(5)\n" +
+			"              try:\n" +
+			"                s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
+			"              except:\n" +
+			"                log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"                try:\n" +
+			"                  np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"                  open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
+			"                except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
+			"          import threading; threading.Thread(target=run_createdb_and_watch, daemon=True).start()\n" +
 			"      return\n" +
 			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
@@ -1129,39 +1132,42 @@ func (f Factory) Create(
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
 			"      cfg = load_bpm(bpmyml)\n" +
-			"      proc = cfg.get('processes',[{}])[0]\n" +
-			"      exe = proc.get('executable','')\n" +
-			"      args = [exe] + proc.get('args',[])\n" +
-			"      env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"      procs = cfg.get('processes',[])\n" +
 			"      setpriv_bin = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), None)\n" +
 			"      if not setpriv_bin: raise FileNotFoundError('setpriv not found')\n" +
-			"      args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
-			"      pf = '/var/vcap/sys/run/bpm/'+svc+'/'+svc+'.pid'\n" +
-			"      os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"      os.chown(os.path.dirname(pf), 1000, 1000)\n" +
-			"      p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
-			"      open(pf,'w').write(str(p.pid))\n" +
-			"      console_log('started '+svc+' pid='+str(p.pid))\n" +
-			"      if svc == 'postgres':\n" +
-			"        _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
-			"        def run_createdb():\n" +
-			"          for _ in range(60):\n" +
-			"            try:\n" +
-			"              s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
-			"            except: time.sleep(2)\n" +
-			"          import glob\n" +
-			"          for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
-			"          while True:\n" +
-			"            time.sleep(5)\n" +
-			"            try:\n" +
-			"              s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
-			"            except:\n" +
-			"              log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"      for proc in procs:\n" +
+			"        pname = proc.get('name', svc)\n" +
+			"        exe = proc.get('executable','')\n" +
+			"        if not exe: continue\n" +
+			"        args = [exe] + proc.get('args',[])\n" +
+			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"        args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
+			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
+			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
+			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"        open(pf,'w').write(str(p.pid))\n" +
+			"        console_log('started '+pname+' pid='+str(p.pid))\n" +
+			"        if svc == 'postgres' and pname == svc:\n" +
+			"          _pg_args = args; _pg_env = env; _pg_host = '127.0.0.1'\n" +
+			"          def run_createdb():\n" +
+			"            for _ in range(60):\n" +
 			"              try:\n" +
-			"                np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
-			"                open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
-			"              except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
-			"        import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
+			"                s = socket.create_connection((_pg_host, 5432), 1); s.close(); break\n" +
+			"              except: time.sleep(2)\n" +
+			"            import glob\n" +
+			"            for f in glob.glob('/var/vcap/jobs/*/bin/create-database'): subprocess.run([f], stdout=log, stderr=log, timeout=60)\n" +
+			"            while True:\n" +
+			"              time.sleep(5)\n" +
+			"              try:\n" +
+			"                s = socket.create_connection((_pg_host, 5432), 1); s.close()\n" +
+			"              except:\n" +
+			"                log.write('postgres down - restarting\\n'); log.flush()\n" +
+			"                try:\n" +
+			"                  np = subprocess.Popen(_pg_args, env=_pg_env, stdout=log, stderr=log, start_new_session=True)\n" +
+			"                  open(pf,'w').write(str(np.pid)); time.sleep(3)\n" +
+			"                except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
+			"          import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 			"      return\n" +
 			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n'); console_log('start failed '+svc+': '+str(e))\n" +
 			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +

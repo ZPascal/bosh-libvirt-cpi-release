@@ -79,6 +79,7 @@ instance_groups:
       director_account:
         user: admin
         password: admin-password
+        ca_cert: ((director_ssl.ca))
       tls:
         ca: ((nats_ca.ca))
         client_ca:
