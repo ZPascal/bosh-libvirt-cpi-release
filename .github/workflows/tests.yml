@@ -417,6 +417,10 @@ jobs:
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
             exit 1
           }
+        timeout 300 bosh -e qemu-ci upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
         timeout 3600 bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
@@ -758,6 +762,10 @@ jobs:
               ' 2>&1 || echo "(SSH into director container failed - check sshd/key setup)"
             exit 1
           }
+        timeout 300 bosh -e lxc-ci upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
         timeout 3600 bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
