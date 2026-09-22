@@ -612,6 +612,15 @@ func (f Factory) Create(
 			"        if not exe: continue\n" +
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"        if 'nginx' in exe or 'nginx' in pname:\n" +
+			"          for d in ['/var/vcap/data/'+svc+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
+			"            os.makedirs(d, exist_ok=True)\n" +
+			"            try: os.chown(d, 1000, 1000)\n" +
+			"            except: pass\n" +
+			"          ng_log = '/var/vcap/packages/nginx/logs/error.log'\n" +
+			"          if not os.path.exists(ng_log): open(ng_log,'a').close()\n" +
+			"          try: os.chmod(ng_log, 0o666)\n" +
+			"          except: pass\n" +
 			"        if not proc.get('privileged', False):\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
@@ -1205,6 +1214,15 @@ func (f Factory) Create(
 			"        if not exe: continue\n" +
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
+			"        if 'nginx' in exe or 'nginx' in pname:\n" +
+			"          for d in ['/var/vcap/data/'+svc+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
+			"            os.makedirs(d, exist_ok=True)\n" +
+			"            try: os.chown(d, 1000, 1000)\n" +
+			"            except: pass\n" +
+			"          ng_log = '/var/vcap/packages/nginx/logs/error.log'\n" +
+			"          if not os.path.exists(ng_log): open(ng_log,'a').close()\n" +
+			"          try: os.chmod(ng_log, 0o666)\n" +
+			"          except: pass\n" +
 			"        if not proc.get('privileged', False):\n" +
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
