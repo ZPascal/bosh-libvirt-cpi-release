@@ -559,16 +559,17 @@ func (f Factory) Create(
 			"      log.write('pre-start rc='+str(r.returncode)+' '+r.stdout.decode()[:200]+r.stderr.decode()[:200]+'\\n'); log.flush()\n" +
 			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
+			"  # Always mkdir so dirs exist in tmpfs (bosh-agent mounts tmpfs over /var/vcap/sys/log)\n" +
 			"  import glob as _glob\n" +
 			"  for chown_root in (['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc] +\n" +
 			"      _glob.glob('/var/vcap/store/'+svc+'*')):\n" +
-			"    if os.path.exists(chown_root):\n" +
-			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
-			"        try: os.chown(dirpath, 1000, 1000)\n" +
+			"    os.makedirs(chown_root, exist_ok=True)\n" +
+			"    for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
+			"      try: os.chown(dirpath, 1000, 1000)\n" +
+			"      except: pass\n" +
+			"      for f in filenames:\n" +
+			"        try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
 			"        except: pass\n" +
-			"        for f in filenames:\n" +
-			"          try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
-			"          except: pass\n" +
 			"  # For postgres and other services: start all processes in bpm.yml\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
@@ -1127,16 +1128,17 @@ func (f Factory) Create(
 			"      console_log('pre-start '+svc+' rc='+str(r.returncode))\n" +
 			"    except Exception as e: log.write('pre-start failed: '+str(e)+'\\n'); log.flush()\n" +
 			"  # chown all data/log dirs created by pre-start to vcap (uid 1000)\n" +
+			"  # Always mkdir so dirs exist in tmpfs (bosh-agent mounts tmpfs over /var/vcap/sys/log)\n" +
 			"  import glob as _glob\n" +
 			"  for chown_root in (['/var/vcap/data/'+svc, '/var/vcap/sys/log/'+svc, '/var/vcap/sys/run/'+svc] +\n" +
 			"      _glob.glob('/var/vcap/store/'+svc+'*')):\n" +
-			"    if os.path.exists(chown_root):\n" +
-			"      for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
-			"        try: os.chown(dirpath, 1000, 1000)\n" +
+			"    os.makedirs(chown_root, exist_ok=True)\n" +
+			"    for dirpath, dirnames, filenames in os.walk(chown_root):\n" +
+			"      try: os.chown(dirpath, 1000, 1000)\n" +
+			"      except: pass\n" +
+			"      for f in filenames:\n" +
+			"        try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
 			"        except: pass\n" +
-			"        for f in filenames:\n" +
-			"          try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
-			"          except: pass\n" +
 			"  bpmyml = '/var/vcap/jobs/' + svc + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
 			"    try:\n" +
@@ -1513,6 +1515,43 @@ func cpiWrapperScript() string {
 		"  fi\n" +
 		"fi\n" +
 		"exec /var/vcap/packages/libvirt_cpi/bin/cpi.real \"$@\"\n"
+}
+
+func natsSyncWrapperScript() string {
+	return "#!/bin/sh\n" +
+		"# Wait for nats-server port 4222 before first start so --signal reload succeeds.\n" +
+		"for i in $(seq 1 60); do\n" +
+		"  nc -z 127.0.0.1 4222 2>/dev/null && break\n" +
+		"  sleep 1\n" +
+		"done\n" +
+		"# Retry loop: restart bosh_nats_sync if it exits (crashes on startup are common\n" +
+		"# if nats-server is not yet ready to accept --signal reload).\n" +
+		"while true; do\n" +
+		"  _start=$(date +%s)\n" +
+		"  /var/vcap/jobs/nats/bin/bosh_nats_sync.real \"$@\"\n" +
+		"  _rc=$?\n" +
+		"  _elapsed=$(( $(date +%s) - _start ))\n" +
+		"  echo \"$(date): bosh_nats_sync exited rc=$_rc after ${_elapsed}s, restarting...\"" +
+		" >> /var/vcap/bosh/log/monit-nats.log\n" +
+		"  [ \"$_elapsed\" -lt 10 ] && sleep 5\n" +
+		"done\n"
+}
+
+// installNatsSyncWrapper replaces /var/vcap/jobs/nats/bin/bosh_nats_sync with a
+// shell wrapper that waits for nats-server readiness and retries on crash.
+// It is idempotent: if bosh_nats_sync.real already exists the rename is skipped.
+func installNatsSyncWrapper(rootfs string) {
+	binDir := rootfs + "/var/vcap/jobs/nats/bin"
+	orig := binDir + "/bosh_nats_sync"
+	real := binDir + "/bosh_nats_sync.real"
+	if _, err := os.Stat(orig); err != nil {
+		return // nats job not installed in this rootfs
+	}
+	if _, err := os.Stat(real); err != nil {
+		// Not yet renamed — move original out of the way.
+		_, _ = ExecCommand("mv", orig, real)
+	}
+	_ = os.WriteFile(orig, []byte(natsSyncWrapperScript()), 0755)
 }
 
 // shellEscape single-quote-escapes s for embedding in a shell printf '%s' '...'
