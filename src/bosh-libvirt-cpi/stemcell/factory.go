@@ -125,15 +125,24 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 	switch format {
 	case "qcow2":
 		// The stemcell image is gzip-compressed raw disk; decompress then convert to qcow2.
+		// ConvertToQCOW2 runs qemu-img via runner.Execute which may be SSH (remote host).
+		// Decompress locally first, then upload the raw file to the remote host before
+		// converting, so qemu-img can open it. Clean up the remote raw file afterwards.
 		rawTmp := dstImage + ".raw"
 		if err := f.DecompressImage(imagePath, rawTmp); err != nil {
 			return bosherr.WrapError(err, "Decompressing stemcell image")
 		}
+		defer func() { _ = os.Remove(rawTmp) }()
+		if isSSHRunner(f.runner) {
+			if _, _, mkdirErr := f.runner.Execute("mkdir", "-p", filepath.Dir(rawTmp)); mkdirErr == nil {
+				if uploadErr := f.runner.Upload(rawTmp, rawTmp); uploadErr == nil {
+					defer func() { _, _, _ = f.runner.Execute("rm", "-f", rawTmp) }()
+				}
+			}
+		}
 		if err := f.ConvertToQCOW2(rawTmp, dstImage); err != nil {
-			_ = os.Remove(rawTmp)
 			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
 		}
-		_ = os.Remove(rawTmp)
 	case "raw":
 		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
 		// plain raw filesystem image for libvirt-lxc.
@@ -256,4 +265,15 @@ func decompressOrCopy(src, dst string) error {
 	defer gr.Close() //nolint:errcheck
 	_, err = io.Copy(out, gr)
 	return err
+}
+
+// isSSHRunner reports whether r routes commands to a remote host over SSH.
+// The runner may be wrapped in an ExpandingPathRunner, so we unwrap it.
+func isSSHRunner(r driver.Runner) bool {
+	type unwrapper interface{ Unwrap() driver.RawRunner }
+	if u, ok := r.(unwrapper); ok {
+		r = u.Unwrap()
+	}
+	_, ok := r.(*driver.SSHRunner)
+	return ok
 }

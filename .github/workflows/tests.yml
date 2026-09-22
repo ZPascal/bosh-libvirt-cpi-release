@@ -771,6 +771,9 @@ jobs:
             done
             DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
             [ -n "$DIRVM" ] && echo "=== NATS auth.json (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
+            [ -n "$DIRVM" ] && echo "=== monit-nats.log (last 40 lines) ===" && sudo tail -40 "$DIRVM/rootfs/var/vcap/bosh/log/monit-nats.log" 2>/dev/null || echo "(no monit-nats.log)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync running? ===" && sudo cat "$DIRVM/rootfs/var/vcap/sys/run/bpm/nats/bosh_nats_sync.pid" 2>/dev/null | xargs -I{} sh -c 'kill -0 {} 2>/dev/null && echo "pid {} alive" || echo "pid {} dead/missing"' || echo "(no bosh_nats_sync pid file)"
+            [ -n "$DIRVM" ] && echo "=== director_ca_cert.pem (first 5 lines) ===" && sudo head -5 "$DIRVM/rootfs/var/vcap/jobs/nats/config/director_ca_cert.pem" 2>/dev/null || echo "(no director_ca_cert.pem)"
             sudo virsh -c lxc:/// list --all 2>/dev/null || true
             exit 1
           }
