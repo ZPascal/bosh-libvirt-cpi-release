@@ -1526,6 +1526,7 @@ func natsSyncWrapperScript() string {
 		"  nc -z 127.0.0.1 4222 2>/dev/null && break\n" +
 		"  sleep 1\n" +
 		"done\n" +
+		"mkdir -p /var/vcap/bosh/log\n" +
 		"# Retry loop: restart bosh_nats_sync if it exits (crashes on startup are common\n" +
 		"# if nats-server is not yet ready to accept --signal reload).\n" +
 		"while true; do\n" +
