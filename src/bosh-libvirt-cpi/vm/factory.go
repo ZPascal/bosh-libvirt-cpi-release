@@ -1549,7 +1549,9 @@ func installNatsSyncWrapper(rootfs string) {
 	}
 	if _, err := os.Stat(real); err != nil {
 		// Not yet renamed — move original out of the way.
-		_, _ = ExecCommand("mv", orig, real)
+		if _, mvErr := ExecCommand("mv", orig, real); mvErr != nil {
+			return
+		}
 	}
 	_ = os.WriteFile(orig, []byte(natsSyncWrapperScript()), 0755)
 }
