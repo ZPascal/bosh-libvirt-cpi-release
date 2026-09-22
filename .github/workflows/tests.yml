@@ -767,14 +767,7 @@ jobs:
               sudo cat "$vd/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -30 || true
               sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || true
               echo "=== warden-cpi-agent-env.json (cert fields only) ==="
-              sudo python3 -c "
-import json, sys
-d = json.load(open('$vd/rootfs/var/vcap/bosh/warden-cpi-agent-env.json'))
-cert = d.get('env',{}).get('bosh',{}).get('mbus',{}).get('cert',{})
-print('cert.ca present:', bool(cert.get('ca')))
-print('cert.certificate present:', bool(cert.get('certificate')))
-print('cert.private_key present:', bool(cert.get('private_key')))
-" 2>/dev/null || echo "(warden-cpi-agent-env.json not found or no cert)"
+              sudo python3 -c "import json; f='$vd/rootfs/var/vcap/bosh/warden-cpi-agent-env.json'; d=json.load(open(f)); c=d.get('env',{}).get('bosh',{}).get('mbus',{}).get('cert',{}); print('cert.ca present:',bool(c.get('ca'))); print('cert.certificate present:',bool(c.get('certificate'))); print('cert.private_key present:',bool(c.get('private_key')))" 2>/dev/null || echo "(warden-cpi-agent-env.json not found or no cert)"
             done
             DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
             [ -n "$DIRVM" ] && echo "=== NATS auth.json (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
