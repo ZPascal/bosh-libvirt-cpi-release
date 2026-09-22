@@ -858,6 +858,7 @@ func (f Factory) Create(
 				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
 			}
 		}
+		installNatsSyncWrapper(mntDir)
 		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
 			qemuStaticIP = "127.0.0.1"
