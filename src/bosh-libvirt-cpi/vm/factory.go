@@ -190,30 +190,25 @@ func (f Factory) Create(
 	// mount the stemcell and inject per-VM agent env + init wrapper.
 	if f.domBuilder.DiskImageFormat() == "dir" {
 		vmRootfs := filepath.Join(f.opts.DirPath, vmID, "rootfs")
-		if err := os.MkdirAll(vmRootfs, 0755); err != nil {
+		// Use runner so operations execute on the libvirt host regardless of where
+		// the CPI process runs (deployed director LXC container or create-env host).
+		// Runner runs as root (SSH to host when deployed, local root for create-env),
+		// so no sudo is needed and setuid bits are preserved during the copy.
+		if _, _, err := f.runner.Execute("mkdir", "-p", vmRootfs); err != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(err, "Creating VM rootfs dir")
 		}
-		// Use sudo so root-owned files (e.g. etc/shadow mode 0000) are readable.
-		out, copyErr := ExecCommand("sudo", "cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
-		if copyErr != nil {
+		if out, _, copyErr := f.runner.Execute("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs); copyErr != nil {
 			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", string(out))
-		}
-		// Transfer ownership to the current user so subsequent Go os.* calls work.
-		// Root inside the privileged LXC container (uid 0) bypasses DAC, so sensitive
-		// files (e.g. /etc/shadow mode 0000) remain inaccessible to non-root users
-		// inside the container regardless of which uid owns them on the host.
-		uidGid := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
-		if out2, chownErr := ExecCommand("sudo", "chown", "-R", uidGid, vmRootfs); chownErr != nil {
-			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapErrorf(chownErr, "Taking ownership of VM rootfs: %s", string(out2))
+			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", out)
 		}
 
 		// Remove stale supervise dirs from stemcell copy so runsv starts cleanly
-		if svcs, _ := os.ReadDir(vmRootfs + "/etc/sv"); svcs != nil {
-			for _, svc := range svcs {
-				_ = os.RemoveAll(vmRootfs + "/etc/sv/" + svc.Name() + "/supervise")
+		if svcsOut, _, _ := f.runner.Execute("ls", "-1", vmRootfs+"/etc/sv"); svcsOut != "" {
+			for _, svcName := range strings.Split(strings.TrimSpace(svcsOut), "\n") {
+				if svcName != "" {
+					_, _, _ = f.runner.Execute("rm", "-rf", vmRootfs+"/etc/sv/"+svcName+"/supervise")
+				}
 			}
 		}
 
@@ -222,7 +217,7 @@ func (f Factory) Create(
 		// if /var/vcap/monit is a tmpfs, bosh-agent writes monitrc files to the
 		// tmpfs (invisible from the rootfs), so the monit stub can't find them.
 		// Similarly /var/vcap/data must not be a tmpfs so packages/jobs persist.
-		if fstabData, ferr := os.ReadFile(vmRootfs + "/etc/fstab"); ferr == nil {
+		if fstabData, ferr := f.runner.Get(vmRootfs + "/etc/fstab"); ferr == nil {
 			var filtered []byte
 			for _, line := range bytes.Split(fstabData, []byte("\n")) {
 				l := string(line)
@@ -233,7 +228,7 @@ func (f Factory) Create(
 				filtered = append(filtered, line...)
 				filtered = append(filtered, '\n')
 			}
-			_ = os.WriteFile(vmRootfs+"/etc/fstab", filtered, 0644)
+			_ = f.runner.Put(vmRootfs+"/etc/fstab", filtered)
 		}
 
 		// Pre-create /var/vcap/store and /var/vcap/data so BOSH jobs can write their
@@ -244,21 +239,21 @@ func (f Factory) Create(
 		// uid/gid 1000 = vcap user in the warden-boshlite stemcell.
 		for _, d := range []struct {
 			path string
-			perm os.FileMode
 			uid  int
 		}{
-			{vmRootfs + "/var/vcap/data", 0755, 0},
-			{vmRootfs + "/var/vcap/data/jobs", 0750, 0},
-			{vmRootfs + "/var/vcap/data/packages", 0755, 0},
-			{vmRootfs + "/var/vcap/data/tmp", 0755, 1000},
-			{vmRootfs + "/var/vcap/store", 0700, 1000},
+			{vmRootfs + "/var/vcap/data", 0},
+			{vmRootfs + "/var/vcap/data/jobs", 0},
+			{vmRootfs + "/var/vcap/data/packages", 0},
+			{vmRootfs + "/var/vcap/data/tmp", 1000},
+			{vmRootfs + "/var/vcap/store", 1000},
 			// Pre-create postgres socket dir on rootfs so it persists (not on tmpfs).
 			// The director connects to postgres via UNIX socket at this path.
-			{vmRootfs + "/var/vcap/sys/run/postgresql", 0755, 1000},
-			{vmRootfs + "/var/vcap/sys/log", 0750, 1000},
+			{vmRootfs + "/var/vcap/sys/run/postgresql", 1000},
+			{vmRootfs + "/var/vcap/sys/log", 1000},
 		} {
-			if mkErr := os.MkdirAll(d.path, d.perm); mkErr == nil && d.uid != 0 {
-				_ = os.Chown(d.path, d.uid, d.uid)
+			_, _, _ = f.runner.Execute("mkdir", "-p", d.path)
+			if d.uid != 0 {
+				_, _, _ = f.runner.Execute("chown", fmt.Sprintf("%d:%d", d.uid, d.uid), d.path)
 			}
 		}
 
@@ -269,8 +264,8 @@ func (f Factory) Create(
 		}
 		boshDir := vmRootfs + "/var/vcap/bosh"
 		agentEnvBytes := f.injectMbusCert(addBlobstoreToEnv(envBytes))
-		if mkErr := os.MkdirAll(boshDir, 0755); mkErr == nil {
-			_ = os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes, 0644)
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", boshDir); mkErr == nil {
+			_ = f.runner.Put(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes)
 		}
 		// Pre-bake CPI connection config so the deployed director's libvirt_cpi
 		// job uses the correct credentials. The BOSH agent renders cpi.json from
@@ -279,20 +274,21 @@ func (f Factory) Create(
 		// binary that merges cpi-inject.json at invocation time, making the fix
 		// immune to bosh-agent re-renders overwriting the patched cpi.json.
 		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
-			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
+			_ = f.runner.Put(boshDir+"/cpi-inject.json", cpiInject)
 			// Move real CPI binary to cpi.real and install a shell wrapper that
 			// merges cpi-inject.json into the config at every invocation.
 			// /var/vcap/packages/ is set up by the package install script and is
 			// never re-written by bosh-agent on apply-spec, so this wrapper persists.
 			cpiPkgDir := vmRootfs + "/var/vcap/packages/libvirt_cpi/bin"
-			if _, statErr := os.Stat(cpiPkgDir + "/cpi"); statErr == nil {
-				if _, statErr2 := os.Stat(cpiPkgDir + "/cpi.real"); statErr2 != nil {
-					_, _ = ExecCommand("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
+			if _, _, statErr := f.runner.Execute("test", "-e", cpiPkgDir+"/cpi"); statErr == nil {
+				if _, _, statErr2 := f.runner.Execute("test", "-e", cpiPkgDir+"/cpi.real"); statErr2 != nil {
+					_, _, _ = f.runner.Execute("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
 				}
-				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
+				_ = f.runner.Put(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()))
+				_, _, _ = f.runner.Execute("chmod", "0755", cpiPkgDir+"/cpi")
 			}
 		}
-		installNatsSyncWrapper(vmRootfs)
+		installNatsSyncWrapperViaRunner(f.runner, vmRootfs)
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
 		svStub := "#!/bin/sh\n" +
@@ -304,7 +300,8 @@ func (f Factory) Create(
 			"  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\n" +
 			"esac\n" +
 			"exec /usr/bin/sv \"$@\"\n"
-		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sv", []byte(svStub), 0755)
+		_ = f.runner.Put(vmRootfs+"/usr/local/bin/sv", []byte(svStub))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/local/bin/sv")
 		suWrapper := "#!/bin/sh\n# Replace 'su - user -c cmd' with setpriv to avoid PAM issues in containers.\n" +
 			"# setpriv is in util-linux and switches uid/gid without PAM authentication.\n" +
 			"_user=root\n" +
@@ -327,25 +324,29 @@ func (f Factory) Create(
 			"session optional pam_loginuid.so\n" +
 			"account sufficient pam_unix.so\n" +
 			"session required pam_unix.so\n"
-		_ = os.MkdirAll(vmRootfs+"/etc/pam.d", 0755)
-		_ = os.WriteFile(vmRootfs+"/etc/pam.d/su", []byte(pamSuConf), 0644)
-		_ = os.WriteFile(vmRootfs+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
+		_, _, _ = f.runner.Execute("mkdir", "-p", vmRootfs+"/etc/pam.d")
+		_ = f.runner.Put(vmRootfs+"/etc/pam.d/su", []byte(pamSuConf))
+		_ = f.runner.Put(vmRootfs+"/etc/pam.d/runuser", []byte(pamSuConf))
 		sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
 		// Symlink bosh tools and system tools into /usr/local/bin so the agent
 		// finds them via exec.Command regardless of the inherited PATH.
-		_ = os.MkdirAll(vmRootfs+"/usr/local/bin", 0755)
+		_, _, _ = f.runner.Execute("mkdir", "-p", vmRootfs+"/usr/local/bin")
 		for _, srcDir := range []string{
 			vmRootfs + "/var/vcap/bosh/bin",
 			vmRootfs + "/usr/sbin",
 			vmRootfs + "/sbin",
 		} {
-			entries, _ := os.ReadDir(srcDir)
-			for _, e := range entries {
-				dst := vmRootfs + "/usr/local/bin/" + e.Name()
-				rel := strings.TrimPrefix(srcDir, vmRootfs)
-				src := rel + "/" + e.Name()
-				_ = os.Remove(dst)
-				_ = os.Symlink(src, dst)
+			if entriesOut, _, _ := f.runner.Execute("ls", "-1", srcDir); entriesOut != "" {
+				for _, eName := range strings.Split(strings.TrimSpace(entriesOut), "\n") {
+					if eName == "" {
+						continue
+					}
+					dst := vmRootfs + "/usr/local/bin/" + eName
+					rel := strings.TrimPrefix(srcDir, vmRootfs)
+					src := rel + "/" + eName
+					_, _, _ = f.runner.Execute("rm", "-f", dst)
+					_, _, _ = f.runner.Execute("ln", "-sf", src, dst)
+				}
 			}
 		}
 		// Write wrappers AFTER the symlink loop so they override any symlinks to the
@@ -353,10 +354,14 @@ func (f Factory) Create(
 		// bosh-agent pre-start PATH is hardcoded to /usr/sbin:/usr/bin:/sbin:/bin
 		// (see agent/script/pathenv/pathenv.go) -- /usr/local/bin is NOT searched.
 		// Place wrappers in /usr/sbin (first in that PATH) so they take priority.
-		_ = os.WriteFile(vmRootfs+"/usr/local/bin/su", []byte(suWrapper), 0755)
-		_ = os.WriteFile(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
-		_ = os.WriteFile(vmRootfs+"/usr/sbin/su", []byte(suWrapper), 0755)
-		_ = os.WriteFile(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+		_ = f.runner.Put(vmRootfs+"/usr/local/bin/su", []byte(suWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/local/bin/su")
+		_ = f.runner.Put(vmRootfs+"/usr/local/bin/sysctl", []byte(sysctlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/local/bin/sysctl")
+		_ = f.runner.Put(vmRootfs+"/usr/sbin/su", []byte(suWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/sbin/su")
+		_ = f.runner.Put(vmRootfs+"/usr/sbin/sysctl", []byte(sysctlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/sbin/sysctl")
 		// timeout wrapper: intercept 'timeout 5m bash -c ... curl https://localhost:25556/info ...'
 		// so director post-start always succeeds without waiting 5 minutes.
 		// Write to /var/vcap/bosh/bin/ which is FIRST in the init script PATH so it
@@ -370,13 +375,16 @@ func (f Factory) Create(
 			"done\n" +
 			"if [ -x /usr/bin/timeout.bak ]; then exec /usr/bin/timeout.bak \"$@\"; fi\n" +
 			"exec /usr/bin/timeout \"$@\"\n"
-		if _, err2 := os.Stat(vmRootfs + "/usr/bin/timeout"); err2 == nil {
-			_, _ = ExecCommand("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
+		if _, _, ferr := f.runner.Execute("test", "-e", vmRootfs+"/usr/bin/timeout"); ferr == nil {
+			_, _, _ = f.runner.Execute("cp", vmRootfs+"/usr/bin/timeout", vmRootfs+"/usr/bin/timeout.bak")
 		}
-		_ = os.WriteFile(vmRootfs+"/usr/sbin/timeout", []byte(timeoutWrapper), 0755)
-		_ = os.WriteFile(vmRootfs+"/usr/bin/timeout", []byte(timeoutWrapper), 0755)
+		_ = f.runner.Put(vmRootfs+"/usr/sbin/timeout", []byte(timeoutWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/sbin/timeout")
+		_ = f.runner.Put(vmRootfs+"/usr/bin/timeout", []byte(timeoutWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/bin/timeout")
 		// Also write to /var/vcap/bosh/bin/ which is first in PATH
-		_ = os.WriteFile(vmRootfs+"/var/vcap/bosh/bin/timeout", []byte(timeoutWrapper), 0755)
+		_ = f.runner.Put(vmRootfs+"/var/vcap/bosh/bin/timeout", []byte(timeoutWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/var/vcap/bosh/bin/timeout")
 		// curl wrapper: intercept director post-start health check on port 25556.
 		// When called with localhost:25556, return stub JSON and exit 0.
 		// For all other calls, forward to curl.bak (the original curl binary).
@@ -391,14 +399,16 @@ func (f Factory) Create(
 			"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
 			"exit 0\n"
 		// Save the real curl and install wrapper
-		if _, err := os.Stat(vmRootfs + "/usr/bin/curl"); err == nil {
-			_, _ = ExecCommand("cp", vmRootfs+"/usr/bin/curl", vmRootfs+"/usr/bin/curl.bak")
+		if _, _, ferr2 := f.runner.Execute("test", "-e", vmRootfs+"/usr/bin/curl"); ferr2 == nil {
+			_, _, _ = f.runner.Execute("cp", vmRootfs+"/usr/bin/curl", vmRootfs+"/usr/bin/curl.bak")
 		}
-		_ = os.WriteFile(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper), 0755)
-		_ = os.WriteFile(vmRootfs+"/usr/bin/curl", []byte(curlWrapper), 0755)
+		_ = f.runner.Put(vmRootfs+"/usr/sbin/curl", []byte(curlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/sbin/curl")
+		_ = f.runner.Put(vmRootfs+"/usr/bin/curl", []byte(curlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/bin/curl")
 		// Ensure DNS resolution works inside the LXC container so package
 		// compilation scripts can download from the internet (e.g. dl.google.com).
-		_ = os.WriteFile(vmRootfs+"/etc/resolv.conf", []byte("nameserver 8.8.8.8\nnameserver 8.8.4.4\n"), 0644)
+		_ = f.runner.Put(vmRootfs+"/etc/resolv.conf", []byte("nameserver 8.8.8.8\nnameserver 8.8.4.4\n"))
 
 		// Write LXC init wrapper — configure networking then exec bosh-agent.
 		// sv stub handles "sv start monit" without needing runsv.
@@ -810,7 +820,8 @@ func (f Factory) Create(
 				monitStub +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
 		}
-		_ = os.WriteFile(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript), 0755)
+		_ = f.runner.Put(vmRootfs+"/bosh-lxc-init", []byte(lxcInitScript))
+		_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/bosh-lxc-init")
 
 		if vmProps.Kernel != "" {
 			initScript := "#!/bin/sh\n" +
@@ -839,7 +850,8 @@ func (f Factory) Create(
 				"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n" +
 				"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
-			_ = os.WriteFile(vmRootfs+"/bosh-init", []byte(initScript), 0755)
+			_ = f.runner.Put(vmRootfs+"/bosh-init", []byte(initScript))
+			_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/bosh-init")
 		}
 
 		// Override disk paths to use the per-VM rootfs copy.
