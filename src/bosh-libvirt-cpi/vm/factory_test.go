@@ -238,14 +238,15 @@ var _ = Describe("vm.Factory", func() {
 		})
 
 		It("returns error when mount fails", func() {
-			// Inject a fake execCommand that fails for "mount"
-			vm.ExecCommand = func(name string, args ...string) ([]byte, error) {
+			// Make the runner fail specifically for "mount" so the ext4 injection
+			// path returns an error at the mount step.
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
 				if name == "mount" {
-					return []byte("no loop devices"), errors.New("mount failed")
+					return "no loop devices", 1, errors.New("mount failed")
 				}
-				return []byte{}, nil
+				return "", 0, nil
 			}
-			defer func() { vm.ExecCommand = vm.DefaultExecCommand }()
+			defer func() { runner.ExecuteFunc = nil }()
 
 			stemcell.ImagePathResult = filepath.Join(tmpDir, "stemcell.img")
 			_ = os.WriteFile(stemcell.ImagePathResult, []byte("fake-ext4"), 0644)
@@ -262,11 +263,6 @@ var _ = Describe("vm.Factory", func() {
 		})
 
 		It("runs through ext4 injection without error when all commands succeed", func() {
-			vm.ExecCommand = func(name string, args ...string) ([]byte, error) {
-				return []byte{}, nil
-			}
-			defer func() { vm.ExecCommand = vm.DefaultExecCommand }()
-
 			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
 			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
 			stemcell.ImagePathResult = stemcellImg
