@@ -1,8 +1,6 @@
 package disk
 
 import (
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 
@@ -52,13 +50,13 @@ func (f Factory) Create(size int) (Disk, error) {
 
 	disk := f.newDisk(apiv1.NewDiskCID(id))
 
-	if err := os.MkdirAll(disk.Path(), 0755); err != nil {
+	if _, _, err := f.runner.Execute("mkdir", "-p", disk.Path()); err != nil {
 		return nil, bosherr.WrapError(err, "Creating disk parent")
 	}
 
-	// Try qemu-img first (produces qcow2 for QEMU/KVM); fall back to dd (raw).
 	sizeStr := strconv.Itoa(size) + "M"
-	out, qemuErr := exec.Command("qemu-img", "create", "-f", "qcow2", disk.ImagePath(), sizeStr).CombinedOutput()
+	// Try qemu-img first (produces qcow2 for QEMU/KVM); fall back to dd (raw).
+	out, _, qemuErr := f.runner.Execute("qemu-img", "create", "-f", "qcow2", disk.ImagePath(), sizeStr)
 	if qemuErr != nil {
 		// Fall back to sparse raw image via dd.
 		_, _, err = f.runner.Execute(
@@ -70,10 +68,10 @@ func (f Factory) Create(size int) (Disk, error) {
 			"seek="+strconv.Itoa(size),
 		)
 		if err != nil {
-			return nil, bosherr.WrapErrorf(err, "Creating disk image (qemu-img failed: %s)", string(out))
+			return nil, bosherr.WrapErrorf(err, "Creating disk image (qemu-img failed: %s)", out)
 		}
 	} else {
-		if err := os.Chmod(disk.ImagePath(), 0644); err != nil {
+		if _, _, err := f.runner.Execute("chmod", "0644", disk.ImagePath()); err != nil {
 			return nil, bosherr.WrapError(err, "Setting disk image permissions")
 		}
 	}
