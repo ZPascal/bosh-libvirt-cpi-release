@@ -850,92 +850,101 @@ func (f Factory) Create(
 	} else if f.domBuilder.DiskImageFormat() == "ext4" {
 		// QEMU kernel-boot: copy the stemcell ext4 image per-VM, mount it,
 		// inject warden-cpi-agent-env.json and /bosh-init, then unmount.
+		// All disk operations use f.runner so they execute on the libvirt HOST,
+		// not inside the QEMU director VM where the CPI process may be running.
 		vmExt4 := filepath.Join(f.opts.DirPath, vmID, "rootfs.img")
-		if err := os.MkdirAll(filepath.Join(f.opts.DirPath, vmID), 0755); err != nil {
+		if _, _, err := f.runner.Execute("mkdir", "-p", filepath.Join(f.opts.DirPath, vmID)); err != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(err, "Creating VM dir")
 		}
-		if out, err := ExecCommand("cp", stemcell.ImagePath(), vmExt4); err != nil {
+		if out, _, err := f.runner.Execute("cp", stemcell.ImagePath(), vmExt4); err != nil {
 			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", string(out))
+			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", out)
 		}
 		// Grow the root ext4 image so /var/vcap/data has enough space for BOSH package
 		// compilation. The stemcell ships a small image (~2GB); we need 60GB+ for all
 		// BOSH director packages. qemu-img resize expands the file, then resize2fs grows
 		// the filesystem to fill the new space.
-		if out, err := ExecCommand("qemu-img", "resize", vmExt4, "65G"); err != nil {
-			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, string(out))
+		if out, _, err := f.runner.Execute("qemu-img", "resize", vmExt4, "65G"); err != nil {
+			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, out)
 		} else {
-			if out2, err2 := ExecCommand("e2fsck", "-f", "-y", vmExt4); err2 != nil {
-				f.logger.Info(f.logTag, "e2fsck failed (non-fatal): %s %s", err2, string(out2))
+			if out2, _, err2 := f.runner.Execute("e2fsck", "-f", "-y", vmExt4); err2 != nil {
+				f.logger.Info(f.logTag, "e2fsck failed (non-fatal): %s %s", err2, out2)
 			}
-			if out3, err3 := ExecCommand("resize2fs", vmExt4); err3 != nil {
-				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, string(out3))
+			if out3, _, err3 := f.runner.Execute("resize2fs", vmExt4); err3 != nil {
+				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, out3)
 			}
 		}
 		// Mount, inject, unmount
 		mntDir := vmExt4 + ".mnt"
-		if mkErr := os.MkdirAll(mntDir, 0755); mkErr != nil {
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", mntDir); mkErr != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
 		}
-		if out, mountErr := ExecCommand("mount", "-o", "loop", vmExt4, mntDir); mountErr != nil {
-			_ = os.RemoveAll(mntDir)
+		if out, _, mountErr := f.runner.Execute("mount", "-o", "loop", vmExt4, mntDir); mountErr != nil {
+			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", string(out))
+			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", out)
 		}
 		// Remove stale supervise dirs from stemcell while we have write access
-		if svcs, _ := os.ReadDir(mntDir + "/etc/sv"); svcs != nil {
-			for _, svc := range svcs {
-				_ = os.RemoveAll(mntDir + "/etc/sv/" + svc.Name() + "/supervise")
+		if svcsOut, _, _ := f.runner.Execute("ls", "-1", mntDir+"/etc/sv"); svcsOut != "" {
+			for _, svcName := range strings.Split(strings.TrimSpace(svcsOut), "\n") {
+				if svcName != "" {
+					_, _, _ = f.runner.Execute("rm", "-rf", mntDir+"/etc/sv/"+svcName+"/supervise")
+				}
 			}
 		}
 		envBytes, envErr := initialAgentEnv.AsBytes()
 		if envErr != nil {
-			_, _ = ExecCommand("umount", mntDir)
-			_ = os.RemoveAll(mntDir)
+			_, _, _ = f.runner.Execute("umount", mntDir)
+			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(envErr, "Marshalling agent env for ext4 rootfs injection")
 		}
 		boshDir := mntDir + "/var/vcap/bosh"
 		agentEnvBytes2 := f.injectMbusCert(addBlobstoreToEnv(envBytes))
-		if mkErr := os.MkdirAll(boshDir, 0755); mkErr != nil {
-			_, _ = ExecCommand("umount", mntDir)
-			_ = os.RemoveAll(mntDir)
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", boshDir); mkErr != nil {
+			_, _, _ = f.runner.Execute("umount", mntDir)
+			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(mkErr, "Creating bosh dir in ext4 rootfs")
 		}
-		if writeErr := os.WriteFile(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2, 0644); writeErr != nil {
-			_, _ = ExecCommand("umount", mntDir)
-			_ = os.RemoveAll(mntDir)
+		if writeErr := f.runner.Put(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2); writeErr != nil {
+			_, _, _ = f.runner.Execute("umount", mntDir)
+			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(writeErr, "Writing agent env to ext4 rootfs")
 		}
 		// Pre-bake CPI connection credentials so the deployed director's
 		// libvirt_cpi job uses the correct settings. See LXC case for details.
 		if cpiInject := f.opts.buildCPIInjectJSON(); cpiInject != nil {
-			_ = os.WriteFile(boshDir+"/cpi-inject.json", cpiInject, 0644)
+			_ = f.runner.Put(boshDir+"/cpi-inject.json", cpiInject)
 			cpiPkgDir := mntDir + "/var/vcap/packages/libvirt_cpi/bin"
-			if _, statErr := os.Stat(cpiPkgDir + "/cpi"); statErr == nil {
-				if _, statErr2 := os.Stat(cpiPkgDir + "/cpi.real"); statErr2 != nil {
-					_, _ = ExecCommand("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
+			if _, _, statErr := f.runner.Execute("test", "-e", cpiPkgDir+"/cpi"); statErr == nil {
+				if _, _, statErr2 := f.runner.Execute("test", "-e", cpiPkgDir+"/cpi.real"); statErr2 != nil {
+					_, _, _ = f.runner.Execute("mv", cpiPkgDir+"/cpi", cpiPkgDir+"/cpi.real")
 				}
-				_ = os.WriteFile(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()), 0755)
+				_ = f.runner.Put(cpiPkgDir+"/cpi", []byte(cpiWrapperScript()))
+				_, _, _ = f.runner.Execute("chmod", "0755", cpiPkgDir+"/cpi")
 			}
 		}
-		installNatsSyncWrapper(mntDir)
+		installNatsSyncWrapperViaRunner(f.runner, mntDir)
 		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
 			qemuStaticIP = "127.0.0.1"
 		}
 		// Symlink bosh tools into /usr/local/bin
-		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
-		boshBins, _ := os.ReadDir(mntDir + "/var/vcap/bosh/bin")
-		for _, b := range boshBins {
-			dst := mntDir + "/usr/local/bin/" + b.Name()
-			src := "/var/vcap/bosh/bin/" + b.Name()
-			_ = os.Remove(dst)
-			_ = os.Symlink(src, dst)
+		_, _, _ = f.runner.Execute("mkdir", "-p", mntDir+"/usr/local/bin")
+		if boshBinsOut, _, _ := f.runner.Execute("ls", "-1", mntDir+"/var/vcap/bosh/bin"); boshBinsOut != "" {
+			for _, binName := range strings.Split(strings.TrimSpace(boshBinsOut), "\n") {
+				if binName == "" {
+					continue
+				}
+				dst := mntDir + "/usr/local/bin/" + binName
+				src := "/var/vcap/bosh/bin/" + binName
+				_, _, _ = f.runner.Execute("rm", "-f", dst)
+				_, _, _ = f.runner.Execute("ln", "-sf", src, dst)
+			}
 		}
 		// Pre-create /var/vcap/data so job symlinks resolve and pre-start can run.
 		// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk — it
@@ -946,7 +955,7 @@ func (f Factory) Create(
 			mntDir + "/var/vcap/data/packages",
 			mntDir + "/var/vcap/data/tmp",
 		} {
-			_ = os.MkdirAll(dd, 0755)
+			_, _, _ = f.runner.Execute("mkdir", "-p", dd)
 		}
 		// Inject a 'su' wrapper that runs the command directly as root.
 		// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
@@ -969,20 +978,24 @@ func (f Factory) Create(
 			"    *)  _user=\"$1\"; shift ;;\n" +
 			"  esac\n" +
 			"done\n"
-		_ = os.WriteFile(mntDir+"/usr/local/bin/su", []byte(suWrapper), 0755)
-		_ = os.WriteFile(mntDir+"/usr/sbin/su", []byte(suWrapper), 0755)
+		_ = f.runner.Put(mntDir+"/usr/local/bin/su", []byte(suWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/local/bin/su")
+		_ = f.runner.Put(mntDir+"/usr/sbin/su", []byte(suWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/sbin/su")
 		pamSuConf := "auth sufficient pam_rootok.so\n" +
 			"session optional pam_loginuid.so\n" +
 			"account sufficient pam_unix.so\n" +
 			"session required pam_unix.so\n"
-		_ = os.MkdirAll(mntDir+"/etc/pam.d", 0755)
-		_ = os.WriteFile(mntDir+"/etc/pam.d/su", []byte(pamSuConf), 0644)
-		_ = os.WriteFile(mntDir+"/etc/pam.d/runuser", []byte(pamSuConf), 0644)
+		_, _, _ = f.runner.Execute("mkdir", "-p", mntDir+"/etc/pam.d")
+		_ = f.runner.Put(mntDir+"/etc/pam.d/su", []byte(pamSuConf))
+		_ = f.runner.Put(mntDir+"/etc/pam.d/runuser", []byte(pamSuConf))
 		// bosh-agent pre-start PATH is /usr/sbin:/usr/bin:/sbin:/bin (not /usr/local/bin).
 		// Write sysctl wrapper to /usr/sbin so it takes priority over /sbin/sysctl.
 		sysctlWrapper := "#!/bin/sh\n# Silently succeed: sysctl values are pre-set on the host kernel\nexit 0\n"
-		_ = os.WriteFile(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper), 0755)
-		_ = os.WriteFile(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper), 0755)
+		_ = f.runner.Put(mntDir+"/usr/local/bin/sysctl", []byte(sysctlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/local/bin/sysctl")
+		_ = f.runner.Put(mntDir+"/usr/sbin/sysctl", []byte(sysctlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/sbin/sysctl")
 		// curl wrapper for director post-start health check
 		curlWrapper := "#!/bin/sh\n" +
 			"for a in \"$@\"; do\n" +
@@ -994,11 +1007,13 @@ func (f Factory) Create(
 			"done\n" +
 			"if [ -x /usr/bin/curl.bak ]; then exec /usr/bin/curl.bak \"$@\"; fi\n" +
 			"exit 0\n"
-		if _, ferr := os.Stat(mntDir + "/usr/bin/curl"); ferr == nil {
-			_, _ = ExecCommand("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
+		if _, _, ferr := f.runner.Execute("test", "-e", mntDir+"/usr/bin/curl"); ferr == nil {
+			_, _, _ = f.runner.Execute("cp", mntDir+"/usr/bin/curl", mntDir+"/usr/bin/curl.bak")
 		}
-		_ = os.WriteFile(mntDir+"/usr/sbin/curl", []byte(curlWrapper), 0755)
-		_ = os.WriteFile(mntDir+"/usr/bin/curl", []byte(curlWrapper), 0755)
+		_ = f.runner.Put(mntDir+"/usr/sbin/curl", []byte(curlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/sbin/curl")
+		_ = f.runner.Put(mntDir+"/usr/bin/curl", []byte(curlWrapper))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/bin/curl")
 		initScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 			"mount -t proc proc /proc 2>/dev/null || true\n" +
@@ -1402,13 +1417,15 @@ func (f Factory) Create(
 			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
-		_ = os.WriteFile(mntDir+"/bosh-init", []byte(initScript), 0755)
+		_ = f.runner.Put(mntDir+"/bosh-init", []byte(initScript))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/bosh-init")
 		// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
-		_ = os.MkdirAll(mntDir+"/usr/local/bin", 0755)
+		_, _, _ = f.runner.Execute("mkdir", "-p", mntDir+"/usr/local/bin")
 		ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
-		_ = os.WriteFile(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub), 0755)
-		_, _ = ExecCommand("umount", mntDir)
-		_ = os.RemoveAll(mntDir)
+		_ = f.runner.Put(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub))
+		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/local/bin/sv")
+		_, _, _ = f.runner.Execute("umount", mntDir)
+		_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
@@ -1666,6 +1683,25 @@ func installNatsSyncWrapper(rootfs string) {
 		}
 	}
 	_ = os.WriteFile(orig, []byte(natsSyncWrapperScript()), 0755)
+}
+
+// installNatsSyncWrapperViaRunner is like installNatsSyncWrapper but uses a
+// Runner so file operations execute on the libvirt host (not locally).
+func installNatsSyncWrapperViaRunner(r driver.Runner, rootfs string) {
+	binDir := rootfs + "/var/vcap/jobs/nats/bin"
+	orig := binDir + "/bosh_nats_sync"
+	real := binDir + "/bosh_nats_sync.real"
+	if _, _, err := r.Execute("test", "-e", orig); err != nil {
+		return // nats job not installed in this rootfs
+	}
+	if _, _, err := r.Execute("test", "-e", real); err != nil {
+		// Not yet renamed — move original out of the way.
+		if _, _, mvErr := r.Execute("mv", orig, real); mvErr != nil {
+			return
+		}
+	}
+	_ = r.Put(orig, []byte(natsSyncWrapperScript()))
+	_, _, _ = r.Execute("chmod", "0755", orig)
 }
 
 // shellEscape single-quote-escapes s for embedding in a shell printf '%s' '...'
