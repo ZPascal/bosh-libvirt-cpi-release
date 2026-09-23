@@ -1,7 +1,6 @@
 package vm
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,7 +26,7 @@ func sanitizeKey(key string) error {
 }
 
 func (m Store) List() ([]string, error) {
-	if err := os.MkdirAll(m.path, 0755); err != nil {
+	if _, _, err := m.runner.Execute("mkdir", "-p", m.path); err != nil {
 		return nil, err
 	}
 
@@ -58,7 +57,7 @@ func (m Store) Put(key string, contents []byte) error {
 		return err
 	}
 
-	if err := os.MkdirAll(m.path, 0755); err != nil {
+	if _, _, err := m.runner.Execute("mkdir", "-p", m.path); err != nil {
 		return err
 	}
 
