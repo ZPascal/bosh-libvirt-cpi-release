@@ -429,7 +429,7 @@ jobs:
           if [ -n "$QEMU_IMG" ]; then
             sudo mkdir -p /mnt/qemu-rootfs-blob
             sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-blob 2>/dev/null && {
-              echo "=== monit-blobstore.log ===" && sudo tail -50 /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore.log)"
+              echo "=== monit-blobstore*.log ===" && sudo tail -50 /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore_nginx.log /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"
               echo "=== /var/vcap/sys/run/bpm/blobstore/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/sys/run/bpm/blobstore/ 2>/dev/null || echo "(no blobstore run dir)"
               echo "=== /var/vcap/packages/nginx/logs/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/packages/nginx/logs/ 2>/dev/null || echo "(no nginx logs dir)"
               sudo umount /mnt/qemu-rootfs-blob 2>/dev/null
@@ -453,7 +453,7 @@ jobs:
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
             echo "=== QEMU blobstore log (via SSH) ===" && \
               ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                root@192.168.122.10 'cat /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null | tail -30 || echo "(no monit-blobstore.log)"' 2>/dev/null || echo "(SSH unavailable)"
+                root@192.168.122.10 'tail -30 /var/vcap/bosh/log/monit-blobstore_nginx.log /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"' 2>/dev/null || echo "(SSH unavailable)"
             exit 1
           }
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
@@ -795,7 +795,7 @@ jobs:
         done
         if [ "$_blob_ok" != "1" ]; then
           echo "ERROR: blobstore port 25250 never opened after 240s"
-          [ -n "$DIRVM" ] && echo "=== monit-blobstore.log ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore.log)"
+          [ -n "$DIRVM" ] && echo "=== monit-blobstore*.log ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore_nginx.log" "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore*.log)"
           [ -n "$DIRVM" ] && echo "=== monit-stub.log ===" && sudo tail -30 "$DIRVM/rootfs/tmp/monit-svcs.log" 2>/dev/null || echo "(no monit-svcs.log)"
           [ -n "$DIRVM" ] && echo "=== /var/vcap/sys/run/bpm/blobstore/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/sys/run/bpm/blobstore/" 2>/dev/null || echo "(no blobstore run dir)"
           [ -n "$DIRVM" ] && echo "=== /var/vcap/packages/nginx/logs/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/packages/nginx/logs/" 2>/dev/null || echo "(no nginx logs dir)"
@@ -833,7 +833,7 @@ jobs:
             [ -n "$DIRVM" ] && echo "=== nats bpm.yml processes ===" && sudo grep -E "name:|executable:|privileged:" "$DIRVM/rootfs/var/vcap/jobs/nats/config/bpm.yml" 2>/dev/null || sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bpm.yml" 2>/dev/null | xargs sudo grep -E "name:|executable:|privileged:" 2>/dev/null || echo "(no bpm.yml found)"
             [ -n "$DIRVM" ] && echo "=== bosh_nats_sync_config.yml ===" && sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bosh_nats_sync_config.yml" 2>/dev/null | head -1 | xargs -I{} sudo cat {} 2>/dev/null | head -30 || echo "(no bosh_nats_sync_config.yml found)"
             [ -n "$DIRVM" ] && echo "=== /var/vcap/data/sys/log/nats/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/data/sys/log/nats/" 2>/dev/null || echo "(no data/sys/log/nats/ dir)"
-            [ -n "$DIRVM" ] && echo "=== monit-blobstore.log (last 30 lines) ===" && sudo tail -30 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore.log)"
+            [ -n "$DIRVM" ] && echo "=== monit-blobstore*.log (last 30 lines) ===" && sudo tail -30 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore_nginx.log" "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore*.log)"
             sudo virsh -c lxc:/// list --all 2>/dev/null || true
             exit 1
           }

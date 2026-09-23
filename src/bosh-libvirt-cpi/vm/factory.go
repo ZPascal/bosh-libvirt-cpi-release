@@ -626,7 +626,7 @@ func (f Factory) Create(
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
 			"        if 'nginx' in exe or 'nginx' in pname:\n" +
-			"          for d in ['/var/vcap/data/'+svc+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
+			"          for d in ['/var/vcap/data/'+job+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
 			"            os.makedirs(d, exist_ok=True)\n" +
 			"            try: os.chown(d, 1000, 1000)\n" +
 			"            except: pass\n" +
@@ -638,7 +638,8 @@ func (f Factory) Create(
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        try: os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        except: pass\n" +
 			"        log.write('starting '+pname+' privileged='+str(proc.get('privileged',False))+' exe='+exe+'\\n'); log.flush()\n" +
 			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"        open(pf,'w').write(str(p.pid))\n" +
@@ -665,8 +666,8 @@ func (f Factory) Create(
 			"                except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
 			"          import threading; threading.Thread(target=run_createdb_and_watch, daemon=True).start()\n" +
 			"      return\n" +
-			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n')\n" +
-			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n'); log.flush()\n" +
+			"  ctl = '/var/vcap/jobs/' + job + '/bin/ctl'\n" +
 			"  if os.path.exists(ctl):\n" +
 			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
@@ -1238,7 +1239,7 @@ func (f Factory) Create(
 			"        args = [exe] + proc.get('args',[])\n" +
 			"        env = dict(os.environ); env.update(proc.get('env',{}))\n" +
 			"        if 'nginx' in exe or 'nginx' in pname:\n" +
-			"          for d in ['/var/vcap/data/'+svc+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
+			"          for d in ['/var/vcap/data/'+job+'/tmp','/var/vcap/packages/nginx/logs']:\n" +
 			"            os.makedirs(d, exist_ok=True)\n" +
 			"            try: os.chown(d, 1000, 1000)\n" +
 			"            except: pass\n" +
@@ -1250,7 +1251,8 @@ func (f Factory) Create(
 			"          args = [setpriv_bin,'--reuid=1000','--regid=1000','--clear-groups','--'] + args\n" +
 			"        pf = '/var/vcap/sys/run/bpm/'+svc+'/'+pname+'.pid'\n" +
 			"        os.makedirs(os.path.dirname(pf), exist_ok=True)\n" +
-			"        os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        try: os.chown(os.path.dirname(pf), 1000, 1000)\n" +
+			"        except: pass\n" +
 			"        console_log('starting '+pname+' privileged='+str(proc.get('privileged',False))+' exe='+exe)\n" +
 			"        p = subprocess.Popen(args, env=env, stdout=log, stderr=log, start_new_session=True)\n" +
 			"        open(pf,'w').write(str(p.pid))\n" +
@@ -1276,8 +1278,8 @@ func (f Factory) Create(
 			"                except Exception as re: log.write('restart failed: '+str(re)+'\\n')\n" +
 			"          import threading; threading.Thread(target=run_createdb, daemon=True).start()\n" +
 			"      return\n" +
-			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n'); console_log('start failed '+svc+': '+str(e))\n" +
-			"  ctl = '/var/vcap/jobs/' + svc + '/bin/ctl'\n" +
+			"    except Exception as e: log.write('bpm.yml start failed: '+str(e)+'\\n'); log.flush(); console_log('start failed '+svc+': '+str(e))\n" +
+			"  ctl = '/var/vcap/jobs/' + job + '/bin/ctl'\n" +
 			"  if os.path.exists(ctl):\n" +
 			"    subprocess.Popen([ctl,'start'], stdout=log, stderr=log)\n" +
 			"class H(http.server.BaseHTTPRequestHandler):\n" +
