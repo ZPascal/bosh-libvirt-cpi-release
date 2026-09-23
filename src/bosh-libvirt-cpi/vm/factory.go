@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -1681,21 +1680,6 @@ func natsSyncWrapperScript() string {
 // installNatsSyncWrapper replaces /var/vcap/jobs/nats/bin/bosh_nats_sync with a
 // shell wrapper that waits for nats-server readiness and retries on crash.
 // It is idempotent: if bosh_nats_sync.real already exists the rename is skipped.
-func installNatsSyncWrapper(rootfs string) {
-	binDir := rootfs + "/var/vcap/jobs/nats/bin"
-	orig := binDir + "/bosh_nats_sync"
-	real := binDir + "/bosh_nats_sync.real"
-	if _, err := os.Stat(orig); err != nil {
-		return // nats job not installed in this rootfs
-	}
-	if _, err := os.Stat(real); err != nil {
-		// Not yet renamed — move original out of the way.
-		if _, mvErr := ExecCommand("mv", orig, real); mvErr != nil {
-			return
-		}
-	}
-	_ = os.WriteFile(orig, []byte(natsSyncWrapperScript()), 0755)
-}
 
 // installNatsSyncWrapperViaRunner is like installNatsSyncWrapper but uses a
 // Runner so file operations execute on the libvirt host (not locally).
