@@ -9,6 +9,7 @@ vm_types:
     memory: 1024
     cpus: 1
     ephemeral_disk: 10240
+    kernel: ((kernel_path))
 
 disk_types:
 - name: default

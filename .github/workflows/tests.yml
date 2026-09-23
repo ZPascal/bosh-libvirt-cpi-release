@@ -388,6 +388,7 @@ jobs:
         echo "Director worker ready"
         timeout 120 bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
           --client admin --client-secret admin-password \
+          -v "kernel_path=${KERNEL_PATH}" \
           -n
         timeout 600 bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password || {

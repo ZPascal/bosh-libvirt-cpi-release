@@ -189,6 +189,10 @@ func (f Factory) Create(
 	// mount the stemcell and inject per-VM agent env + init wrapper.
 	if f.domBuilder.DiskImageFormat() == "dir" {
 		vmRootfs := filepath.Join(f.opts.DirPath, vmID, "rootfs")
+		if err := os.MkdirAll(vmRootfs, 0755); err != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(err, "Creating VM rootfs dir")
+		}
 		out, copyErr := ExecCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
 		if copyErr != nil {
 			f.cleanUpPartialCreate(vm)
