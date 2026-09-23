@@ -151,6 +151,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	case "ext4":
 		// Extract rootfs tar into a temp dir then pack into an ext4 raw image.
+		// All steps run locally; when the runner is an SSH runner the resulting
+		// image is then uploaded to the remote host so create_vm can access it.
 		tmpDir := dstImage + ".rootfs"
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
 			return bosherr.WrapError(err, "Creating temp rootfs dir")
@@ -187,6 +189,21 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 		if out, err := exec.Command("cp", "-a", tmpDir+"/.", mntDir+"/").CombinedOutput(); err != nil {
 			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 image: %s", string(out))
+		}
+		// Unmount before uploading so the image is fully flushed.
+		_ = exec.Command("umount", mntDir).Run()
+		// When the CPI is running inside a VM (SSH runner to a remote libvirt host),
+		// upload the locally-created ext4 image to the remote host so create_vm can
+		// access it there. Use the absolute local path as the upload source to avoid
+		// the tilde being expanded to the *remote* home dir by ExpandingPathRunner.
+		if isSSHRunner(f.runner) {
+			localAbs := dstImage
+			if home, err := os.UserHomeDir(); err == nil && home != "" {
+				localAbs = strings.Replace(dstImage, "~", home, 1)
+			}
+			if _, _, mkdirErr := f.runner.Execute("mkdir", "-p", filepath.Dir(dstImage)); mkdirErr == nil {
+				_ = f.runner.Upload(localAbs, dstImage)
+			}
 		}
 	case "dir":
 		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
