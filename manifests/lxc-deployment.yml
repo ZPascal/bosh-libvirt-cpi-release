@@ -27,6 +27,8 @@ instance_groups:
   - name: nats
     release: bosh
     properties:
+      director:
+        address: 192.168.122.11
       nats:
         user: nats
         password: nats-password
