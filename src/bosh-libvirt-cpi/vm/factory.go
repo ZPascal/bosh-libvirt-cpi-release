@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -193,10 +194,20 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(err, "Creating VM rootfs dir")
 		}
-		out, copyErr := ExecCommand("cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
+		// Use sudo so root-owned files (e.g. etc/shadow mode 0000) are readable.
+		out, copyErr := ExecCommand("sudo", "cp", "-a", stemcell.ImagePath()+"/.", vmRootfs)
 		if copyErr != nil {
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(copyErr, "Copying stemcell rootfs to VM dir: %s", string(out))
+		}
+		// Transfer ownership to the current user so subsequent Go os.* calls work.
+		// Root inside the privileged LXC container (uid 0) bypasses DAC, so sensitive
+		// files (e.g. /etc/shadow mode 0000) remain inaccessible to non-root users
+		// inside the container regardless of which uid owns them on the host.
+		uidGid := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+		if out2, chownErr := ExecCommand("sudo", "chown", "-R", uidGid, vmRootfs); chownErr != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapErrorf(chownErr, "Taking ownership of VM rootfs: %s", string(out2))
 		}
 
 		// Remove stale supervise dirs from stemcell copy so runsv starts cleanly
