@@ -881,10 +881,14 @@ func (f Factory) Create(
 		//   2. losetup -f --show — attach as loop device so resize2fs can use
 		//      BLKGETSIZE64 ioctl; without a loop device resize2fs falls back to
 		//      fstat which on some e2fsprogs versions silently returns wrong size.
-		//   3. resize2fs -f /dev/loopN — grows the filesystem.
-		//   4. Mount /dev/loopN directly (keep loop alive through mount so the
+		//   3. e2fsck -fy /dev/loopN — fix any metadata inconsistencies (e.g.
+		//      bitmap checksum mismatch) BEFORE resize2fs so it doesn't abort.
+		//      Safe here: the loop device sees the original 2GB filesystem, so
+		//      e2fsck knows the correct size and won't truncate data.
+		//   4. resize2fs -f /dev/loopN — grows the filesystem to fill 65G.
+		//   5. Mount /dev/loopN directly (keep loop alive through mount so the
 		//      resized view is guaranteed — no re-attach, no cache flush needed).
-		//   5. After umount: losetup -d /dev/loopN.
+		//   6. After umount: losetup -d /dev/loopN.
 		mntDir := vmExt4 + ".mnt"
 		if _, _, mkErr := f.runner.Execute("mkdir", "-p", mntDir); mkErr != nil {
 			f.cleanUpPartialCreate(vm)
@@ -910,6 +914,14 @@ func (f Factory) Create(
 					f.logger.Info(f.logTag, "resize2fs (file) ok: %s", out2)
 				}
 			} else {
+				// Run e2fsck before resize2fs: the stemcell image may have a bitmap
+				// checksum mismatch that resize2fs refuses to proceed past. e2fsck
+				// here is safe — it sees the original 2GB filesystem on the loop
+				// device (truncate only extends the file, the ext4 superblock still
+				// records 2GB at this point), so it cannot corrupt or truncate data.
+				if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", loopDev); e2Err != nil {
+					f.logger.Info(f.logTag, "e2fsck pre-resize (exit non-zero but may be ok): %s %s", e2Err, e2Out)
+				}
 				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", loopDev); err2 != nil {
 					resizeDiag = fmt.Sprintf("resize2fs(%s) failed: %s %s", loopDev, err2, out2)
 					f.logger.Error(f.logTag, "resize2fs (loop %s) failed: %s %s", loopDev, err2, out2)
