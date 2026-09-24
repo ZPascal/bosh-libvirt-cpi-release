@@ -873,19 +873,28 @@ func (f Factory) Create(
 			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", out)
 		}
 		// Grow the root ext4 image so /var/vcap/data has enough space for BOSH package
-		// compilation. The stemcell ships a small image (~2GB); we need 60GB+ for all
-		// BOSH director packages. qemu-img resize expands the file; e2fsck -f clears
-		// the "needs check" flag so resize2fs doesn't exit early; resize2fs then grows
-		// the filesystem to fill the new space. e2fsck exits 1 for "corrected errors"
-		// which is normal on a clean image — only treat exit ≥2 as fatal.
-		if out, _, err := f.runner.Execute("qemu-img", "resize", vmExt4, "65G"); err != nil {
-			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, out)
+		// compilation. The stemcell ships a small image (~2GB); we need 65G for all
+		// BOSH director packages.
+		//
+		// Safe resize sequence:
+		//   1. truncate -s 65G  — extends the file without changing fs metadata;
+		//      does NOT update s_mtime inside the ext4 superblock so resize2fs
+		//      won't complain that the filesystem needs checking.
+		//   2. resize2fs -f    — the -f flag skips the "s_lastcheck < s_mtime"
+		//      gate that would otherwise cause resize2fs to exit without resizing.
+		//      On a filesystem whose content is clean (freshly cp'd from stemcell)
+		//      this is safe: there is nothing to repair, only block groups to add.
+		//
+		// We avoid qemu-img resize because it updates the file's mtime, which
+		// causes resize2fs to demand e2fsck first; and e2fsck -y on a 65G file
+		// whose ext4 superblock records a 2G size has been observed to empty
+		// the filesystem (likely truncating inodes or block bitmaps it treats as
+		// out-of-range).
+		if out, _, err := f.runner.Execute("truncate", "-s", "65G", vmExt4); err != nil {
+			f.logger.Info(f.logTag, "truncate failed (non-fatal): %s %s", err, out)
 		} else {
-			if out2, exitCode2, _ := f.runner.Execute("e2fsck", "-f", "-y", vmExt4); exitCode2 >= 2 {
-				f.logger.Info(f.logTag, "e2fsck pre-resize check failed (exit %d): %s", exitCode2, out2)
-			}
-			if out3, _, err3 := f.runner.Execute("resize2fs", vmExt4); err3 != nil {
-				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, out3)
+			if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
+				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err2, out2)
 			}
 		}
 		// Mount, inject, unmount

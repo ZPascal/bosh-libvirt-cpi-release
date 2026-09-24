@@ -280,7 +280,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("runs e2fsck then resize2fs after qemu-img resize", func() {
+		It("uses truncate then resize2fs -f to grow ext4 without e2fsck", func() {
 			var executedCmds []string
 			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
 				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
@@ -302,19 +302,29 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			vmImg := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
-			e2fsckIdx := -1
-			resize2fsIdx := -1
+			truncateIdx := -1
+			resizeIdx := -1
+			e2fsckCalled := false
+			qemuImgResizeCalled := false
 			for i, cmd := range executedCmds {
-				if cmd == "e2fsck -f -y "+vmImg {
-					e2fsckIdx = i
+				if cmd == "truncate -s 65G "+vmImg {
+					truncateIdx = i
 				}
-				if cmd == "resize2fs "+vmImg {
-					resize2fsIdx = i
+				if cmd == "resize2fs -f "+vmImg {
+					resizeIdx = i
+				}
+				if strings.HasPrefix(cmd, "e2fsck") {
+					e2fsckCalled = true
+				}
+				if strings.HasPrefix(cmd, "qemu-img resize") {
+					qemuImgResizeCalled = true
 				}
 			}
-			Expect(e2fsckIdx).To(BeNumerically(">=", 0), "e2fsck -f -y must be called")
-			Expect(resize2fsIdx).To(BeNumerically(">=", 0), "resize2fs must be called")
-			Expect(e2fsckIdx).To(BeNumerically("<", resize2fsIdx), "e2fsck must run before resize2fs")
+			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
+			Expect(resizeIdx).To(BeNumerically(">=", 0), "resize2fs -f must be called")
+			Expect(truncateIdx).To(BeNumerically("<", resizeIdx), "truncate must run before resize2fs")
+			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
+			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 		})
 	})
 })
