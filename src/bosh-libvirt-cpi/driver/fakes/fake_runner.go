@@ -12,7 +12,8 @@ type FakeRunner struct {
 	// error injection in tests.
 	ExecuteFunc func(path string, args ...string) (string, int, error)
 
-	UploadErr error
+	UploadErr  error
+	UploadFunc func(srcDir, dstDir string) error
 
 	PutContents map[string][]byte // keyed by path; populated by Put calls
 	PutErr      error
@@ -33,6 +34,9 @@ func (r *FakeRunner) Execute(path string, args ...string) (string, int, error) {
 }
 
 func (r *FakeRunner) Upload(srcDir, dstDir string) error {
+	if r.UploadFunc != nil {
+		return r.UploadFunc(srcDir, dstDir)
+	}
 	return r.UploadErr
 }
 

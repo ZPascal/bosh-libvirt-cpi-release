@@ -206,26 +206,25 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 			}
 		}
 	case "dir":
-		// Extract the gzip-compressed tar into a directory for libvirt-lxc mount.
-		// Inside an unprivileged container the stemcell's /dev/* entries can't be
-		// mknod'd (EPERM). GNU tar's --no-same-devices skips them cleanly; older/
-		// BSD tars don't know that flag. Try it first, fall back to plain tar and
-		// accept exit code 2 (warnings-only, which covers the EPERM mknod errors).
-		if err := os.MkdirAll(dstImage, 0755); err != nil {
-			return bosherr.WrapError(err, "Creating stemcell rootfs directory")
+		remoteTar := dstImage + ".tgz"
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", dstImage); mkErr != nil {
+			return bosherr.WrapError(mkErr, "Creating stemcell rootfs directory on remote")
 		}
-		out, err := exec.Command("tar", "--no-same-devices", "-xzf", imagePath, "-C", dstImage).CombinedOutput()
+		// SSHRunner.Upload copies imagePath to remoteTar on the remote host; LocalRunner.Upload
+		// moves it (rename). After this call, extraction runs from remoteTar on the remote side.
+		if uploadErr := f.runner.Upload(imagePath, remoteTar); uploadErr != nil {
+			return bosherr.WrapError(uploadErr, "Uploading stemcell tarball to remote host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteTar) }()
+		out, exitCode, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteTar, "-C", dstImage)
 		if err != nil {
-			if strings.Contains(string(out), "unrecognized option") || strings.Contains(string(out), "unknown option") {
-				// tar doesn't support --no-same-devices (BusyBox/BSD); run without it.
-				// Exit code 2 means warnings (e.g. mknod EPERM) but extraction succeeded.
-				cmd := exec.Command("tar", "-xzf", imagePath, "-C", dstImage)
-				out2, err2 := cmd.CombinedOutput()
-				if err2 != nil && cmd.ProcessState.ExitCode() != 2 {
-					return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs: %s", string(out2))
+			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+				out2, exitCode2, err2 := f.runner.Execute("tar", "-xzf", remoteTar, "-C", dstImage)
+				if err2 != nil && exitCode2 != 2 {
+					return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs on remote: %s", out2)
 				}
-			} else {
-				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+			} else if exitCode != 2 {
+				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs on remote: %s", out)
 			}
 		}
 	default:
