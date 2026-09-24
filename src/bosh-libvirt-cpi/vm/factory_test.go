@@ -280,7 +280,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("calls resize2fs with -f and does not call e2fsck", func() {
+		It("calls resize2fs without -f and does not call e2fsck", func() {
 			var executedCmds []string
 			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
 				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
@@ -302,18 +302,18 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			e2fsckCalled := false
-			resize2fsFCalled := false
-			expectedResize := "resize2fs -f " + filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
+			resize2fsCalled := false
+			expectedResize := "resize2fs " + filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
 			for _, cmd := range executedCmds {
 				if strings.HasPrefix(cmd, "e2fsck") {
 					e2fsckCalled = true
 				}
 				if cmd == expectedResize {
-					resize2fsFCalled = true
+					resize2fsCalled = true
 				}
 			}
 			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
-			Expect(resize2fsFCalled).To(BeTrue(), "resize2fs must be called with -f")
+			Expect(resize2fsCalled).To(BeTrue(), "resize2fs must be called")
 		})
 	})
 })
