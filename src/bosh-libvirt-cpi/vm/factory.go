@@ -891,21 +891,31 @@ func (f Factory) Create(
 			return nil, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
 		}
 		var loopDevForMount string
+		var resizeDiag string
 		if out, _, err := f.runner.Execute("truncate", "-s", "65G", vmExt4); err != nil {
-			f.logger.Info(f.logTag, "truncate failed (non-fatal): %s %s", err, out)
+			resizeDiag = fmt.Sprintf("truncate: %s %s", err, out)
+			f.logger.Error(f.logTag, "truncate -s 65G failed: %s %s", err, out)
 		} else {
 			loopDev, _, loopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4)
+			loopDevRaw := loopDev
 			loopDev = strings.TrimSpace(loopDev)
 			if loopErr != nil || loopDev == "" {
-				f.logger.Info(f.logTag, "losetup unavailable (%v), falling back to file-based resize", loopErr)
+				resizeDiag = fmt.Sprintf("losetup failed (%v): %s; falling back to file resize", loopErr, loopDevRaw)
+				f.logger.Error(f.logTag, "losetup -f --show failed: %v %s; falling back to file-based resize", loopErr, loopDevRaw)
 				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
+					resizeDiag += fmt.Sprintf("; resize2fs(file) failed: %s %s", err2, out2)
 					f.logger.Error(f.logTag, "resize2fs (file) failed: %s %s", err2, out2)
+				} else {
+					resizeDiag += fmt.Sprintf("; resize2fs(file) ok: %s", out2)
+					f.logger.Info(f.logTag, "resize2fs (file) ok: %s", out2)
 				}
 			} else {
 				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", loopDev); err2 != nil {
+					resizeDiag = fmt.Sprintf("resize2fs(%s) failed: %s %s", loopDev, err2, out2)
 					f.logger.Error(f.logTag, "resize2fs (loop %s) failed: %s %s", loopDev, err2, out2)
 					_, _, _ = f.runner.Execute("losetup", "-d", loopDev)
 				} else {
+					resizeDiag = fmt.Sprintf("resize2fs(%s) ok: %s", loopDev, out2)
 					f.logger.Info(f.logTag, "resize2fs succeeded on %s: %s", loopDev, out2)
 					loopDevForMount = loopDev
 				}
@@ -913,18 +923,20 @@ func (f Factory) Create(
 		}
 		// Mount: prefer the still-attached loop device so the kernel uses the
 		// same block-device representation that resize2fs operated on.  Fall back
-		// to "mount -o loop vmExt4" when losetup was unavailable.
-		mountTarget := vmExt4
+		// to "mount -o loop vmExt4" when losetup was unavailable or resize failed.
+		var mountArgs []string
 		if loopDevForMount != "" {
-			mountTarget = loopDevForMount
+			mountArgs = []string{loopDevForMount, mntDir}
+		} else {
+			mountArgs = []string{"-o", "loop", vmExt4, mntDir}
 		}
-		if out, _, mountErr := f.runner.Execute("mount", mountTarget, mntDir); mountErr != nil {
+		if out, _, mountErr := f.runner.Execute("mount", mountArgs...); mountErr != nil {
 			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
 			if loopDevForMount != "" {
 				_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
 			}
 			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", out)
+			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection (resize: %s): %s", resizeDiag, out)
 		}
 		// Remove stale supervise dirs from stemcell while we have write access
 		if svcsOut, _, _ := f.runner.Execute("ls", "-1", mntDir+"/etc/sv"); svcsOut != "" {
