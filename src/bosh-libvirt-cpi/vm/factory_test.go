@@ -311,8 +311,12 @@ var _ = Describe("vm.Factory", func() {
 			e2fsckIdx := -1
 			resizeLoopIdx := -1
 			mountLoopIdx := -1
+			syncBeforeUmountIdx := -1
+			umountIdx := -1
+			rmdirIdx := -1
 			losetupDetachIdx := -1
 			qemuImgResizeCalled := false
+			rmrfCalled := false
 			for i, cmd := range executedCmds {
 				if cmd == "truncate -s 65G "+vmImg {
 					truncateIdx = i
@@ -329,11 +333,23 @@ var _ = Describe("vm.Factory", func() {
 				if cmd == "mount /dev/loop7 "+vmImg+".mnt" {
 					mountLoopIdx = i
 				}
+				if strings.TrimSpace(cmd) == "sync" && mountLoopIdx >= 0 && umountIdx < 0 {
+					syncBeforeUmountIdx = i
+				}
+				if cmd == "umount "+vmImg+".mnt" {
+					umountIdx = i
+				}
+				if cmd == "rmdir "+vmImg+".mnt" {
+					rmdirIdx = i
+				}
 				if cmd == "losetup -d /dev/loop7" {
 					losetupDetachIdx = i
 				}
 				if strings.HasPrefix(cmd, "qemu-img resize") {
 					qemuImgResizeCalled = true
+				}
+				if strings.HasPrefix(cmd, "rm -rf") && strings.Contains(cmd, ".mnt") {
+					rmrfCalled = true
 				}
 			}
 			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
@@ -341,13 +357,20 @@ var _ = Describe("vm.Factory", func() {
 			Expect(e2fsckIdx).To(BeNumerically(">=", 0), "e2fsck -fy must be called")
 			Expect(resizeLoopIdx).To(BeNumerically(">=", 0), "resize2fs -f on loop device must be called")
 			Expect(mountLoopIdx).To(BeNumerically(">=", 0), "mount of loop device must be called")
+			Expect(syncBeforeUmountIdx).To(BeNumerically(">=", 0), "sync must be called after mount and before umount")
+			Expect(umountIdx).To(BeNumerically(">=", 0), "umount must be called")
+			Expect(rmdirIdx).To(BeNumerically(">=", 0), "rmdir of mount point must be called (not rm -rf)")
 			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d must be called")
 			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup attach")
 			Expect(losetupAttachIdx).To(BeNumerically("<", e2fsckIdx), "losetup attach before e2fsck")
 			Expect(e2fsckIdx).To(BeNumerically("<", resizeLoopIdx), "e2fsck before resize2fs")
 			Expect(resizeLoopIdx).To(BeNumerically("<", mountLoopIdx), "resize2fs before mount")
-			Expect(mountLoopIdx).To(BeNumerically("<", losetupDetachIdx), "mount before losetup detach")
+			Expect(mountLoopIdx).To(BeNumerically("<", syncBeforeUmountIdx), "mount before pre-umount sync")
+			Expect(syncBeforeUmountIdx).To(BeNumerically("<", umountIdx), "sync before umount")
+			Expect(umountIdx).To(BeNumerically("<", rmdirIdx), "umount before rmdir")
+			Expect(umountIdx).To(BeNumerically("<", losetupDetachIdx), "umount before losetup detach")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
+			Expect(rmrfCalled).To(BeFalse(), "rm -rf on mount point must not be called (use rmdir)")
 		})
 	})
 })

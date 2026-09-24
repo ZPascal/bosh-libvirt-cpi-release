@@ -1505,10 +1505,34 @@ func (f Factory) Create(
 		ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
 		_ = f.runner.Put(mntDir+"/usr/local/bin/sv", []byte(ext4SvStub))
 		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/local/bin/sv")
-		_, _, _ = f.runner.Execute("umount", mntDir)
-		_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+		// Flush all pending writes to the loop device before unmounting so the
+		// kernel page cache is clean. umount also flushes, but an explicit sync
+		// first guarantees no dirty pages remain if umount succeeds quickly.
+		_, _, _ = f.runner.Execute("sync")
+		// Unmount the ext4 loop mount. Use lazy unmount (-l) if normal umount
+		// fails (busy) so that the VFS detaches immediately and in-kernel dirty
+		// pages are flushed. Without this, a busy umount leaves the mount live;
+		// the subsequent rm -rf would then silently delete files from the ext4
+		// (including /bosh-init) before the loop device is detached.
+		if _, _, umountErr := f.runner.Execute("umount", mntDir); umountErr != nil {
+			f.logger.Warn(f.logTag, "umount %s failed (%v), trying lazy umount", mntDir, umountErr)
+			_, _, _ = f.runner.Execute("umount", "-l", mntDir)
+			// Give the lazy unmount time to settle before removing the directory.
+			_, _, _ = f.runner.Execute("sleep", "1")
+		}
+		// Only remove the mount-point directory AFTER the filesystem is detached.
+		// Do NOT use rm -rf on a path that may still be a live mount.
+		_, _, _ = f.runner.Execute("rmdir", mntDir)
 		if loopDevForMount != "" {
+			// sync again after umount so the loop device's dirty pages are
+			// flushed to the backing file before we detach. losetup -d also
+			// flushes, but an explicit sync guards against any edge cases where
+			// losetup -d finishes quickly before the OS completes the writeback.
+			_, _, _ = f.runner.Execute("sync")
 			_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+			// Final sync to ensure all loop-device-to-file writebacks are complete
+			// before QEMU opens rootfs.img.
+			_, _, _ = f.runner.Execute("sync")
 		}
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
