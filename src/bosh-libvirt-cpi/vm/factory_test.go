@@ -310,6 +310,7 @@ var _ = Describe("vm.Factory", func() {
 			truncateIdx := -1
 			losetupAttachIdx := -1
 			resizeLoopIdx := -1
+			mountLoopIdx := -1
 			losetupDetachIdx := -1
 			e2fsckCalled := false
 			qemuImgResizeCalled := false
@@ -322,6 +323,10 @@ var _ = Describe("vm.Factory", func() {
 				}
 				if cmd == "resize2fs -f /dev/loop7" {
 					resizeLoopIdx = i
+				}
+				// mount should use the loop device directly (not -o loop vmExt4)
+				if cmd == "mount /dev/loop7 "+vmImg+".mnt" {
+					mountLoopIdx = i
 				}
 				if cmd == "losetup -d /dev/loop7" {
 					losetupDetachIdx = i
@@ -336,10 +341,12 @@ var _ = Describe("vm.Factory", func() {
 			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
 			Expect(losetupAttachIdx).To(BeNumerically(">=", 0), "losetup -f --show must be called")
 			Expect(resizeLoopIdx).To(BeNumerically(">=", 0), "resize2fs -f on loop device must be called")
+			Expect(mountLoopIdx).To(BeNumerically(">=", 0), "mount of loop device must be called")
 			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d must be called")
-			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup")
+			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup attach")
 			Expect(losetupAttachIdx).To(BeNumerically("<", resizeLoopIdx), "losetup attach before resize2fs")
-			Expect(resizeLoopIdx).To(BeNumerically("<", losetupDetachIdx), "resize2fs before losetup detach")
+			Expect(resizeLoopIdx).To(BeNumerically("<", mountLoopIdx), "resize2fs before mount")
+			Expect(mountLoopIdx).To(BeNumerically("<", losetupDetachIdx), "mount before losetup detach")
 			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 		})

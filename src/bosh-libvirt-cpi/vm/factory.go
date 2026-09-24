@@ -882,32 +882,47 @@ func (f Factory) Create(
 		//      BLKGETSIZE64 ioctl; without a loop device resize2fs falls back to
 		//      fstat which on some e2fsprogs versions silently returns wrong size.
 		//   3. resize2fs -f /dev/loopN — grows the filesystem.
-		//   4. losetup -d — detach loop device.
+		//   4. Mount /dev/loopN directly (keep loop alive through mount so the
+		//      resized view is guaranteed — no re-attach, no cache flush needed).
+		//   5. After umount: losetup -d /dev/loopN.
+		mntDir := vmExt4 + ".mnt"
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", mntDir); mkErr != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
+		}
+		var loopDevForMount string
 		if out, _, err := f.runner.Execute("truncate", "-s", "65G", vmExt4); err != nil {
 			f.logger.Info(f.logTag, "truncate failed (non-fatal): %s %s", err, out)
 		} else {
 			loopDev, _, loopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4)
 			loopDev = strings.TrimSpace(loopDev)
 			if loopErr != nil || loopDev == "" {
-				// losetup unavailable — fall back to file-based resize
+				f.logger.Info(f.logTag, "losetup unavailable (%v), falling back to file-based resize", loopErr)
 				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
-					f.logger.Info(f.logTag, "resize2fs (file) failed (non-fatal): %s %s", err2, out2)
+					f.logger.Error(f.logTag, "resize2fs (file) failed: %s %s", err2, out2)
 				}
 			} else {
 				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", loopDev); err2 != nil {
-					f.logger.Info(f.logTag, "resize2fs (loop) failed (non-fatal): %s %s", err2, out2)
+					f.logger.Error(f.logTag, "resize2fs (loop %s) failed: %s %s", loopDev, err2, out2)
+					_, _, _ = f.runner.Execute("losetup", "-d", loopDev)
+				} else {
+					f.logger.Info(f.logTag, "resize2fs succeeded on %s: %s", loopDev, out2)
+					loopDevForMount = loopDev
 				}
-				_, _, _ = f.runner.Execute("losetup", "-d", loopDev)
 			}
 		}
-		// Mount, inject, unmount
-		mntDir := vmExt4 + ".mnt"
-		if _, _, mkErr := f.runner.Execute("mkdir", "-p", mntDir); mkErr != nil {
-			f.cleanUpPartialCreate(vm)
-			return nil, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
+		// Mount: prefer the still-attached loop device so the kernel uses the
+		// same block-device representation that resize2fs operated on.  Fall back
+		// to "mount -o loop vmExt4" when losetup was unavailable.
+		mountTarget := vmExt4
+		if loopDevForMount != "" {
+			mountTarget = loopDevForMount
 		}
-		if out, _, mountErr := f.runner.Execute("mount", "-o", "loop", vmExt4, mntDir); mountErr != nil {
+		if out, _, mountErr := f.runner.Execute("mount", mountTarget, mntDir); mountErr != nil {
 			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+			if loopDevForMount != "" {
+				_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+			}
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(mountErr, "Mounting ext4 for VM injection: %s", out)
 		}
@@ -923,6 +938,9 @@ func (f Factory) Create(
 		if envErr != nil {
 			_, _, _ = f.runner.Execute("umount", mntDir)
 			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+			if loopDevForMount != "" {
+				_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+			}
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(envErr, "Marshalling agent env for ext4 rootfs injection")
 		}
@@ -931,12 +949,18 @@ func (f Factory) Create(
 		if _, _, mkErr := f.runner.Execute("mkdir", "-p", boshDir); mkErr != nil {
 			_, _, _ = f.runner.Execute("umount", mntDir)
 			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+			if loopDevForMount != "" {
+				_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+			}
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(mkErr, "Creating bosh dir in ext4 rootfs")
 		}
 		if writeErr := f.runner.Put(boshDir+"/warden-cpi-agent-env.json", agentEnvBytes2); writeErr != nil {
 			_, _, _ = f.runner.Execute("umount", mntDir)
 			_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+			if loopDevForMount != "" {
+				_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+			}
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapError(writeErr, "Writing agent env to ext4 rootfs")
 		}
@@ -1442,8 +1466,16 @@ func (f Factory) Create(
 			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
 			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
 			"exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu\n"
-		_ = f.runner.Put(mntDir+"/bosh-init", []byte(initScript))
+		if putErr := f.runner.Put(mntDir+"/bosh-init", []byte(initScript)); putErr != nil {
+			f.logger.Error(f.logTag, "Failed to write /bosh-init to ext4 rootfs: %s", putErr)
+		}
 		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/bosh-init")
+		// Verify /bosh-init was written (diagnostic).
+		if lsOut, _, lsErr := f.runner.Execute("ls", "-la", mntDir+"/bosh-init"); lsErr != nil {
+			f.logger.Error(f.logTag, "DIAGNOSTIC: /bosh-init missing from ext4 mount: %s", lsErr)
+		} else {
+			f.logger.Info(f.logTag, "DIAGNOSTIC: /bosh-init present: %s", lsOut)
+		}
 		// Write sv stub at host-side mount so it always takes priority over /usr/bin/sv
 		_, _, _ = f.runner.Execute("mkdir", "-p", mntDir+"/usr/local/bin")
 		ext4SvStub := "#!/bin/sh\ncase \"$1\" in\n  start)       echo \"ok: run: $2: (pid 0) 1s\"; exit 0 ;;\n  stop)        echo \"ok: down: $2: 0s\";        exit 0 ;;\n  kill|force-stop) echo \"ok: down: $2: 0s\";   exit 0 ;;\n  status)      echo \"run: $2: (pid 0) 1s\";    exit 0 ;;\nesac\nexec /usr/bin/sv \"$@\"\n"
@@ -1451,6 +1483,9 @@ func (f Factory) Create(
 		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/local/bin/sv")
 		_, _, _ = f.runner.Execute("umount", mntDir)
 		_, _, _ = f.runner.Execute("rm", "-rf", mntDir)
+		if loopDevForMount != "" {
+			_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
+		}
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
