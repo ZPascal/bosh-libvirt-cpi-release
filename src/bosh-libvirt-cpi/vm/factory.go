@@ -874,13 +874,18 @@ func (f Factory) Create(
 		}
 		// Grow the root ext4 image so /var/vcap/data has enough space for BOSH package
 		// compilation. The stemcell ships a small image (~2GB); we need 60GB+ for all
-		// BOSH director packages. qemu-img resize expands the file, then resize2fs grows
-		// the filesystem to fill the new space.
+		// BOSH director packages. qemu-img resize expands the file; e2fsck -f clears
+		// the "needs check" flag so resize2fs doesn't exit early; resize2fs then grows
+		// the filesystem to fill the new space. e2fsck exits 1 for "corrected errors"
+		// which is normal on a clean image — only treat exit ≥2 as fatal.
 		if out, _, err := f.runner.Execute("qemu-img", "resize", vmExt4, "65G"); err != nil {
 			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, out)
 		} else {
-			if out2, _, err2 := f.runner.Execute("resize2fs", vmExt4); err2 != nil {
-				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err2, out2)
+			if out2, exitCode2, _ := f.runner.Execute("e2fsck", "-f", "-y", vmExt4); exitCode2 >= 2 {
+				f.logger.Info(f.logTag, "e2fsck pre-resize check failed (exit %d): %s", exitCode2, out2)
+			}
+			if out3, _, err3 := f.runner.Execute("resize2fs", vmExt4); err3 != nil {
+				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, out3)
 			}
 		}
 		// Mount, inject, unmount

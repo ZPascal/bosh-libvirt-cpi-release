@@ -280,7 +280,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("calls resize2fs without -f and does not call e2fsck", func() {
+		It("runs e2fsck then resize2fs after qemu-img resize", func() {
 			var executedCmds []string
 			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
 				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
@@ -301,19 +301,20 @@ var _ = Describe("vm.Factory", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			e2fsckCalled := false
-			resize2fsCalled := false
-			expectedResize := "resize2fs " + filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
-			for _, cmd := range executedCmds {
-				if strings.HasPrefix(cmd, "e2fsck") {
-					e2fsckCalled = true
+			vmImg := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
+			e2fsckIdx := -1
+			resize2fsIdx := -1
+			for i, cmd := range executedCmds {
+				if cmd == "e2fsck -f -y "+vmImg {
+					e2fsckIdx = i
 				}
-				if cmd == expectedResize {
-					resize2fsCalled = true
+				if cmd == "resize2fs "+vmImg {
+					resize2fsIdx = i
 				}
 			}
-			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
-			Expect(resize2fsCalled).To(BeTrue(), "resize2fs must be called")
+			Expect(e2fsckIdx).To(BeNumerically(">=", 0), "e2fsck -f -y must be called")
+			Expect(resize2fsIdx).To(BeNumerically(">=", 0), "resize2fs must be called")
+			Expect(e2fsckIdx).To(BeNumerically("<", resize2fsIdx), "e2fsck must run before resize2fs")
 		})
 	})
 })
