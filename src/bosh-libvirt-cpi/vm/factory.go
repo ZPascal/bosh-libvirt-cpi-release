@@ -872,29 +872,32 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, bosherr.WrapErrorf(err, "Copying stemcell ext4 for VM: %s", out)
 		}
-		// Grow the root ext4 image so /var/vcap/data has enough space for BOSH package
-		// compilation. The stemcell ships a small image (~2GB); we need 65G for all
-		// BOSH director packages.
+		// Grow the root ext4 image to 65G so /var/vcap/data has enough space for
+		// BOSH package compilation. The stemcell ships a ~2GB image.
 		//
-		// Safe resize sequence:
-		//   1. truncate -s 65G  — extends the file without changing fs metadata;
-		//      does NOT update s_mtime inside the ext4 superblock so resize2fs
-		//      won't complain that the filesystem needs checking.
-		//   2. resize2fs -f    — the -f flag skips the "s_lastcheck < s_mtime"
-		//      gate that would otherwise cause resize2fs to exit without resizing.
-		//      On a filesystem whose content is clean (freshly cp'd from stemcell)
-		//      this is safe: there is nothing to repair, only block groups to add.
-		//
-		// We avoid qemu-img resize because it updates the file's mtime, which
-		// causes resize2fs to demand e2fsck first; and e2fsck -y on a 65G file
-		// whose ext4 superblock records a 2G size has been observed to empty
-		// the filesystem (likely truncating inodes or block bitmaps it treats as
-		// out-of-range).
+		// Resize sequence:
+		//   1. truncate -s 65G  — extends the file (sparse); avoids qemu-img
+		//      which updates s_mtime and causes resize2fs to demand e2fsck.
+		//   2. losetup -f --show — attach as loop device so resize2fs can use
+		//      BLKGETSIZE64 ioctl; without a loop device resize2fs falls back to
+		//      fstat which on some e2fsprogs versions silently returns wrong size.
+		//   3. resize2fs -f /dev/loopN — grows the filesystem.
+		//   4. losetup -d — detach loop device.
 		if out, _, err := f.runner.Execute("truncate", "-s", "65G", vmExt4); err != nil {
 			f.logger.Info(f.logTag, "truncate failed (non-fatal): %s %s", err, out)
 		} else {
-			if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
-				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err2, out2)
+			loopDev, _, loopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4)
+			loopDev = strings.TrimSpace(loopDev)
+			if loopErr != nil || loopDev == "" {
+				// losetup unavailable — fall back to file-based resize
+				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
+					f.logger.Info(f.logTag, "resize2fs (file) failed (non-fatal): %s %s", err2, out2)
+				}
+			} else {
+				if out2, _, err2 := f.runner.Execute("resize2fs", "-f", loopDev); err2 != nil {
+					f.logger.Info(f.logTag, "resize2fs (loop) failed (non-fatal): %s %s", err2, out2)
+				}
+				_, _, _ = f.runner.Execute("losetup", "-d", loopDev)
 			}
 		}
 		// Mount, inject, unmount

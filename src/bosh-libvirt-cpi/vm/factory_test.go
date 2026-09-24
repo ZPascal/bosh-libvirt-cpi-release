@@ -280,10 +280,15 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("uses truncate then resize2fs -f to grow ext4 without e2fsck", func() {
+		It("uses truncate+losetup+resize2fs -f to grow ext4 without e2fsck", func() {
 			var executedCmds []string
 			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
-				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
+				cmd := name + " " + strings.Join(args, " ")
+				executedCmds = append(executedCmds, cmd)
+				// Simulate losetup returning a loop device path
+				if name == "losetup" && len(args) >= 2 && args[0] == "-f" && args[1] == "--show" {
+					return "/dev/loop7\n", 0, nil
+				}
 				return "", 0, nil
 			}
 			defer func() { runner.ExecuteFunc = nil }()
@@ -303,15 +308,23 @@ var _ = Describe("vm.Factory", func() {
 
 			vmImg := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
 			truncateIdx := -1
-			resizeIdx := -1
+			losetupAttachIdx := -1
+			resizeLoopIdx := -1
+			losetupDetachIdx := -1
 			e2fsckCalled := false
 			qemuImgResizeCalled := false
 			for i, cmd := range executedCmds {
 				if cmd == "truncate -s 65G "+vmImg {
 					truncateIdx = i
 				}
-				if cmd == "resize2fs -f "+vmImg {
-					resizeIdx = i
+				if cmd == "losetup -f --show "+vmImg {
+					losetupAttachIdx = i
+				}
+				if cmd == "resize2fs -f /dev/loop7" {
+					resizeLoopIdx = i
+				}
+				if cmd == "losetup -d /dev/loop7" {
+					losetupDetachIdx = i
 				}
 				if strings.HasPrefix(cmd, "e2fsck") {
 					e2fsckCalled = true
@@ -321,8 +334,12 @@ var _ = Describe("vm.Factory", func() {
 				}
 			}
 			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
-			Expect(resizeIdx).To(BeNumerically(">=", 0), "resize2fs -f must be called")
-			Expect(truncateIdx).To(BeNumerically("<", resizeIdx), "truncate must run before resize2fs")
+			Expect(losetupAttachIdx).To(BeNumerically(">=", 0), "losetup -f --show must be called")
+			Expect(resizeLoopIdx).To(BeNumerically(">=", 0), "resize2fs -f on loop device must be called")
+			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d must be called")
+			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup")
+			Expect(losetupAttachIdx).To(BeNumerically("<", resizeLoopIdx), "losetup attach before resize2fs")
+			Expect(resizeLoopIdx).To(BeNumerically("<", losetupDetachIdx), "resize2fs before losetup detach")
 			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 		})
