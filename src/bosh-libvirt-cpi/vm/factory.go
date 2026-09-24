@@ -879,11 +879,8 @@ func (f Factory) Create(
 		if out, _, err := f.runner.Execute("qemu-img", "resize", vmExt4, "65G"); err != nil {
 			f.logger.Info(f.logTag, "qemu-img resize failed (non-fatal): %s %s", err, out)
 		} else {
-			if out2, _, err2 := f.runner.Execute("e2fsck", "-f", "-y", vmExt4); err2 != nil {
-				f.logger.Info(f.logTag, "e2fsck failed (non-fatal): %s %s", err2, out2)
-			}
-			if out3, _, err3 := f.runner.Execute("resize2fs", vmExt4); err3 != nil {
-				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err3, out3)
+			if out2, _, err2 := f.runner.Execute("resize2fs", "-f", vmExt4); err2 != nil {
+				f.logger.Info(f.logTag, "resize2fs failed (non-fatal): %s %s", err2, out2)
 			}
 		}
 		// Mount, inject, unmount

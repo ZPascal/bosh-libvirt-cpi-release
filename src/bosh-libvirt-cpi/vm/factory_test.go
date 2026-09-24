@@ -279,5 +279,41 @@ var _ = Describe("vm.Factory", func() {
 			// from AsBytes would surface as an unexpected error here.
 			Expect(err).ToNot(HaveOccurred())
 		})
+
+		It("calls resize2fs with -f and does not call e2fsck", func() {
+			var executedCmds []string
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
+				return "", 0, nil
+			}
+			defer func() { runner.ExecuteFunc = nil }()
+
+			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+			stemcell.ImagePathResult = stemcellImg
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			e2fsckCalled := false
+			resize2fsFCalled := false
+			expectedResize := "resize2fs -f " + filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
+			for _, cmd := range executedCmds {
+				if strings.HasPrefix(cmd, "e2fsck") {
+					e2fsckCalled = true
+				}
+				if cmd == expectedResize {
+					resize2fsFCalled = true
+				}
+			}
+			Expect(e2fsckCalled).To(BeFalse(), "e2fsck must not be called")
+			Expect(resize2fsFCalled).To(BeTrue(), "resize2fs must be called with -f")
+		})
 	})
 })
