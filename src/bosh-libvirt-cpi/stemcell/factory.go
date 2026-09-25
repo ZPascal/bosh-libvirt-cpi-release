@@ -150,20 +150,19 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	case "ext4":
 		// Build an ext4 raw image from the warden-tar stemcell on the libvirt host.
-		// The bosh-warden stemcell tgz contains an `image` file which is itself a
-		// gzip-compressed tar of the rootfs.  All heavy lifting (mount, cp, umount)
-		// runs via runner.Execute so it happens on the libvirt host regardless of
-		// whether the CPI is running locally or inside a director VM.
+		//
+		// BOSH unpacks the outer stemcell tgz itself and passes the inner `image`
+		// file path to create_stemcell.  The `image` file is a gzip-compressed tar
+		// of the rootfs (warden-tar format).  We upload it to the host, extract it
+		// directly into remoteTmpDir, then build the ext4.
 		//
 		// Steps:
-		//   1. Upload the stemcell tgz to a temp path on the host.
-		//   2. Extract the outer tgz on the host → gets `image` file.
-		//   3. Extract inner `image` gzip-tar on the host → rootfs tree in tmpDir.
-		//   4. Create dd-sparse ext4, format, mount, copy rootfs, sync, umount.
-		//   5. Clean up temp dirs.
+		//   1. Upload imagePath (the rootfs gzip-tar) to a temp path on the host.
+		//   2. Extract it on the host → rootfs tree in remoteTmpDir.
+		//   3. Create dd-sparse ext4, format, mount, copy rootfs, sync, umount.
+		//   4. Clean up temp dirs.
 		remoteTmpBase := filepath.Dir(dstImage)
-		remoteTgz := dstImage + ".stemcell.tgz"
-		remoteOuterDir := dstImage + ".outer"
+		remoteImage := dstImage + ".rootfs.tgz"
 		remoteTmpDir := dstImage + ".rootfs"
 		remoteMntDir := dstImage + ".mnt"
 
@@ -172,52 +171,32 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 			return bosherr.WrapError(mkErr, "Creating stemcell dir on host")
 		}
 
-		// Upload the stemcell tgz to the host.
+		// Upload the inner image (gzip-tar of rootfs) to the host.
 		localAbs := imagePath
 		if home, err := os.UserHomeDir(); err == nil && home != "" {
 			localAbs = strings.Replace(imagePath, "~", home, 1)
 		}
-		if uploadErr := f.runner.Upload(localAbs, remoteTgz); uploadErr != nil {
-			return bosherr.WrapError(uploadErr, "Uploading stemcell tgz to host")
+		if uploadErr := f.runner.Upload(localAbs, remoteImage); uploadErr != nil {
+			return bosherr.WrapError(uploadErr, "Uploading stemcell image to host")
 		}
-		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteTgz) }()
+		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteImage) }()
 
-		// Create working dirs on the host.
-		if _, _, err := f.runner.Execute("mkdir", "-p", remoteOuterDir); err != nil {
-			return bosherr.WrapError(err, "Creating outer dir on host")
-		}
-		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteOuterDir) }()
+		// Create rootfs staging dir on the host.
 		if _, _, err := f.runner.Execute("mkdir", "-p", remoteTmpDir); err != nil {
 			return bosherr.WrapError(err, "Creating rootfs tmp dir on host")
 		}
 		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteTmpDir) }()
 
-		// Extract outer stemcell tgz on the host.
-		if out, _, err := f.runner.Execute("tar", "-xzf", remoteTgz, "-C", remoteOuterDir); err != nil {
-			return bosherr.WrapErrorf(err, "Extracting outer stemcell tgz on host: %s", out)
-		}
-
-		// Extract inner rootfs image on the host.
-		innerImage := remoteOuterDir + "/image"
-		innerOut, innerEC, innerErr := f.runner.Execute("test", "-f", innerImage)
-		_ = innerOut
-		if innerEC == 0 && innerErr == nil {
-			// warden-tar format: inner image is a gzipped rootfs tar.
-			// Use --no-same-devices so device nodes are skipped instead of failing.
-			out, _, tarErr := f.runner.Execute("tar", "--no-same-devices", "-xzf", innerImage, "-C", remoteTmpDir)
-			if tarErr != nil {
-				if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
-					if out2, _, e2 := f.runner.Execute("tar", "-xzf", innerImage, "-C", remoteTmpDir); e2 != nil {
-						return bosherr.WrapErrorf(e2, "Extracting inner rootfs on host: %s", out2)
-					}
-				} else {
-					return bosherr.WrapErrorf(tarErr, "Extracting inner rootfs on host: %s", out)
+		// Extract the rootfs gzip-tar on the host.
+		// Try --no-same-devices first (GNU tar); fall back to plain tar on failure.
+		out, _, tarErr := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteImage, "-C", remoteTmpDir)
+		if tarErr != nil {
+			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+				if out2, _, e2 := f.runner.Execute("tar", "-xzf", remoteImage, "-C", remoteTmpDir); e2 != nil {
+					return bosherr.WrapErrorf(e2, "Extracting stemcell rootfs on host: %s", out2)
 				}
-			}
-		} else {
-			// Fallback: outer tgz IS the rootfs tar.
-			if out, _, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteTgz, "-C", remoteTmpDir); err != nil {
-				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs (fallback) on host: %s", out)
+			} else {
+				return bosherr.WrapErrorf(tarErr, "Extracting stemcell rootfs on host: %s", out)
 			}
 		}
 
