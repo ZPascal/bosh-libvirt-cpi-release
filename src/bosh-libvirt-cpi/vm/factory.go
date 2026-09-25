@@ -1535,18 +1535,35 @@ func (f Factory) Create(
 			_, _, _ = f.runner.Execute("sync")
 		}
 		// Clear the needs_recovery flag left by the mount/inject/umount cycle.
-		// The flag persists because the kernel sets it when the journal is active
-		// during mount, and e2fsck alone may not clear it if the journal replay
-		// is deferred. tune2fs -O ^needs_recovery forcibly clears the superblock
-		// feature bit; e2fsck -fy then verifies and commits the journal, ensuring
-		// the image is fully clean before QEMU opens it. Without this, the kernel
-		// ext4 driver attempts journal replay at boot which fails and panics with
-		// "VFS: Unable to mount root fs".
-		if t2Out, _, t2Err := f.runner.Execute("tune2fs", "-O", "^needs_recovery", vmExt4); t2Err != nil {
-			f.logger.Info(f.logTag, "tune2fs clear needs_recovery: %s %s", t2Err, t2Out)
-		}
-		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
-			f.logger.Info(f.logTag, "e2fsck post-inject (exit 1 = errors corrected, which is ok): %s", e2Out)
+		// After umount+losetup-d the kernel has set needs_recovery in the ext4
+		// superblock (it was set when the journal became active during mount, and
+		// is only cleared by a journal commit+checkpoint). Without clearing it,
+		// the kernel ext4 driver attempts journal replay at boot which fails and
+		// panics with "VFS: Unable to mount root fs".
+		//
+		// tune2fs -O ^needs_recovery cannot be passed through runner.Execute
+		// because shellEscape converts ^ to \^ which tune2fs does not accept.
+		// Instead write a tiny shell script and run it, which avoids the escaping
+		// problem entirely.
+		cleanScript := vmExt4 + ".clean.sh"
+		scriptBody := fmt.Sprintf(
+			"#!/bin/sh\ntune2fs -O '^needs_recovery' '%s' && e2fsck -fy '%s'; sync\n",
+			vmExt4, vmExt4,
+		)
+		if putErr := f.runner.Put(cleanScript, []byte(scriptBody)); putErr == nil {
+			_, _, _ = f.runner.Execute("chmod", "+x", cleanScript)
+			if csOut, _, csErr := f.runner.Execute("sh", cleanScript); csErr != nil {
+				f.logger.Info(f.logTag, "clean needs_recovery script: %s %s", csErr, csOut)
+			}
+			_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
+		} else {
+			// Fallback: e2fsck journal-only replay without tune2fs.
+			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", "-E", "journal_only", vmExt4); e2Err != nil {
+				f.logger.Info(f.logTag, "e2fsck journal_only: %s %s", e2Err, e2Out)
+			}
+			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
+				f.logger.Info(f.logTag, "e2fsck post-inject: %s %s", e2Err, e2Out)
+			}
 		}
 		_, _, _ = f.runner.Execute("sync")
 		disks = driver.DomainDiskPaths{

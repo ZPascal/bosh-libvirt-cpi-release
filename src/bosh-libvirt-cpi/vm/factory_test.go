@@ -306,6 +306,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			vmImg := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
+			cleanScript := vmImg + ".clean.sh"
 			truncateIdx := -1
 			losetupAttachIdx := -1
 			e2fsckPreResizeIdx := -1
@@ -315,8 +316,7 @@ var _ = Describe("vm.Factory", func() {
 			umountIdx := -1
 			rmdirIdx := -1
 			losetupDetachIdx := -1
-			tune2fsPostInjectIdx := -1
-			e2fsckPostInjectIdx := -1
+			cleanScriptIdx := -1
 			qemuImgResizeCalled := false
 			rmrfCalled := false
 			for i, cmd := range executedCmds {
@@ -347,11 +347,8 @@ var _ = Describe("vm.Factory", func() {
 				if cmd == "losetup -d /dev/loop7" {
 					losetupDetachIdx = i
 				}
-				if cmd == "tune2fs -O ^needs_recovery "+vmImg {
-					tune2fsPostInjectIdx = i
-				}
-				if cmd == "e2fsck -fy "+vmImg {
-					e2fsckPostInjectIdx = i
+				if cmd == "sh "+cleanScript {
+					cleanScriptIdx = i
 				}
 				if strings.HasPrefix(cmd, "qemu-img resize") {
 					qemuImgResizeCalled = true
@@ -360,6 +357,14 @@ var _ = Describe("vm.Factory", func() {
 					rmrfCalled = true
 				}
 			}
+			// Verify the clean script was Put with tune2fs + e2fsck content.
+			Expect(runner.PutContents).ToNot(BeNil(), "runner.Put must have been called")
+			scriptContent, ok := runner.PutContents[cleanScript]
+			Expect(ok).To(BeTrue(), "clean script must have been Put at "+cleanScript)
+			Expect(string(scriptContent)).To(ContainSubstring("tune2fs"), "clean script must contain tune2fs")
+			Expect(string(scriptContent)).To(ContainSubstring("e2fsck"), "clean script must contain e2fsck")
+			Expect(string(scriptContent)).To(ContainSubstring("^needs_recovery"), "clean script must clear needs_recovery")
+
 			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
 			Expect(losetupAttachIdx).To(BeNumerically(">=", 0), "losetup -f --show must be called")
 			Expect(e2fsckPreResizeIdx).To(BeNumerically(">=", 0), "e2fsck -fy on loop device must be called before resize2fs")
@@ -369,8 +374,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(umountIdx).To(BeNumerically(">=", 0), "umount must be called")
 			Expect(rmdirIdx).To(BeNumerically(">=", 0), "rmdir of mount point must be called (not rm -rf)")
 			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d must be called")
-			Expect(tune2fsPostInjectIdx).To(BeNumerically(">=", 0), "tune2fs -O ^needs_recovery must be called on image file after inject")
-			Expect(e2fsckPostInjectIdx).To(BeNumerically(">=", 0), "e2fsck -fy must be called on image file after inject")
+			Expect(cleanScriptIdx).To(BeNumerically(">=", 0), "sh clean script must be called after losetup detach")
 			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup attach")
 			Expect(losetupAttachIdx).To(BeNumerically("<", e2fsckPreResizeIdx), "losetup attach before pre-resize e2fsck")
 			Expect(e2fsckPreResizeIdx).To(BeNumerically("<", resizeLoopIdx), "e2fsck before resize2fs")
@@ -379,8 +383,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(syncBeforeUmountIdx).To(BeNumerically("<", umountIdx), "sync before umount")
 			Expect(umountIdx).To(BeNumerically("<", rmdirIdx), "umount before rmdir")
 			Expect(umountIdx).To(BeNumerically("<", losetupDetachIdx), "umount before losetup detach")
-			Expect(losetupDetachIdx).To(BeNumerically("<", tune2fsPostInjectIdx), "losetup detach before tune2fs post-inject")
-			Expect(tune2fsPostInjectIdx).To(BeNumerically("<", e2fsckPostInjectIdx), "tune2fs before post-inject e2fsck")
+			Expect(losetupDetachIdx).To(BeNumerically("<", cleanScriptIdx), "losetup detach before clean script")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 			Expect(rmrfCalled).To(BeFalse(), "rm -rf on mount point must not be called (use rmdir)")
 		})
