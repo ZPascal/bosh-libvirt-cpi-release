@@ -1534,14 +1534,19 @@ func (f Factory) Create(
 			// before QEMU opens rootfs.img.
 			_, _, _ = f.runner.Execute("sync")
 		}
-		// Run e2fsck on the final image after all writes are flushed.
-		// The resize+inject cycle leaves the ext4 with needs_recovery set in
-		// the feature flags (journal was active during writes). Without this
-		// cleanup the kernel's ext4 driver attempts journal replay at boot,
-		// which can fail and produce "VFS: Unable to mount root fs" panic.
-		// e2fsck -fy replays and commits the journal, producing a clean image.
+		// Clear the needs_recovery flag left by the mount/inject/umount cycle.
+		// The flag persists because the kernel sets it when the journal is active
+		// during mount, and e2fsck alone may not clear it if the journal replay
+		// is deferred. tune2fs -O ^needs_recovery forcibly clears the superblock
+		// feature bit; e2fsck -fy then verifies and commits the journal, ensuring
+		// the image is fully clean before QEMU opens it. Without this, the kernel
+		// ext4 driver attempts journal replay at boot which fails and panics with
+		// "VFS: Unable to mount root fs".
+		if t2Out, _, t2Err := f.runner.Execute("tune2fs", "-O", "^needs_recovery", vmExt4); t2Err != nil {
+			f.logger.Info(f.logTag, "tune2fs clear needs_recovery: %s %s", t2Err, t2Out)
+		}
 		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
-			f.logger.Info(f.logTag, "e2fsck post-inject (non-zero exit is ok if fs is clean): %s", e2Out)
+			f.logger.Info(f.logTag, "e2fsck post-inject (exit 1 = errors corrected, which is ok): %s", e2Out)
 		}
 		_, _, _ = f.runner.Execute("sync")
 		disks = driver.DomainDiskPaths{
