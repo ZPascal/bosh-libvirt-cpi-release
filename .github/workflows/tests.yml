@@ -441,6 +441,15 @@ jobs:
           exit 1
         fi
         echo "Blobstore ready"
+        echo "=== stemcell ext4 pre-deploy check ==="
+        SC_IMG=$(sudo find /tmp/bosh_libvirt_cpi/stemcells -name 'image.ext4' 2>/dev/null | head -1)
+        if [ -n "$SC_IMG" ]; then
+          echo "Stemcell: $SC_IMG ($(sudo du -sh "$SC_IMG" 2>/dev/null | cut -f1))"
+          sudo file "$SC_IMG" 2>/dev/null || true
+          sudo tune2fs -l "$SC_IMG" 2>/dev/null | grep -E 'Block count|Inode count|Free blocks|Free inodes|Filesystem state' || echo "(tune2fs failed)"
+        else
+          echo "WARNING: no stemcell image.ext4 found before deploy"
+        fi
         timeout 300 bosh -e qemu-ci upload-release \
           https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
           --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
