@@ -1534,6 +1534,16 @@ func (f Factory) Create(
 			// before QEMU opens rootfs.img.
 			_, _, _ = f.runner.Execute("sync")
 		}
+		// Run e2fsck on the final image after all writes are flushed.
+		// The resize+inject cycle leaves the ext4 with needs_recovery set in
+		// the feature flags (journal was active during writes). Without this
+		// cleanup the kernel's ext4 driver attempts journal replay at boot,
+		// which can fail and produce "VFS: Unable to mount root fs" panic.
+		// e2fsck -fy replays and commits the journal, producing a clean image.
+		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
+			f.logger.Info(f.logTag, "e2fsck post-inject (non-zero exit is ok if fs is clean): %s", e2Out)
+		}
+		_, _, _ = f.runner.Execute("sync")
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
