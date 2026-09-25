@@ -454,6 +454,29 @@ jobs:
             [ -n "$TASK_ID" ] && bosh -e qemu-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
             echo "=== QEMU console log (last 30 lines) ===" && \
               sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            echo "=== stemcell ext4 info ===" && {
+              SC_IMG=$(sudo find /tmp/bosh_libvirt_cpi/stemcells -name 'image.ext4' 2>/dev/null | head -1)
+              if [ -n "$SC_IMG" ]; then
+                echo "Stemcell image: $SC_IMG ($(sudo du -sh "$SC_IMG" 2>/dev/null | cut -f1))"
+                sudo file "$SC_IMG" 2>/dev/null || true
+                sudo tune2fs -l "$SC_IMG" 2>/dev/null | head -10 || echo "(tune2fs failed)"
+              else
+                echo "No stemcell image.ext4 found"
+              fi
+            } || true
+            echo "=== compilation VM rootfs.img info ===" && {
+              for ROOTFS in $(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null); do
+                echo "VM image: $ROOTFS ($(sudo du -sh "$ROOTFS" 2>/dev/null | cut -f1))"
+                sudo file "$ROOTFS" 2>/dev/null || true
+                sudo tune2fs -l "$ROOTFS" 2>/dev/null | head -10 || echo "(tune2fs failed)"
+                sudo mkdir -p /mnt/compile-rootfs
+                sudo mount -o loop,ro,noload "$ROOTFS" /mnt/compile-rootfs 2>/dev/null && {
+                  echo "--- rootfs root listing ---"
+                  sudo ls -la /mnt/compile-rootfs/ 2>/dev/null | head -20
+                  sudo umount /mnt/compile-rootfs 2>/dev/null
+                } || echo "(mount of $ROOTFS failed)"
+              done
+            } || true
             echo "=== QEMU blobstore log (via SSH) ===" && \
               ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                 root@192.168.122.10 'tail -30 /var/vcap/bosh/log/monit-blobstore_nginx.log /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"' 2>/dev/null || echo "(SSH unavailable)"
