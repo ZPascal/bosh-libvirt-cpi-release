@@ -150,16 +150,39 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 			return bosherr.WrapError(err, "Preparing raw stemcell image")
 		}
 	case "ext4":
-		// Extract rootfs tar into a temp dir then pack into an ext4 raw image.
-		// All steps run locally; when the runner is an SSH runner the resulting
-		// image is then uploaded to the remote host so create_vm can access it.
+		// Build an ext4 raw image from the stemcell.
+		// The bosh-warden stemcell tarball contains an `image` file which is
+		// itself a gzip-compressed tar of the rootfs (warden-tar format).
+		// Steps:
+		//   1. Extract outer stemcell tgz → get `image` (gzipped rootfs tar).
+		//   2. Extract `image` (the inner gzip+tar) → actual rootfs tree.
+		//   3. Size the ext4 image, format, mount, copy rootfs in, unmount.
+		//   4. If SSH runner: upload to remote host.
+		outerDir := dstImage + ".outer"
+		if err := os.MkdirAll(outerDir, 0755); err != nil {
+			return bosherr.WrapError(err, "Creating temp outer stemcell dir")
+		}
+		defer func() { _ = os.RemoveAll(outerDir) }()
+		if out, err := exec.Command("tar", "-xzf", imagePath, "-C", outerDir).CombinedOutput(); err != nil {
+			return bosherr.WrapErrorf(err, "Extracting outer stemcell tgz: %s", string(out))
+		}
+		// The inner rootfs archive is always named `image` in BOSH stemcells.
+		innerImage := filepath.Join(outerDir, "image")
 		tmpDir := dstImage + ".rootfs"
 		if err := os.MkdirAll(tmpDir, 0755); err != nil {
 			return bosherr.WrapError(err, "Creating temp rootfs dir")
 		}
 		defer func() { _ = os.RemoveAll(tmpDir) }()
-		if out, err := exec.Command("tar", "-xzf", imagePath, "-C", tmpDir).CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Extracting stemcell rootfs: %s", string(out))
+		if _, statErr := os.Stat(innerImage); statErr == nil {
+			// Extract the inner gzipped rootfs tar.
+			if out, err := exec.Command("tar", "-xzf", innerImage, "-C", tmpDir).CombinedOutput(); err != nil {
+				return bosherr.WrapErrorf(err, "Extracting inner rootfs image: %s", string(out))
+			}
+		} else {
+			// Fallback: outer tgz IS the rootfs tar (non-warden stemcell format).
+			if out, err := exec.Command("tar", "-xzf", imagePath, "-C", tmpDir).CombinedOutput(); err != nil {
+				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs (fallback): %s", string(out))
+			}
 		}
 		// Calculate size: du -sm gives MiB; add 20% headroom
 		duOut, _ := exec.Command("du", "-sm", tmpDir).Output()
@@ -170,12 +193,10 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 				sizeMB = n*120/100 + 64 // 20% headroom + 64 MB
 			}
 		}
-		sizeArg := fmt.Sprintf("%dM", sizeMB)
 		if out, err := exec.Command("dd", "if=/dev/zero", "of="+dstImage, "bs=1M",
 			"count=0", "seek="+fmt.Sprintf("%d", sizeMB)).CombinedOutput(); err != nil {
 			return bosherr.WrapErrorf(err, "Creating ext4 image file: %s", string(out))
 		}
-		_ = sizeArg
 		if out, err := exec.Command("mkfs.ext4", "-F", dstImage).CombinedOutput(); err != nil {
 			return bosherr.WrapErrorf(err, "Formatting ext4 image: %s", string(out))
 		}

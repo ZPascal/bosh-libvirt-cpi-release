@@ -302,6 +302,8 @@ jobs:
             if [ -n "$QEMU_IMG" ]; then
               sudo mkdir -p /mnt/qemu-rootfs
               sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs 2>/dev/null && {
+                echo "=== rootfs root listing ===" && sudo ls -la /mnt/qemu-rootfs/ 2>/dev/null | head -30 || echo "(mount succeeded but ls failed)"
+                echo "=== /bosh-init content (first 5 lines) ===" && sudo head -5 /mnt/qemu-rootfs/bosh-init 2>/dev/null || echo "(no /bosh-init)"
                 echo "=== monit-console-fallback.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-console.log 2>/dev/null | tail -30 || echo "(not found)"
                 echo "=== monit-stub.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-stub.log 2>/dev/null | tail -30 || echo "(not found)"
                 echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -50 || echo "(not found)"
