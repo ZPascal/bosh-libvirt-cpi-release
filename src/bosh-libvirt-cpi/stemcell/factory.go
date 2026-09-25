@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -150,82 +149,115 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 			return bosherr.WrapError(err, "Preparing raw stemcell image")
 		}
 	case "ext4":
-		// Build an ext4 raw image from the stemcell.
-		// The bosh-warden stemcell tarball contains an `image` file which is
-		// itself a gzip-compressed tar of the rootfs (warden-tar format).
+		// Build an ext4 raw image from the warden-tar stemcell on the libvirt host.
+		// The bosh-warden stemcell tgz contains an `image` file which is itself a
+		// gzip-compressed tar of the rootfs.  All heavy lifting (mount, cp, umount)
+		// runs via runner.Execute so it happens on the libvirt host regardless of
+		// whether the CPI is running locally or inside a director VM.
+		//
 		// Steps:
-		//   1. Extract outer stemcell tgz → get `image` (gzipped rootfs tar).
-		//   2. Extract `image` (the inner gzip+tar) → actual rootfs tree.
-		//   3. Size the ext4 image, format, mount, copy rootfs in, unmount.
-		//   4. If SSH runner: upload to remote host.
-		outerDir := dstImage + ".outer"
-		if err := os.MkdirAll(outerDir, 0755); err != nil {
-			return bosherr.WrapError(err, "Creating temp outer stemcell dir")
+		//   1. Upload the stemcell tgz to a temp path on the host.
+		//   2. Extract the outer tgz on the host → gets `image` file.
+		//   3. Extract inner `image` gzip-tar on the host → rootfs tree in tmpDir.
+		//   4. Create dd-sparse ext4, format, mount, copy rootfs, sync, umount.
+		//   5. Clean up temp dirs.
+		remoteTmpBase := filepath.Dir(dstImage)
+		remoteTgz := dstImage + ".stemcell.tgz"
+		remoteOuterDir := dstImage + ".outer"
+		remoteTmpDir := dstImage + ".rootfs"
+		remoteMntDir := dstImage + ".mnt"
+
+		// Ensure destination directory exists on the host.
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", remoteTmpBase); mkErr != nil {
+			return bosherr.WrapError(mkErr, "Creating stemcell dir on host")
 		}
-		defer func() { _ = os.RemoveAll(outerDir) }()
-		if out, err := exec.Command("tar", "-xzf", imagePath, "-C", outerDir).CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Extracting outer stemcell tgz: %s", string(out))
+
+		// Upload the stemcell tgz to the host.
+		localAbs := imagePath
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			localAbs = strings.Replace(imagePath, "~", home, 1)
 		}
-		// The inner rootfs archive is always named `image` in BOSH stemcells.
-		innerImage := filepath.Join(outerDir, "image")
-		tmpDir := dstImage + ".rootfs"
-		if err := os.MkdirAll(tmpDir, 0755); err != nil {
-			return bosherr.WrapError(err, "Creating temp rootfs dir")
+		if uploadErr := f.runner.Upload(localAbs, remoteTgz); uploadErr != nil {
+			return bosherr.WrapError(uploadErr, "Uploading stemcell tgz to host")
 		}
-		defer func() { _ = os.RemoveAll(tmpDir) }()
-		if _, statErr := os.Stat(innerImage); statErr == nil {
-			// Extract the inner gzipped rootfs tar.
-			if out, err := exec.Command("tar", "-xzf", innerImage, "-C", tmpDir).CombinedOutput(); err != nil {
-				return bosherr.WrapErrorf(err, "Extracting inner rootfs image: %s", string(out))
+		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteTgz) }()
+
+		// Create working dirs on the host.
+		if _, _, err := f.runner.Execute("mkdir", "-p", remoteOuterDir); err != nil {
+			return bosherr.WrapError(err, "Creating outer dir on host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteOuterDir) }()
+		if _, _, err := f.runner.Execute("mkdir", "-p", remoteTmpDir); err != nil {
+			return bosherr.WrapError(err, "Creating rootfs tmp dir on host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteTmpDir) }()
+
+		// Extract outer stemcell tgz on the host.
+		if out, _, err := f.runner.Execute("tar", "-xzf", remoteTgz, "-C", remoteOuterDir); err != nil {
+			return bosherr.WrapErrorf(err, "Extracting outer stemcell tgz on host: %s", out)
+		}
+
+		// Extract inner rootfs image on the host.
+		innerImage := remoteOuterDir + "/image"
+		innerOut, innerEC, innerErr := f.runner.Execute("test", "-f", innerImage)
+		_ = innerOut
+		if innerEC == 0 && innerErr == nil {
+			// warden-tar format: inner image is a gzipped rootfs tar.
+			// Use --no-same-devices so device nodes are skipped instead of failing.
+			out, _, tarErr := f.runner.Execute("tar", "--no-same-devices", "-xzf", innerImage, "-C", remoteTmpDir)
+			if tarErr != nil {
+				if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+					if out2, _, e2 := f.runner.Execute("tar", "-xzf", innerImage, "-C", remoteTmpDir); e2 != nil {
+						return bosherr.WrapErrorf(e2, "Extracting inner rootfs on host: %s", out2)
+					}
+				} else {
+					return bosherr.WrapErrorf(tarErr, "Extracting inner rootfs on host: %s", out)
+				}
 			}
 		} else {
-			// Fallback: outer tgz IS the rootfs tar (non-warden stemcell format).
-			if out, err := exec.Command("tar", "-xzf", imagePath, "-C", tmpDir).CombinedOutput(); err != nil {
-				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs (fallback): %s", string(out))
+			// Fallback: outer tgz IS the rootfs tar.
+			if out, _, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteTgz, "-C", remoteTmpDir); err != nil {
+				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs (fallback) on host: %s", out)
 			}
 		}
-		// Calculate size: du -sm gives MiB; add 20% headroom
-		duOut, _ := exec.Command("du", "-sm", tmpDir).Output()
+
+		// Calculate ext4 image size from extracted rootfs.
+		duOut, _, _ := f.runner.Execute("du", "-sm", remoteTmpDir)
 		sizeMB := 2048 // default 2 GiB
-		if len(duOut) > 0 {
+		if duOut != "" {
 			var n int
-			if _, err := fmt.Sscanf(string(duOut), "%d", &n); err == nil && n > 0 {
-				sizeMB = n*120/100 + 64 // 20% headroom + 64 MB
+			if _, err := fmt.Sscanf(strings.TrimSpace(duOut), "%d", &n); err == nil && n > 0 {
+				sizeMB = n*120/100 + 64
 			}
 		}
-		if out, err := exec.Command("dd", "if=/dev/zero", "of="+dstImage, "bs=1M",
-			"count=0", "seek="+fmt.Sprintf("%d", sizeMB)).CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Creating ext4 image file: %s", string(out))
+		sizeStr := fmt.Sprintf("%d", sizeMB)
+
+		// Create sparse ext4 image, format it.
+		if out, _, err := f.runner.Execute("dd", "if=/dev/zero", "of="+dstImage, "bs=1M", "count=0", "seek="+sizeStr); err != nil {
+			return bosherr.WrapErrorf(err, "Creating ext4 image on host: %s", out)
 		}
-		if out, err := exec.Command("mkfs.ext4", "-F", dstImage).CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Formatting ext4 image: %s", string(out))
+		if out, _, err := f.runner.Execute("mkfs.ext4", "-F", dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Formatting ext4 image on host: %s", out)
 		}
-		mntDir := dstImage + ".mnt"
-		if err := os.MkdirAll(mntDir, 0755); err != nil {
-			return bosherr.WrapError(err, "Creating mount point")
+
+		// Mount, copy rootfs, sync, unmount.
+		if _, _, err := f.runner.Execute("mkdir", "-p", remoteMntDir); err != nil {
+			return bosherr.WrapError(err, "Creating mnt dir on host")
 		}
-		defer func() { _ = exec.Command("umount", mntDir).Run(); _ = os.RemoveAll(mntDir) }()
-		if out, err := exec.Command("mount", "-o", "loop", dstImage, mntDir).CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Mounting ext4 image: %s", string(out))
+		defer func() {
+			_, _, _ = f.runner.Execute("umount", remoteMntDir)
+			_, _, _ = f.runner.Execute("rmdir", remoteMntDir)
+		}()
+		if out, _, err := f.runner.Execute("mount", "-o", "loop", dstImage, remoteMntDir); err != nil {
+			return bosherr.WrapErrorf(err, "Mounting ext4 image on host: %s", out)
 		}
-		if out, err := exec.Command("cp", "-a", tmpDir+"/.", mntDir+"/").CombinedOutput(); err != nil {
-			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 image: %s", string(out))
+		if out, _, err := f.runner.Execute("cp", "-a", remoteTmpDir+"/.", remoteMntDir+"/"); err != nil {
+			_, _, _ = f.runner.Execute("umount", remoteMntDir)
+			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 on host: %s", out)
 		}
-		// Unmount before uploading so the image is fully flushed.
-		_ = exec.Command("umount", mntDir).Run()
-		// When the CPI is running inside a VM (SSH runner to a remote libvirt host),
-		// upload the locally-created ext4 image to the remote host so create_vm can
-		// access it there. Use the absolute local path as the upload source to avoid
-		// the tilde being expanded to the *remote* home dir by ExpandingPathRunner.
-		if isSSHRunner(f.runner) {
-			localAbs := dstImage
-			if home, err := os.UserHomeDir(); err == nil && home != "" {
-				localAbs = strings.Replace(dstImage, "~", home, 1)
-			}
-			if _, _, mkdirErr := f.runner.Execute("mkdir", "-p", filepath.Dir(dstImage)); mkdirErr == nil {
-				_ = f.runner.Upload(localAbs, dstImage)
-			}
-		}
+		_, _, _ = f.runner.Execute("sync")
+		_, _, _ = f.runner.Execute("umount", remoteMntDir)
+		_, _, _ = f.runner.Execute("sync")
 	case "dir":
 		remoteTar := dstImage + ".tgz"
 		if _, _, mkErr := f.runner.Execute("mkdir", "-p", dstImage); mkErr != nil {
