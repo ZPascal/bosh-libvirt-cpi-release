@@ -489,6 +489,11 @@ jobs:
             echo "=== QEMU blobstore log (via SSH) ===" && \
               ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                 root@192.168.122.10 'tail -30 /var/vcap/bosh/log/monit-blobstore_nginx.log /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"' 2>/dev/null || echo "(SSH unavailable)"
+            echo "=== CPI log (post-cleanup diagnostics) ===" && \
+              ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@192.168.122.10 'grep -h "post-cleanup\|e2fsck\|tune2fs\|needs_recovery\|journal_only\|clean needs_recovery" /var/vcap/bosh/log/libvirt_cpi/*.log /var/vcap/data/jobs/libvirt_cpi/*/*/libvirt_cpi.stdout.log 2>/dev/null | tail -30 || echo "(no CPI log entries)"' 2>/dev/null || echo "(SSH unavailable)"
+            echo "=== clean.sh scripts on host ===" && \
+              sudo find /tmp/bosh_libvirt_cpi -name '*.clean.sh' 2>/dev/null | head -5 | xargs sudo cat 2>/dev/null || echo "(no clean.sh found)"
             exit 1
           }
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
