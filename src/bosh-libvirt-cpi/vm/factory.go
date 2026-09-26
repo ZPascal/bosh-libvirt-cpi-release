@@ -1604,11 +1604,24 @@ func (f Factory) Create(
 		}
 	}
 
+	// LXC VMs require a MAC address so the domain XML includes a network interface.
+	// Without a MAC the interface element is omitted and the container has no
+	// network connectivity, so the agent can never reach NATS.
+	// If cloud_properties does not specify a mac, generate one from crypto/rand.
+	vmMAC := vmProps.MAC
+	if vmMAC == "" && f.domBuilder.DiskImageFormat() == "dir" {
+		b := make([]byte, 5)
+		if _, randErr := rand.Read(b); randErr == nil {
+			// Locally-administered (0x02), unicast (0x00) prefix byte.
+			vmMAC = fmt.Sprintf("52:%02x:%02x:%02x:%02x:%02x", b[0], b[1], b[2], b[3], b[4])
+		}
+	}
+
 	domainProps := driver.VMDomainProps{
 		CPUs:     vmProps.CPUs,
 		MemoryMB: vmProps.Memory,
 		Network:  f.opts.Network,
-		MAC:      vmProps.MAC,
+		MAC:      vmMAC,
 		Kernel:   vmProps.Kernel,
 	}
 
