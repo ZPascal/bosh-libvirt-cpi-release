@@ -1551,23 +1551,30 @@ func (f Factory) Create(
 		// explicitly before QEMU boots the image — otherwise the kernel panics
 		// with "VFS: Unable to mount root fs".
 		//
-		// Two steps are required:
-		//   1. e2fsck -fy: replay the journal and set Filesystem state = clean.
-		//   2. tune2fs -O ^needs_recovery: clear the needs_recovery bit from
-		//      s_feature_incompat. e2fsck sets the state field but does NOT
-		//      remove the feature bit; tune2fs removes the bit explicitly.
+		// Three steps are required:
+		//   1. e2fsck -E journal_only: replay ONLY the journal transactions and
+		//      checkpoint the journal superblock. This is the canonical way to
+		//      clear needs_recovery — tune2fs refuses to remove the bit if the
+		//      journal's internal sequence number shows uncommitted transactions.
+		//   2. e2fsck -fy: full filesystem check to set Filesystem state = clean.
+		//   3. tune2fs -O ^needs_recovery: belt-and-suspenders removal of the
+		//      feature bit from s_feature_incompat.
 		//
 		// tune2fs -O ^needs_recovery cannot be passed directly to runner.Execute
 		// because Execute escapes '^' to '\^'. Write a tiny shell script and run
 		// it via 'sh' to avoid the escaping problem.
 		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
 			cleanLoop := strings.TrimSpace(cleanLoopOut)
-			// e2fsck -fy: replay journal, fix metadata, set Filesystem state = clean.
+			// Step 1: replay only the journal to checkpoint it and clear needs_recovery.
+			// Exit 0 = already clean; exit 1 = journal replayed (both are fine here).
+			if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", cleanLoop); jErr != nil {
+				f.logger.Info(f.logTag, "e2fsck journal_only on %s (exit 1=replayed ok): %s %s", cleanLoop, jErr, jOut)
+			}
+			// Step 2: full check to set Filesystem state = clean.
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
 			}
-			// tune2fs -O ^needs_recovery: remove the feature bit from s_feature_incompat.
-			// Must run via a shell script because runner.Execute escapes '^' to '\^'.
+			// Step 3: remove the needs_recovery feature bit via shell script (^ escaping).
 			cleanScript := "/tmp/tune2fs-cleanloop-" + vmID + ".sh"
 			scriptContent := "#!/bin/sh\ntune2fs -O ^needs_recovery " + cleanLoop + "\n"
 			if putErr := f.runner.Put(cleanScript, []byte(scriptContent)); putErr == nil {
@@ -1583,6 +1590,9 @@ func (f Factory) Create(
 			_, _, _ = f.runner.Execute("sync")
 		} else {
 			f.logger.Warn(f.logTag, "losetup for clean loop failed (%s), falling back to file-based e2fsck", cleanLoopErr)
+			if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", vmExt4); jErr != nil {
+				f.logger.Info(f.logTag, "e2fsck journal_only fallback (exit 1=replayed ok): %s %s", jErr, jOut)
+			}
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck fallback (exit 1=fixed ok): %s %s", e2Err, e2Out)
 			}

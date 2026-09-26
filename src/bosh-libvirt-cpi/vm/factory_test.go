@@ -319,11 +319,12 @@ var _ = Describe("vm.Factory", func() {
 			syncBeforeUmountIdx := -1
 			umountIdx := -1
 			rmdirIdx := -1
-			losetupDetachIdx := -1   // losetup -d /dev/loop7
-			cleanLoopAttachIdx := -1 // second losetup: clean loop (/dev/loop8)
-			e2fsckCleanIdx := -1     // e2fsck -fy on /dev/loop8
-			tune2fsCleanIdx := -1    // sh /tmp/tune2fs-cleanloop-vm-uuid-vm-1.sh
-			cleanLoopDetachIdx := -1 // losetup -d /dev/loop8
+			losetupDetachIdx := -1     // losetup -d /dev/loop7
+			cleanLoopAttachIdx := -1   // second losetup: clean loop (/dev/loop8)
+			e2fsckJournalOnlyIdx := -1 // e2fsck -E journal_only on /dev/loop8
+			e2fsckCleanIdx := -1       // e2fsck -fy on /dev/loop8
+			tune2fsCleanIdx := -1      // sh /tmp/tune2fs-cleanloop-vm-uuid-vm-1.sh
+			cleanLoopDetachIdx := -1   // losetup -d /dev/loop8
 			qemuImgResizeCalled := false
 			rmrfCalled := false
 			for i, cmd := range executedCmds {
@@ -357,6 +358,9 @@ var _ = Describe("vm.Factory", func() {
 				if cmd == "losetup -d /dev/loop7" {
 					losetupDetachIdx = i
 				}
+				if cmd == "e2fsck -E journal_only /dev/loop8" {
+					e2fsckJournalOnlyIdx = i
+				}
 				if cmd == "e2fsck -fy /dev/loop8" {
 					e2fsckCleanIdx = i
 				}
@@ -384,6 +388,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(rmdirIdx).To(BeNumerically(">=", 0), "rmdir of mount point must be called (not rm -rf)")
 			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d /dev/loop7 must be called")
 			Expect(cleanLoopAttachIdx).To(BeNumerically(">=", 0), "second losetup -f --show (clean loop) must be called")
+			Expect(e2fsckJournalOnlyIdx).To(BeNumerically(">=", 0), "e2fsck -E journal_only on clean loop must be called")
 			Expect(e2fsckCleanIdx).To(BeNumerically(">=", 0), "e2fsck -fy on clean loop must be called")
 			Expect(tune2fsCleanIdx).To(BeNumerically(">=", 0), "sh tune2fs-cleanloop script must be called")
 			Expect(cleanLoopDetachIdx).To(BeNumerically(">=", 0), "losetup -d /dev/loop8 (clean loop detach) must be called")
@@ -396,8 +401,9 @@ var _ = Describe("vm.Factory", func() {
 			Expect(umountIdx).To(BeNumerically("<", rmdirIdx), "umount before rmdir")
 			Expect(umountIdx).To(BeNumerically("<", losetupDetachIdx), "umount before losetup detach")
 			Expect(losetupDetachIdx).To(BeNumerically("<", cleanLoopAttachIdx), "mount loop detached before clean loop attached")
-			Expect(cleanLoopAttachIdx).To(BeNumerically("<", e2fsckCleanIdx), "clean loop attached before e2fsck")
-			Expect(e2fsckCleanIdx).To(BeNumerically("<", tune2fsCleanIdx), "e2fsck before tune2fs ^needs_recovery")
+			Expect(cleanLoopAttachIdx).To(BeNumerically("<", e2fsckJournalOnlyIdx), "clean loop attached before e2fsck journal_only")
+			Expect(e2fsckJournalOnlyIdx).To(BeNumerically("<", e2fsckCleanIdx), "e2fsck journal_only before e2fsck -fy")
+			Expect(e2fsckCleanIdx).To(BeNumerically("<", tune2fsCleanIdx), "e2fsck -fy before tune2fs ^needs_recovery")
 			Expect(tune2fsCleanIdx).To(BeNumerically("<", cleanLoopDetachIdx), "tune2fs before clean loop detach")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 			Expect(rmrfCalled).To(BeFalse(), "rm -rf on mount point must not be called (use rmdir)")
