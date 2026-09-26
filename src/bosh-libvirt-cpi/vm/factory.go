@@ -1530,40 +1530,47 @@ func (f Factory) Create(
 			// losetup -d finishes quickly before the OS completes the writeback.
 			_, _, _ = f.runner.Execute("sync")
 			_, _, _ = f.runner.Execute("losetup", "-d", loopDevForMount)
-			// Final sync to ensure all loop-device-to-file writebacks are complete
-			// before QEMU opens rootfs.img.
 			_, _, _ = f.runner.Execute("sync")
 		}
 		// Clear the needs_recovery flag left by the mount/inject/umount cycle.
-		// After umount+losetup-d the kernel has set needs_recovery in the ext4
-		// superblock (journal was active during mount; kernel sets the flag on
-		// first mount and only clears it after a successful journal checkpoint).
-		// Without clearing it, the kernel ext4 driver attempts journal replay
-		// at boot which fails and panics with "VFS: Unable to mount root fs".
+		// The kernel ext4 driver sets needs_recovery when the journal is active
+		// and only clears it after a successful journal checkpoint on unmount.
+		// In practice the flag persists through losetup -d and must be cleared
+		// explicitly before QEMU boots the image — otherwise the kernel panics
+		// with "VFS: Unable to mount root fs".
 		//
-		// Sequence:
-		//   1. e2fsck -E journal_only  — replays+commits journal, clears flag
-		//   2. tune2fs -O ^needs_recovery — force-clears the flag in superblock
-		//      (must use a shell script because runner.Execute escapes ^ to \^)
-		//   3. e2fsck -fy             — full check, exits 0 if fs is now clean
-		//
-		// Steps 1 and 3 use runner.Execute directly (no special chars).
-		// Step 2 uses runner.Put to write a tiny script so ^ is not escaped.
-		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-E", "journal_only", "-fy", vmExt4); e2Err != nil {
-			f.logger.Info(f.logTag, "e2fsck journal_only (exit 1=fixed ok): %s %s", e2Err, e2Out)
-		}
-		cleanScript := vmExt4 + ".clean.sh"
-		scriptBody := fmt.Sprintf("#!/bin/sh\ntune2fs -O '^needs_recovery' '%s'\n", vmExt4)
-		if putErr := f.runner.Put(cleanScript, []byte(scriptBody)); putErr == nil {
-			if t2Out, _, t2Err := f.runner.Execute("sh", cleanScript); t2Err != nil {
-				f.logger.Info(f.logTag, "tune2fs clear needs_recovery: %s %s", t2Err, t2Out)
+		// e2fsck on a raw file is unreliable (userspace I/O, no block-device
+		// flush guarantees). Instead: re-attach the image as a fresh loop device,
+		// run e2fsck on the loop device (proper block-device semantics), then
+		// detach. This reliably commits the journal and clears needs_recovery.
+		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
+			cleanLoop := strings.TrimSpace(cleanLoopOut)
+			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-E", "journal_only", "-fy", cleanLoop); e2Err != nil {
+				f.logger.Info(f.logTag, "e2fsck journal_only on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
 			}
-			_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
+			// tune2fs -O ^needs_recovery: runner.Execute escapes ^ to \^ so use a
+			// shell script written via Put to pass the literal ^ character.
+			cleanScript := vmExt4 + ".clean.sh"
+			scriptBody := fmt.Sprintf("#!/bin/sh\ntune2fs -O '^needs_recovery' '%s'\n", cleanLoop)
+			if putErr := f.runner.Put(cleanScript, []byte(scriptBody)); putErr == nil {
+				if t2Out, _, t2Err := f.runner.Execute("sh", cleanScript); t2Err != nil {
+					f.logger.Info(f.logTag, "tune2fs on clean loop %s: %s %s", cleanLoop, t2Err, t2Out)
+				}
+				_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
+			}
+			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
+				f.logger.Info(f.logTag, "e2fsck full on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
+			}
+			_, _, _ = f.runner.Execute("sync")
+			_, _, _ = f.runner.Execute("losetup", "-d", cleanLoop)
+			_, _, _ = f.runner.Execute("sync")
+		} else {
+			f.logger.Warn(f.logTag, "losetup for clean loop failed (%s), falling back to file-based e2fsck", cleanLoopErr)
+			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
+				f.logger.Info(f.logTag, "e2fsck fallback (exit 1=fixed ok): %s %s", e2Err, e2Out)
+			}
+			_, _, _ = f.runner.Execute("sync")
 		}
-		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
-			f.logger.Info(f.logTag, "e2fsck post-inject (exit 1=errors corrected ok): %s %s", e2Err, e2Out)
-		}
-		_, _, _ = f.runner.Execute("sync")
 		// Diagnostic: log whether needs_recovery is still set after cleanup.
 		if fileOut, _, _ := f.runner.Execute("file", vmExt4); fileOut != "" {
 			f.logger.Info(f.logTag, "post-cleanup fs check: %s", fileOut)
