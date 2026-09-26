@@ -7,7 +7,13 @@ type FakeRunner struct {
 	ExecuteStatus int
 	ExecuteErr    error
 
-	UploadErr error
+	// ExecuteFunc, if set, is called for every Execute instead of returning the
+	// static ExecuteOutput/ExecuteStatus/ExecuteErr fields. Useful for per-command
+	// error injection in tests.
+	ExecuteFunc func(path string, args ...string) (string, int, error)
+
+	UploadErr  error
+	UploadFunc func(srcDir, dstDir string) error
 
 	PutContents map[string][]byte // keyed by path; populated by Put calls
 	PutErr      error
@@ -21,10 +27,16 @@ type FakeRunner struct {
 var _ driver.Runner = &FakeRunner{}
 
 func (r *FakeRunner) Execute(path string, args ...string) (string, int, error) {
+	if r.ExecuteFunc != nil {
+		return r.ExecuteFunc(path, args...)
+	}
 	return r.ExecuteOutput, r.ExecuteStatus, r.ExecuteErr
 }
 
 func (r *FakeRunner) Upload(srcDir, dstDir string) error {
+	if r.UploadFunc != nil {
+		return r.UploadFunc(srcDir, dstDir)
+	}
 	return r.UploadErr
 }
 

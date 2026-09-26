@@ -1,7 +1,12 @@
 package stemcell
 
 import (
+	"compress/gzip"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"strings"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -28,6 +33,11 @@ type Factory struct {
 	uuidGen    boshuuid.Generator
 	compressor boshcmd.Compressor
 
+	// ConvertToQCOW2 converts a raw image to qcow2; injectable for testing.
+	ConvertToQCOW2 func(src, dst string) error
+	// DecompressImage decompresses a gzip image to dst; injectable for testing.
+	DecompressImage func(src, dst string) error
+
 	logTag string
 	logger boshlog.Logger
 }
@@ -52,6 +62,15 @@ func NewFactory(
 		fs:         fs,
 		uuidGen:    uuidGen,
 		compressor: compressor,
+
+		ConvertToQCOW2: func(src, dst string) error {
+			out, _, err := runner.Execute("qemu-img", "convert", "-f", "raw", "-O", "qcow2", src, dst)
+			if err != nil {
+				return bosherr.WrapErrorf(err, "qemu-img: %s", out)
+			}
+			return nil
+		},
+		DecompressImage: decompressOrCopy,
 
 		logTag: "stemcell.Factory",
 		logger: logger,
@@ -94,32 +113,171 @@ func (f Factory) newStemcell(cid apiv1.StemcellCID) StemcellImpl {
 }
 
 func (f Factory) upload(imagePath, stemcellPath string) error {
-	tmpDir, err := f.fs.TempDir("bosh-libvirt-cpi-stemcell-upload")
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Creating tmp stemcell directory")
-	}
-
-	defer func() { _ = f.fs.RemoveAll(tmpDir) }()
-
-	err = f.compressor.DecompressFileToDir(imagePath, tmpDir, boshcmd.CompressorOptions{})
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Unpacking stemcell '%s' to '%s'", imagePath, tmpDir)
-	}
-
-	_, _, err = f.runner.Execute("mkdir", "-p", stemcellPath)
+	err := f.fs.MkdirAll(stemcellPath, 0755)
 	if err != nil {
 		return bosherr.WrapError(err, "Creating stemcell parent")
 	}
 
-	// The stemcell tarball is expected to contain a file named "image" that
-	// holds the disk image in the format requested by the domain builder
-	// (raw, qcow2, vmdk). We upload it under "image.<format>".
-	srcImage := filepath.Join(tmpDir, "image")
-	dstImage := filepath.Join(stemcellPath, "image."+f.domBuilder.DiskImageFormat())
+	format := f.domBuilder.DiskImageFormat()
+	dstImage := filepath.Join(stemcellPath, "image."+format)
 
-	err = f.runner.Upload(srcImage, dstImage)
-	if err != nil {
-		return bosherr.WrapErrorf(err, "Uploading stemcell image")
+	switch format {
+	case "qcow2":
+		// The stemcell image is gzip-compressed raw disk; decompress then convert to qcow2.
+		// ConvertToQCOW2 runs qemu-img via runner.Execute which may be SSH (remote host).
+		// Decompress locally first, then upload the raw file to the remote host before
+		// converting, so qemu-img can open it. Clean up the remote raw file afterwards.
+		rawTmp := dstImage + ".raw"
+		if err := f.DecompressImage(imagePath, rawTmp); err != nil {
+			return bosherr.WrapError(err, "Decompressing stemcell image")
+		}
+		defer func() { _ = os.Remove(rawTmp) }()
+		if isSSHRunner(f.runner) {
+			if _, _, mkdirErr := f.runner.Execute("mkdir", "-p", filepath.Dir(rawTmp)); mkdirErr == nil {
+				if uploadErr := f.runner.Upload(rawTmp, rawTmp); uploadErr == nil {
+					defer func() { _, _, _ = f.runner.Execute("rm", "-f", rawTmp) }()
+				}
+			}
+		}
+		if err := f.ConvertToQCOW2(rawTmp, dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Converting stemcell image to qcow2")
+		}
+	case "raw":
+		// The bosh-warden-boshlite image is gzip-compressed; decompress to a
+		// plain raw filesystem image for libvirt-lxc.
+		if err := decompressOrCopy(imagePath, dstImage); err != nil {
+			return bosherr.WrapError(err, "Preparing raw stemcell image")
+		}
+	case "ext4":
+		// Build an ext4 raw image from the warden-tar stemcell on the libvirt host.
+		//
+		// BOSH unpacks the outer stemcell tgz itself and passes the inner `image`
+		// file path to create_stemcell.  The `image` file is a gzip-compressed tar
+		// of the rootfs (warden-tar format).  We upload it to the host, extract it
+		// directly into remoteTmpDir, then build the ext4.
+		//
+		// Steps:
+		//   1. Upload imagePath (the rootfs gzip-tar) to a temp path on the host.
+		//   2. Extract it on the host → rootfs tree in remoteTmpDir.
+		//   3. Create dd-sparse ext4, format, mount, copy rootfs, sync, umount.
+		//   4. Clean up temp dirs.
+		remoteTmpBase := filepath.Dir(dstImage)
+		remoteImage := dstImage + ".rootfs.tgz"
+		remoteTmpDir := dstImage + ".rootfs"
+		remoteMntDir := dstImage + ".mnt"
+
+		// Ensure destination directory exists on the host.
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", remoteTmpBase); mkErr != nil {
+			return bosherr.WrapError(mkErr, "Creating stemcell dir on host")
+		}
+
+		// Upload the inner image (gzip-tar of rootfs) to the host.
+		localAbs := imagePath
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			localAbs = strings.Replace(imagePath, "~", home, 1)
+		}
+		if uploadErr := f.runner.Upload(localAbs, remoteImage); uploadErr != nil {
+			return bosherr.WrapError(uploadErr, "Uploading stemcell image to host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteImage) }()
+
+		// Create rootfs staging dir on the host.
+		if _, _, err := f.runner.Execute("mkdir", "-p", remoteTmpDir); err != nil {
+			return bosherr.WrapError(err, "Creating rootfs tmp dir on host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteTmpDir) }()
+
+		// Extract the rootfs gzip-tar on the host.
+		// Try --no-same-devices first (GNU tar); fall back to plain tar on failure.
+		out, _, tarErr := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteImage, "-C", remoteTmpDir)
+		if tarErr != nil {
+			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+				if out2, _, e2 := f.runner.Execute("tar", "-xzf", remoteImage, "-C", remoteTmpDir); e2 != nil {
+					return bosherr.WrapErrorf(e2, "Extracting stemcell rootfs on host: %s", out2)
+				}
+			} else {
+				return bosherr.WrapErrorf(tarErr, "Extracting stemcell rootfs on host: %s", out)
+			}
+		}
+
+		// Calculate ext4 image size from extracted rootfs.
+		duOut, _, _ := f.runner.Execute("du", "-sm", remoteTmpDir)
+		sizeMB := 2048 // default 2 GiB
+		if duOut != "" {
+			var n int
+			if _, err := fmt.Sscanf(strings.TrimSpace(duOut), "%d", &n); err == nil && n > 0 {
+				sizeMB = n*120/100 + 64
+			}
+		}
+		sizeStr := fmt.Sprintf("%d", sizeMB)
+
+		// Create sparse ext4 image, format it.
+		if out, _, err := f.runner.Execute("dd", "if=/dev/zero", "of="+dstImage, "bs=1M", "count=0", "seek="+sizeStr); err != nil {
+			return bosherr.WrapErrorf(err, "Creating ext4 image on host: %s", out)
+		}
+		if out, _, err := f.runner.Execute("mkfs.ext4", "-F", dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Formatting ext4 image on host: %s", out)
+		}
+
+		// Mount, copy rootfs, sync, unmount.
+		if _, _, err := f.runner.Execute("mkdir", "-p", remoteMntDir); err != nil {
+			return bosherr.WrapError(err, "Creating mnt dir on host")
+		}
+		defer func() {
+			_, _, _ = f.runner.Execute("umount", remoteMntDir)
+			_, _, _ = f.runner.Execute("rmdir", remoteMntDir)
+		}()
+		if out, _, err := f.runner.Execute("mount", "-o", "loop", dstImage, remoteMntDir); err != nil {
+			return bosherr.WrapErrorf(err, "Mounting ext4 image on host: %s", out)
+		}
+		if out, _, err := f.runner.Execute("cp", "-a", remoteTmpDir+"/.", remoteMntDir+"/"); err != nil {
+			_, _, _ = f.runner.Execute("umount", remoteMntDir)
+			return bosherr.WrapErrorf(err, "Copying rootfs into ext4 on host: %s", out)
+		}
+		_, _, _ = f.runner.Execute("sync")
+		_, _, _ = f.runner.Execute("umount", remoteMntDir)
+		_, _, _ = f.runner.Execute("sync")
+	case "dir":
+		remoteTar := dstImage + ".tgz"
+		if _, _, mkErr := f.runner.Execute("mkdir", "-p", dstImage); mkErr != nil {
+			return bosherr.WrapError(mkErr, "Creating stemcell rootfs directory on remote")
+		}
+		// SSHRunner.Upload copies imagePath to remoteTar on the remote host; LocalRunner.Upload
+		// moves it (rename). After this call, extraction runs from remoteTar on the remote side.
+		if uploadErr := f.runner.Upload(imagePath, remoteTar); uploadErr != nil {
+			return bosherr.WrapError(uploadErr, "Uploading stemcell tarball to remote host")
+		}
+		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteTar) }()
+		out, exitCode, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteTar, "-C", dstImage)
+		if err != nil {
+			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+				out2, exitCode2, err2 := f.runner.Execute("tar", "-xzf", remoteTar, "-C", dstImage)
+				if err2 != nil && exitCode2 != 2 {
+					return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs on remote: %s", out2)
+				}
+			} else if exitCode != 2 {
+				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs on remote: %s", out)
+			}
+		}
+	default:
+		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
+			return bosherr.WrapErrorf(err, "Uploading stemcell image")
+		}
+	}
+
+	// chmod only applies to file-based images, not directory/ext4-based ones.
+	// For qcow2 with an SSH runner the image lives on the remote host, so use
+	// runner.Execute; for all other cases use the local filesystem.
+	if format != "dir" && format != "ext4" {
+		if format == "qcow2" && isSSHRunner(f.runner) {
+			if _, _, err := f.runner.Execute("chmod", "0644", dstImage); err != nil {
+				return bosherr.WrapErrorf(err, "Setting stemcell image permissions (remote)")
+			}
+		} else {
+			if err := f.fs.Chmod(dstImage, 0644); err != nil {
+				return bosherr.WrapErrorf(err, "Setting stemcell image permissions")
+			}
+		}
 	}
 
 	return nil
@@ -130,4 +288,48 @@ func (f Factory) cleanUpPartialImport(stemcell StemcellImpl) {
 	if err != nil {
 		f.logger.Error(f.logTag, "Failed to clean up partially imported stemcell: %s", err)
 	}
+}
+
+// decompressOrCopy writes src to dst, decompressing gzip if detected.
+func decompressOrCopy(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close() //nolint:errcheck
+
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+		if err != nil {
+			_ = os.Remove(dst)
+		}
+	}()
+
+	gr, gzErr := gzip.NewReader(in)
+	if gzErr != nil {
+		// Not gzip — rewind and copy as-is.
+		if _, err = in.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		_, err = io.Copy(out, in)
+		return err
+	}
+	defer gr.Close() //nolint:errcheck
+	_, err = io.Copy(out, gr)
+	return err
+}
+
+// isSSHRunner reports whether r routes commands to a remote host over SSH.
+// The runner may be wrapped in an ExpandingPathRunner, so we unwrap it.
+func isSSHRunner(r driver.Runner) bool {
+	type unwrapper interface{ Unwrap() driver.RawRunner }
+	if u, ok := r.(unwrapper); ok {
+		r = u.Unwrap()
+	}
+	_, ok := r.(*driver.SSHRunner)
+	return ok
 }

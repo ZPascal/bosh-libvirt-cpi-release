@@ -1,0 +1,36 @@
+---
+# Adds SSH credentials for the director-deployed CPI so it can SSH-tunnel
+# back to the host's libvirt socket from inside the director VM.
+# instance_groups/properties are used by the deployed director's cpi.json.
+# cloud_provider/properties inject_* fields carry the same credentials into
+# the bootstrap CPI so it can pre-bake them into the VM rootfs at create_vm
+# time (cpi-inject.json watcher mechanism). The bootstrap CPI itself connects
+# directly via qemu:///system (Host is not set in cloud_provider), so these
+# inject_* fields do not affect the bootstrap SSH runner.
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host?
+  value: ((libvirt_host))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/username?
+  value: ((libvirt_username))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/private_key?
+  value: ((libvirt_private_key))
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/host_key?
+  value: ((libvirt_host_key))
+- type: replace
+  path: /cloud_provider/properties/inject_backend_uri?
+  value: qemu:///system
+- type: replace
+  path: /cloud_provider/properties/inject_host?
+  value: ((libvirt_host))
+- type: replace
+  path: /cloud_provider/properties/inject_username?
+  value: ((libvirt_username))
+- type: replace
+  path: /cloud_provider/properties/inject_private_key?
+  value: ((libvirt_private_key))
+- type: replace
+  path: /cloud_provider/properties/inject_host_key?
+  value: ((libvirt_host_key))

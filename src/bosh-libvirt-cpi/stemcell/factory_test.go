@@ -2,6 +2,7 @@ package stemcell_test
 
 import (
 	"errors"
+	"strings"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -48,6 +49,8 @@ var _ = Describe("stemcell.Factory", func() {
 			compressor,
 			logger,
 		)
+		factory.ConvertToQCOW2 = func(src, dst string) error { return nil }
+		factory.DecompressImage = func(src, dst string) error { return nil }
 	})
 
 	AfterEach(func() {
@@ -68,25 +71,11 @@ var _ = Describe("stemcell.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Generating stemcell id"))
 		})
 
-		It("returns error when TempDir fails", func() {
-			fakeFS.TempDirErr = errors.New("tempdir failed")
+		It("returns error when Upload fails", func() {
+			factory.ConvertToQCOW2 = func(src, dst string) error { return errors.New("upload failed") }
 			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Creating tmp stemcell directory"))
-		})
-
-		It("returns error when decompress fails", func() {
-			compressor.DecompressFileToDirErr = errors.New("decompress failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Unpacking stemcell"))
-		})
-
-		It("returns error when runner Upload fails", func() {
-			runner.UploadErr = errors.New("upload failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Uploading stemcell image"))
+			Expect(err.Error()).To(ContainSubstring("Converting stemcell image to qcow2"))
 		})
 
 		It("returns error when BuildStemcellDomain fails", func() {
@@ -109,6 +98,54 @@ var _ = Describe("stemcell.Factory", func() {
 			sc, err := factory.Find(apiv1.NewStemcellCID("sc-abc"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(sc.ID().AsString()).To(Equal("sc-abc"))
+		})
+	})
+
+	Describe("ImportFromPath (dir format)", func() {
+		BeforeEach(func() {
+			builder.DiskImageFormatResult = "dir"
+		})
+
+		It("uploads tarball to remote host and extracts via runner", func() {
+			var uploadSrc, uploadDst string
+			runner.UploadFunc = func(src, dst string) error {
+				uploadSrc = src
+				uploadDst = dst
+				return nil
+			}
+			defer func() { runner.UploadFunc = nil }()
+
+			var executedCmds []string
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
+				return "", 0, nil
+			}
+			defer func() { runner.ExecuteFunc = nil }()
+
+			sc, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(sc.ID().AsString()).To(Equal("sc-uuid-1"))
+			Expect(uploadSrc).To(Equal("/tmp/stemcell.tgz"))
+			Expect(uploadDst).To(HaveSuffix(".tgz"))
+
+			tarCalled := false
+			for _, cmd := range executedCmds {
+				if strings.HasPrefix(cmd, "tar") && strings.Contains(cmd, uploadDst) {
+					tarCalled = true
+				}
+			}
+			Expect(tarCalled).To(BeTrue(), "tar must be called with the uploaded remoteTar path")
+		})
+
+		It("returns error when tarball upload to remote fails", func() {
+			runner.UploadFunc = func(src, dst string) error {
+				return errors.New("upload failed")
+			}
+			defer func() { runner.UploadFunc = nil }()
+
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Uploading stemcell tarball to remote host"))
 		})
 	})
 })

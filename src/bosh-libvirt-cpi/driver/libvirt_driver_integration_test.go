@@ -3,6 +3,7 @@
 package driver_test
 
 import (
+	"net/url"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -11,7 +12,6 @@ import (
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 
 	"bosh-libvirt-cpi/driver"
-	"bosh-libvirt-cpi/driver/domains"
 	libvirt "libvirt.org/go/libvirt"
 )
 
@@ -36,7 +36,7 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 
 		logger := boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
 		libvirtConn := driver.NewLibvirtConnImpl(conn)
-		d = driver.NewLibvirtDriver(libvirtConn, domains.QEMUDomainBuilder{}, logger)
+		d = driver.NewLibvirtDriver(libvirtConn, domBuilderFromEnv(), logger)
 	})
 
 	AfterEach(func() {
@@ -47,14 +47,7 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 
 	Describe("DefineDomain / LookupDomain / DestroyDomain", func() {
 		It("defines, looks up, and destroys a domain", func() {
-			xml := `<domain type='kvm'>
-  <name>bosh-integration-test</name>
-  <memory unit='KiB'>65536</memory>
-  <vcpu>1</vcpu>
-  <os><type arch='x86_64'>hvm</type></os>
-</domain>`
-
-			err := d.DefineDomain(xml)
+			err := d.DefineDomain(testDomainXML("bosh-integration-test"))
 			Expect(err).ToNot(HaveOccurred())
 
 			dom, err := d.LookupDomain("bosh-integration-test")
@@ -79,16 +72,9 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 	})
 
 	Describe("UpdateDomainMemory / UpdateDomainCPUs", func() {
-		const updateTestXML = `<domain type='kvm'>
-  <name>bosh-integration-update-test</name>
-  <memory unit='KiB'>65536</memory>
-  <vcpu>1</vcpu>
-  <os><type arch='x86_64'>hvm</type></os>
-</domain>`
-
 		BeforeEach(func() {
 			_ = d.DestroyDomain("bosh-integration-update-test")
-			Expect(d.DefineDomain(updateTestXML)).To(Succeed())
+			Expect(d.DefineDomain(testDomainXML("bosh-integration-update-test"))).To(Succeed())
 		})
 
 		AfterEach(func() {
@@ -101,6 +87,10 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 		})
 
 		It("updates CPUs on a defined (offline) domain", func() {
+			u, _ := url.Parse(uri)
+			if u != nil && u.Scheme == "lxc" {
+				Skip("virDomainSetVcpusFlags not supported by the LXC driver")
+			}
 			err := d.UpdateDomainCPUs("bosh-integration-update-test", 2)
 			Expect(err).ToNot(HaveOccurred())
 		})

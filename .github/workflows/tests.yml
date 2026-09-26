@@ -2,9 +2,10 @@ name: Tests and Build
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   unit-tests:
@@ -68,8 +69,8 @@ jobs:
         name: cpi-binary
         path: src/bosh-libvirt-cpi/bin/cpi
 
-  integration-tests:
-    name: Integration Tests
+  integration-tests-qemu:
+    name: Integration Tests (QEMU)
     runs-on: ubuntu-latest
     needs: build
 
@@ -82,7 +83,7 @@ jobs:
         go-version-file: src/bosh-libvirt-cpi/go.mod
         cache-dependency-path: src/bosh-libvirt-cpi/go.sum
 
-    - name: Install libvirt
+    - name: Install QEMU + libvirt
       run: |
         sudo apt-get update
         sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev
@@ -97,7 +98,7 @@ jobs:
           go mod vendor
         fi
 
-    - name: Run integration tests
+    - name: Run integration tests (QEMU)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
@@ -111,7 +112,834 @@ jobs:
       uses: codecov/codecov-action@v7
       with:
         files: src/bosh-libvirt-cpi/coverage.out
-        flags: integration
+        flags: integration-qemu
+
+  e2e-qemu:
+    name: E2E bosh-lite (QEMU)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 240
+
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
+    - name: Add swap to prevent OOM during package compilation
+      run: |
+        sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
+        sudo chmod 600 /swapfile2
+        sudo mkswap /swapfile2
+        sudo swapon /swapfile2
+        free -h
+
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install QEMU + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev linux-image-generic e2fsprogs
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install BOSH CLI
+      run: |
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Patch golang-1-linux packaging with actual GOROOT
+      run: |
+        GO_VERSION=$(go env GOVERSION | sed 's/go//')
+        GOROOT_PATH=$(go env GOROOT)
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        chmod +x packages/golang-1-linux/packaging
+        printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download BOSH stemcell
+      run: |
+        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Prepare host kernel for direct boot
+      run: |
+        KERNEL=$(ls /boot/vmlinuz-* | sort -V | tail -1)
+        echo "Using kernel: $KERNEL"
+        sudo cp "$KERNEL" /tmp/vmlinuz
+        sudo chmod 644 /tmp/vmlinuz
+        echo "KERNEL_PATH=/tmp/vmlinuz" >> $GITHUB_ENV
+
+    - name: Configure DHCP reservation for Director VM
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:10' ip='192.168.122.10'/>" \
+          --live --config || true
+        sudo arp -s 192.168.122.10 52:54:00:ab:cd:10 2>/dev/null || true
+
+    - name: Setup SSH for director VM to host libvirt tunnel (QEMU)
+      run: |
+        # Generate an SSH key pair that the director VM will use to SSH back to
+        # this runner and access qemu:///system via Unix socket forwarding.
+        ssh-keygen -t ed25519 -f /tmp/bosh-libvirt-ssh-key -N "" -C "bosh-director-libvirt"
+        # Authorise the key on this runner as root (the CPI runs as vcap/root in the VM).
+        sudo mkdir -p /root/.ssh
+        sudo chmod 700 /root/.ssh
+        sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
+        sudo chmod 600 /root/.ssh/authorized_keys
+        # Enable root login and configure sshd.
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        # Start sshd if not already running; restart to pick up config changes.
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true
+        # Wait for sshd to be ready.
+        for i in $(seq 1 20); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        # Capture the host key for 192.168.122.1 (virbr0 gateway = this host).
+        LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
+        if [ -z "${LIBVIRT_HOST_KEY}" ]; then
+          echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
+          sudo ss -tlnp | grep ':22' || true
+          exit 1
+        fi
+        echo "LIBVIRT_HOST_KEY=${LIBVIRT_HOST_KEY}" >> $GITHUB_ENV
+        echo "Libvirt SSH host key: ${LIBVIRT_HOST_KEY}"
+
+    - name: Bootstrap BOSH Director via QEMU (bosh-lite, direct kernel boot)
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-kernel-boot.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
+            -v director_name=bosh-qemu-ci \
+            -v internal_ip=192.168.122.10 \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v "kernel_path='"${KERNEL_PATH}"'" \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Deploy smoke test deployment (QEMU)
+      shell: bash
+      run: |
+        echo "Waiting for bosh create-env to complete (sentinel file)..."
+        DIRECTOR_UP=0
+        DEADLINE=$(( $(date +%s) + 14400 ))
+        i=0
+        while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+          i=$(( i + 1 ))
+          if [ -f /tmp/bosh-create-env.failed ]; then
+            echo "bosh create-env failed - aborting wait"
+            echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            break
+          fi
+          if [ -f /tmp/bosh-create-env.done ]; then
+            if curl -skf --max-time 10 https://192.168.122.10:25555/info > /tmp/director-info.json 2>&1; then
+              echo "Director is up! (attempt $i, create-env done)"
+              cat /tmp/director-info.json
+              DIRECTOR_UP=1
+              break
+            fi
+            if [ $(( i % 4 )) -eq 0 ]; then
+              echo "Attempt $i - create-env done but /info not yet reachable (ping: $(ping -c1 -W2 192.168.122.10 2>&1 | grep -o 'time=.*ms\|100% packet loss\|Network unreachable' | head -1 || echo unknown))"
+            fi
+          else
+            echo "Attempt $i - create-env still running, waiting 15s..."
+          fi
+          sleep 15
+        done
+        if [ "$DIRECTOR_UP" = "0" ]; then
+          echo "=== network diagnostics ==="
+          ip route show || true
+          sudo arp -n | grep "192.168.122" || true
+          ping -c3 -W2 192.168.122.10 2>&1 || true
+          curl -svk --max-time 10 https://192.168.122.10:25555/info 2>&1 | tail -20 || true
+          echo "=== bosh create-env log (last 80 lines) ===" && tail -80 /tmp/bosh-create-env.log || true
+          echo "=== QEMU console log (monit/postgres/director events - first 40) ===" && \
+            sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid\|4222\|ss port\|ps nats" | head -40 || true
+          echo "=== QEMU console log (monit/postgres/director events - last 40) ===" && \
+            sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "\[monit\]\|postgres\|director\|nats\|Error\|5432\|25555\|start_svc\|pre-start\|bpm\.yml\|never ready\|started.*pid\|4222\|ss port\|ps nats" | tail -40 || true
+          echo "=== QEMU console log (last 30 lines) ===" && \
+            sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+          echo "=== Destroying QEMU VM so rootfs.img can be mounted ===" && \
+            QEMU_DOM=$(sudo virsh -c qemu:///system list --name 2>/dev/null | grep -v '^$' | head -1) && \
+            if [ -n "$QEMU_DOM" ]; then sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null && echo "Destroyed $QEMU_DOM" || echo "Destroy failed (ok)"; else echo "No running domains found"; fi
+          echo "=== Mounting QEMU rootfs.img to read service logs ===" && {
+            QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+            if [ -n "$QEMU_IMG" ]; then
+              sudo mkdir -p /mnt/qemu-rootfs
+              sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs 2>/dev/null && {
+                echo "=== rootfs root listing ===" && sudo ls -la /mnt/qemu-rootfs/ 2>/dev/null | head -30 || echo "(mount succeeded but ls failed)"
+                echo "=== /bosh-init content (first 5 lines) ===" && sudo head -5 /mnt/qemu-rootfs/bosh-init 2>/dev/null || echo "(no /bosh-init)"
+                echo "=== monit-console-fallback.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-console.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-stub.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-stub.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-req.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -50 || echo "(not found)"
+                echo "=== monit-nats.log (head) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | head -30 || echo "(not found)"
+                echo "=== monit-nats.log (tail) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-nats.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== bosh-nats-sync.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/data/sys/log/nats/bosh-nats-sync.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== /var/vcap/data/sys/log/nats/ ===" && sudo ls -la /mnt/qemu-rootfs/var/vcap/data/sys/log/nats/ 2>/dev/null || echo "(not found)"
+                echo "=== bosh_nats_sync binary (data/jobs) ===" && sudo ls -la /mnt/qemu-rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync /mnt/qemu-rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync.real 2>/dev/null || echo "(no bosh_nats_sync* in data/jobs)"
+                echo "=== bosh_nats_sync wrapper content ===" && sudo head -5 /mnt/qemu-rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync 2>/dev/null || echo "(no wrapper)"
+                echo "=== NATS auth.json ===" && sudo cat /mnt/qemu-rootfs/var/vcap/data/nats/auth.json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users')" 2>/dev/null || echo "(no auth.json)"
+                echo "=== monit-postgres.log (head) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | head -30 || echo "(not found)"
+                echo "=== monit-postgres.log (tail) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-postgres.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== postgres bpm.yml ===" && sudo find /mnt/qemu-rootfs/var/vcap/data/jobs -name bpm.yml -path '*/postgres/*' 2>/dev/null | head -1 | xargs sudo cat 2>/dev/null | head -40 || echo "(not found)"
+                echo "=== data jobs listing ===" && sudo ls /mnt/qemu-rootfs/var/vcap/data/jobs/ 2>/dev/null | head -20 || echo "(not found)"
+                echo "=== store dir listing ===" && sudo ls -la /mnt/qemu-rootfs/var/vcap/store/ 2>/dev/null || echo "(not found)"
+                echo "=== postgres-15 data dir listing ===" && sudo ls -la /mnt/qemu-rootfs/var/vcap/store/postgres-15/ 2>/dev/null | head -20 || echo "(not found)"
+                echo "=== monit-director.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-svcs.log ===" && sudo cat /mnt/qemu-rootfs/tmp/monit-svcs.log 2>/dev/null | tail -10 || echo "(not found)"
+                echo "=== bosh-agent-init.log ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== bosh-agent/current log (tail) ===" && sudo cat /mnt/qemu-rootfs/var/vcap/bosh/log/current 2>/dev/null | grep -v "unlimitedRetry\|DelayedAudit" | tail -40 || echo "(not found)"
+                echo "=== nats job config dir ===" && sudo ls /mnt/qemu-rootfs/var/vcap/jobs/nats/config/ 2>/dev/null || echo "(not found)"
+                echo "=== nats bpm.yml ===" && sudo cat /mnt/qemu-rootfs/var/vcap/jobs/nats/config/bpm.yml 2>/dev/null | head -20 || echo "(not found)"
+                echo "=== director nginx config check ===" && sudo ls /mnt/qemu-rootfs/var/vcap/jobs/director/config/ 2>/dev/null || echo "(not found)"
+                sudo umount /mnt/qemu-rootfs 2>/dev/null
+              } || echo "Mount failed"
+            else
+              echo "No rootfs.img found"
+            fi
+          } || true
+          echo "Director not reachable after waiting - failing"
+          exit 1
+        fi
+        echo "CPI credentials injected at create_vm time via cpi-inject.json watcher in /bosh-init"
+        bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
+        bosh alias-env qemu-ci \
+          -e "192.168.122.10" \
+          --ca-cert /tmp/director-ca.crt
+        echo "Waiting for director API (DB migration may still be running)..."
+        API_DEADLINE=$(( $(date +%s) + 1800 ))
+        until curl -skf --max-time 15 \
+          --user admin:admin-password \
+          https://192.168.122.10:25555/deployments > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$API_DEADLINE" ]; then
+            echo "Director API not ready after 30min - failing"
+            exit 1
+          fi
+          echo "Director API not yet ready (migration running?), retrying in 15s..."
+          sleep 15
+        done
+        echo "Director API ready"
+        echo "=== cpi-inject log (QEMU) ===" && sudo find /tmp/bosh_libvirt_cpi/vms -name 'cpi-inject.log' -path '*/bosh/log/*' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || echo "(no cpi-inject.log yet)"
+        echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
+        WORKER_DEADLINE=$(( $(date +%s) + 600 ))
+        until timeout 30 bosh -e qemu-ci deployments \
+            --client admin --client-secret admin-password \
+            > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
+            echo "Director worker not ready after 10min - failing"
+            echo "=== QEMU console log (worker/monit events) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | grep -i "worker\|monit\|start_svc\|started\|failed\|error" | tail -40 || true
+            QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+            if [ -n "$QEMU_IMG" ]; then
+              QEMU_DOM=$(sudo virsh -c qemu:///system list --name 2>/dev/null | grep -v '^$' | head -1)
+              [ -n "$QEMU_DOM" ] && sudo virsh -c qemu:///system destroy "$QEMU_DOM" 2>/dev/null || true
+              sudo mkdir -p /mnt/qemu-rootfs-w
+              sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-w 2>/dev/null && {
+                echo "=== monit-req.log (last 30) ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-req.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-worker_1.log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-worker_1.log 2>/dev/null | tail -30 || echo "(not found)"
+                echo "=== monit-worker_2.log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-worker_2.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== monit-director.log (tail) ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/bosh/log/monit-director.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_1 stdout log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/sys/log/director/worker_1.stdout.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_1 stderr log ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/sys/log/director/worker_1.stderr.log 2>/dev/null | tail -20 || echo "(not found)"
+                echo "=== worker_ctl script exists ===" && sudo ls -la /mnt/qemu-rootfs-w/var/vcap/jobs/director/bin/worker_ctl 2>/dev/null || echo "(not found)"
+                echo "=== bpm.yml processes ===" && sudo cat /mnt/qemu-rootfs-w/var/vcap/jobs/director/config/bpm.yml 2>/dev/null | grep "name:" | head -20 || echo "(not found)"
+                echo "=== /var/vcap/sys/run/director/ ===" && sudo ls -la /mnt/qemu-rootfs-w/var/vcap/sys/run/director/ 2>/dev/null || echo "(not found)"
+                sudo umount /mnt/qemu-rootfs-w 2>/dev/null || true
+              } || echo "Mount failed"
+            fi
+            exit 1
+          fi
+          echo "Director worker not yet ready, retrying in 15s..."
+          sleep 15
+        done
+        echo "Director worker ready"
+        timeout 120 bosh -e qemu-ci update-cloud-config manifests/cloud-config-qemu.yml \
+          --client admin --client-secret admin-password \
+          -v "kernel_path=${KERNEL_PATH}" \
+          -n
+        timeout 600 bosh -e qemu-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password || {
+            echo "=== upload-stemcell failed - dumping CPI task debug log ==="
+            TASK_ID=$(bosh -e qemu-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e qemu-ci task "$TASK_ID" --debug --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            echo "=== SSH diagnostics from director VM ==="
+            ssh -i /tmp/bosh-libvirt-ssh-key \
+              -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+              root@192.168.122.10 '
+              echo "--- CPI binary ---"
+              ls -lh /var/vcap/packages/libvirt_cpi/bin/cpi 2>&1 || echo NOT FOUND
+              echo "--- bundled libs ---"
+              ls -lh /var/vcap/packages/libvirt_cpi/lib/ 2>&1 || echo NOT FOUND
+              echo "--- ldd on CPI binary ---"
+              LD_LIBRARY_PATH=/var/vcap/packages/libvirt_cpi/lib ldd /var/vcap/packages/libvirt_cpi/bin/cpi 2>&1 || true
+              echo "--- cpi.json (redacted) ---"
+              python3 -c "import json,sys; d=json.load(open(\"/var/vcap/jobs/libvirt_cpi/config/cpi.json\")); d.get(\"PrivateKey\") and d.__setitem__(\"PrivateKey\",\"(redacted)\"); print(json.dumps(d,indent=2))" 2>/dev/null || echo NOT FOUND
+              echo "--- bin/cpi script ---"
+              cat /var/vcap/jobs/libvirt_cpi/bin/cpi 2>/dev/null || echo NOT FOUND
+              echo "--- run CPI directly (stderr) ---"
+              echo "{}" | LD_LIBRARY_PATH=/var/vcap/packages/libvirt_cpi/lib /var/vcap/packages/libvirt_cpi/bin/cpi -configPath /var/vcap/jobs/libvirt_cpi/config/cpi.json 2>&1 | tail -30 || true
+              echo "--- test SSH to host 192.168.122.1 ---"
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@192.168.122.1 "echo SSH_OK; virsh -c qemu:///system list --all" 2>&1 | head -10 || true
+              ' 2>&1 || echo "(SSH into director VM failed - check sshd/key setup)"
+            echo "=== QEMU console log (last 30 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            exit 1
+          }
+        echo "Waiting for blobstore (port 25250)..."
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z 192.168.122.10 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          QEMU_IMG=$(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null | head -1)
+          if [ -n "$QEMU_IMG" ]; then
+            sudo mkdir -p /mnt/qemu-rootfs-blob
+            sudo mount -o loop,ro,noload "$QEMU_IMG" /mnt/qemu-rootfs-blob 2>/dev/null && {
+              echo "=== monit-blobstore*.log ===" && sudo tail -50 /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore_nginx.log /mnt/qemu-rootfs-blob/var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"
+              echo "=== /var/vcap/sys/run/bpm/blobstore/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/sys/run/bpm/blobstore/ 2>/dev/null || echo "(no blobstore run dir)"
+              echo "=== /var/vcap/packages/nginx/logs/ ===" && sudo ls -la /mnt/qemu-rootfs-blob/var/vcap/packages/nginx/logs/ 2>/dev/null || echo "(no nginx logs dir)"
+              sudo umount /mnt/qemu-rootfs-blob 2>/dev/null
+            } || echo "Mount failed"
+          fi
+          exit 1
+        fi
+        echo "Blobstore ready"
+        echo "=== stemcell ext4 pre-deploy check ==="
+        SC_IMG=$(sudo find /tmp/bosh_libvirt_cpi/stemcells -name 'image.ext4' 2>/dev/null | head -1)
+        if [ -n "$SC_IMG" ]; then
+          echo "Stemcell: $SC_IMG ($(sudo du -sh "$SC_IMG" 2>/dev/null | cut -f1))"
+          sudo file "$SC_IMG" 2>/dev/null || true
+          sudo tune2fs -l "$SC_IMG" 2>/dev/null | grep -E 'Block count|Inode count|Free blocks|Free inodes|Filesystem state' || echo "(tune2fs failed)"
+        else
+          echo "WARNING: no stemcell image.ext4 found before deploy"
+        fi
+        timeout 300 bosh -e qemu-ci upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
+        timeout 3600 bosh -e qemu-ci -d qemu-test-deployment deploy manifests/qemu-deployment.yml \
+          --client admin --client-secret admin-password \
+          --vars-store /tmp/bosh-deploy-vars.yml \
+          -n --fix || {
+            echo "=== bosh deploy failed - dumping last task log ==="
+            TASK_ID=$(bosh -e qemu-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e qemu-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            echo "=== QEMU console log (last 30 lines) ===" && \
+              sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -30 || true
+            echo "=== stemcell ext4 info ===" && {
+              SC_IMG=$(sudo find /tmp/bosh_libvirt_cpi/stemcells -name 'image.ext4' 2>/dev/null | head -1)
+              if [ -n "$SC_IMG" ]; then
+                echo "Stemcell image: $SC_IMG ($(sudo du -sh "$SC_IMG" 2>/dev/null | cut -f1))"
+                sudo file "$SC_IMG" 2>/dev/null || true
+                sudo tune2fs -l "$SC_IMG" 2>/dev/null | head -10 || echo "(tune2fs failed)"
+              else
+                echo "No stemcell image.ext4 found"
+              fi
+            } || true
+            echo "=== compilation VM rootfs.img info ===" && {
+              for ROOTFS in $(sudo find /tmp/bosh_libvirt_cpi/vms -name 'rootfs.img' 2>/dev/null); do
+                echo "VM image: $ROOTFS ($(sudo du -sh "$ROOTFS" 2>/dev/null | cut -f1))"
+                sudo file "$ROOTFS" 2>/dev/null || true
+                sudo tune2fs -l "$ROOTFS" 2>/dev/null | head -10 || echo "(tune2fs failed)"
+                sudo mkdir -p /mnt/compile-rootfs
+                sudo mount -o loop,ro,noload "$ROOTFS" /mnt/compile-rootfs 2>/dev/null && {
+                  echo "--- rootfs root listing ---"
+                  sudo ls -la /mnt/compile-rootfs/ 2>/dev/null | head -20
+                  echo "--- bosh-init script (last 15 lines) ---"
+                  sudo tail -15 /mnt/compile-rootfs/bosh-init 2>/dev/null || echo "(no bosh-init)"
+                  echo "--- agent init log ---"
+                  sudo tail -20 /mnt/compile-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null || echo "(no bosh-agent-init.log)"
+                  echo "--- agent current log ---"
+                  sudo tail -20 /mnt/compile-rootfs/var/vcap/bosh/log/current 2>/dev/null || echo "(no current log)"
+                  echo "--- dhclient log ---"
+                  sudo cat /mnt/compile-rootfs/tmp/dhclient.log 2>/dev/null | tail -10 || echo "(no dhclient.log)"
+                  sudo umount /mnt/compile-rootfs 2>/dev/null
+                } || echo "(mount of $ROOTFS failed)"
+              done
+            } || true
+            echo "=== QEMU blobstore log (via SSH) ===" && \
+              ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@192.168.122.10 'tail -30 /var/vcap/bosh/log/monit-blobstore_nginx.log /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"' 2>/dev/null || echo "(SSH unavailable)"
+            echo "=== CPI log (post-cleanup diagnostics) ===" && \
+              ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@192.168.122.10 'grep -h "post-cleanup\|e2fsck\|tune2fs\|needs_recovery\|journal_only\|clean needs_recovery\|cleanloop\|cleanScript" /var/vcap/bosh/log/libvirt_cpi/*.log /var/vcap/data/jobs/libvirt_cpi/*/*/libvirt_cpi.stdout.log 2>/dev/null | tail -30 || echo "(no CPI log entries)"' 2>/dev/null || echo "(SSH unavailable)"
+            echo "=== clean.sh scripts on host ===" && \
+              sudo find /tmp/bosh_libvirt_cpi -name '*.clean.sh' 2>/dev/null | head -5 | xargs sudo cat 2>/dev/null || echo "(no clean.sh found)"
+            echo "=== NATS port 4222 reachable from CI host? ===" && \
+              (nc -z 192.168.122.10 4222 2>/dev/null && echo "REACHABLE" || echo "NOT REACHABLE (connection refused - NATS not listening on 0.0.0.0?)")
+            echo "=== NATS listen address (via SSH to director) ===" && \
+              ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@192.168.122.10 'ss -tlnp | grep 4222 || echo "(nothing on 4222)"' 2>/dev/null || echo "(SSH unavailable)"
+            exit 1
+          }
+        echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
+        timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
+        echo "NATS port 4222 reachable - deployment verified"
+        echo "=== Validating director postgres via BOSH API (deployment list) ==="
+        bosh -e qemu-ci deployments --client admin --client-secret admin-password --json | \
+          python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('Tables',[{}])[0].get('Rows',[]); print('Deployments found:',len(rows)); [print(' -',r.get('name')) for r in rows]"
+        echo "=== Validating deployed VM is visible to director ==="
+        bosh -e qemu-ci -d qemu-test-deployment vms --client admin --client-secret admin-password
+        echo "=== All QEMU e2e checks passed ==="
+
+    - name: Clean up Director (QEMU)
+      if: always()
+      run: |
+        sudo bosh delete-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
+          -o manifests/ops/qemu-kernel-boot.yml \
+          -o manifests/ops/qemu-director-ssh.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name=bosh-qemu-ci \
+          -v internal_ip=192.168.122.10 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v kernel_path="${KERNEL_PATH}" \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+
+  integration-tests-lxc:
+    name: Integration Tests (LXC)
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt $USER
+
+    - name: Verify vendor directory
+      working-directory: src/bosh-libvirt-cpi
+      run: |
+        if [ ! -d "vendor" ]; then
+          echo "Vendor directory not found. Running go mod vendor..."
+          go mod vendor
+        fi
+
+    - name: Run integration tests (LXC)
+      working-directory: src/bosh-libvirt-cpi
+      env:
+        LIBVIRT_URI: lxc:///
+      run: sudo -E go test -tags integration -mod=vendor ./...
+
+  e2e-lxc:
+    name: E2E bosh-lite (LXC)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 240
+
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+          /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+          /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+          /usr/local/share/vcpkg /opt/microsoft || true
+        sudo apt-get clean
+        df -h /
+
+    - name: Add swap to prevent OOM during package compilation
+      run: |
+        sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
+        sudo chmod 600 /swapfile2
+        sudo mkswap /swapfile2
+        sudo swapon /swapfile2
+        free -h
+
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev systemd-container
+        # Enable cgroup v2 delegation so LXC containers can use cgroups for BPM
+        sudo mkdir -p /sys/fs/cgroup
+        ls /sys/fs/cgroup/ 2>/dev/null || echo "cgroup not available at /sys/fs/cgroup"
+        sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
+        sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
+        # Set kernel.shmmax for postgres: the BOSH postgres pre-start script runs
+        # 'sysctl -w kernel.shmmax=67108864' which fails in LXC (no SYS_ADMIN).
+        # Since LXC shares the host kernel, setting it on the host makes it available inside.
+        sudo sysctl -w kernel.shmmax=67108864 2>/dev/null || true
+        sudo sysctl -w kernel.shmall=4194304 2>/dev/null || true
+        # Mask libvirtd sockets so systemd does not stop libvirtd when CPI clients disconnect.
+        sudo systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket 2>/dev/null || true
+        # Disable libvirtd idle shutdown. libvirtd has a default shutdown_timeout of 120s:
+        # it exits cleanly 120s after all clients disconnect, tearing down LXC veth interfaces.
+        # Append with high priority so it overrides any existing value in the file.
+        printf '\nshutdown_timeout = 0\n' | sudo tee -a /etc/libvirt/libvirtd.conf > /dev/null
+        sudo systemctl start libvirtd
+        # Keep a persistent libvirt connection open so libvirtd never becomes idle.
+        sudo virsh -c lxc:/// list --all &>/dev/null &
+        sudo nohup sh -c 'while true; do virsh -c lxc:/// list --all &>/dev/null; sleep 30; done' &>/dev/null &
+        sudo usermod -aG libvirt $USER
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install BOSH CLI
+      run: |
+        curl -fsSL https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.8/bosh-cli-7.10.8-linux-amd64 \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Patch golang-1-linux packaging with actual GOROOT
+      run: |
+        GO_VERSION=$(go env GOVERSION | sed 's/go//')
+        GOROOT_PATH=$(go env GOROOT)
+        # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+        # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+        # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+        printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+        printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
+        printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+        printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+        printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+        chmod +x packages/golang-1-linux/packaging
+        printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download BOSH stemcell
+      run: |
+        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Configure DHCP reservation for LXC Director VM
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='52:54:00:ab:cd:11' ip='192.168.122.11'/>" \
+          --live --config || true
+        # Add a static ARP entry so the host bridge can reach the container's
+        # static IP immediately, without waiting for an ARP reply from inside.
+        sudo arp -s 192.168.122.11 52:54:00:ab:cd:11 2>/dev/null || true
+
+    - name: Setup SSH for director container to host libvirt tunnel (LXC)
+      run: |
+        # Generate an SSH key pair that the director LXC container will use to
+        # SSH back to this runner and access lxc:/// via Unix socket forwarding.
+        ssh-keygen -t ed25519 -f /tmp/bosh-libvirt-ssh-key -N "" -C "bosh-director-libvirt"
+        sudo mkdir -p /root/.ssh
+        sudo chmod 700 /root/.ssh
+        sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
+        sudo chmod 600 /root/.ssh/authorized_keys
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true
+        for i in $(seq 1 20); do ss -tlnp | grep -q ':22 ' && break || sleep 1; done
+        LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
+        if [ -z "${LIBVIRT_HOST_KEY}" ]; then
+          echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - sshd not ready?"
+          sudo ss -tlnp | grep ':22' || true
+          exit 1
+        fi
+        echo "LIBVIRT_HOST_KEY=${LIBVIRT_HOST_KEY}" >> $GITHUB_ENV
+        echo "Libvirt SSH host key: ${LIBVIRT_HOST_KEY}"
+
+    - name: Bootstrap BOSH Director via LXC (bosh-lite)
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/lxc-cpi.yml \
+            -o manifests/ops/lxc-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/lxc-mac.yml \
+            -o manifests/ops/lxc-director-ssh.yml \
+            -v director_name=bosh-lxc-ci \
+            -v internal_ip=192.168.122.11 \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Deploy smoke test deployment (LXC)
+      shell: bash
+      run: |
+        echo "Waiting for bosh create-env to complete (sentinel file)..."
+        DIRECTOR_UP=0
+        DEADLINE=$(( $(date +%s) + 14400 ))
+        i=0
+        while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+          i=$(( i + 1 ))
+          if [ -f /tmp/bosh-create-env.failed ]; then
+            echo "bosh create-env failed - aborting wait"
+            echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            break
+          fi
+          if [ -f /tmp/bosh-create-env.done ]; then
+            if curl -skf --max-time 10 https://192.168.122.11:25555/info > /tmp/director-info.json 2>&1; then
+              echo "Director is up! (attempt $i, create-env done)"
+              cat /tmp/director-info.json
+              DIRECTOR_UP=1
+              break
+            fi
+            if [ $(( i % 4 )) -eq 0 ]; then
+              echo "Attempt $i - create-env done but /info not yet reachable (ping: $(ping -c1 -W2 192.168.122.11 2>&1 | grep -o 'time=.*ms\|100% packet loss\|Network unreachable' | head -1 || echo unknown))"
+            fi
+          else
+            echo "Attempt $i - create-env still running, waiting 15s..."
+          fi
+          sleep 15
+        done
+        if [ "$DIRECTOR_UP" = "0" ]; then
+          echo "=== bosh create-env log (last 80 lines) ===" && tail -80 /tmp/bosh-create-env.log || true
+          VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -type d | tail -1)
+          [ -n "$VMDIR" ] && echo "=== monit postgres log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-postgres.log" 2>/dev/null | tail -20 || true
+          [ -n "$VMDIR" ] && echo "=== postgres socket file ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/sys/run/postgresql/" 2>/dev/null || echo "no socket dir or empty"
+          [ -n "$VMDIR" ] && echo "=== monit director log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || true
+          [ -n "$VMDIR" ] && echo "=== pg-patch log ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/pg-patch.log" 2>/dev/null || echo "no pg-patch.log"
+          [ -n "$VMDIR" ] && echo "=== pg_hba.conf via nsenter ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount -- cat /var/vcap/store/postgres-15/pg_hba.conf 2>/dev/null | grep -v "^#" | tail -5 || echo "cannot read pg_hba via nsenter"
+          [ -n "$VMDIR" ] && echo "=== postgresql.conf last5 via nsenter ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount -- tail -5 /var/vcap/store/postgres-15/postgresql.conf 2>/dev/null || echo "cannot read postgresql.conf via nsenter"
+          [ -n "$VMDIR" ] && echo "=== postgres socket dir ===" && sudo ls -la "$VMDIR/rootfs/var/vcap/sys/run/postgresql" 2>/dev/null || echo "no socket dir"
+          [ -n "$VMDIR" ] && echo "=== postgres running? ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount --pid -- ps aux 2>/dev/null | grep postgres || echo "cannot check"
+          [ -n "$VMDIR" ] && echo "=== director running? ===" && sudo nsenter --target $(sudo cat "$VMDIR/rootfs/var/vcap/sys/run/bpm/postgres/postgres.pid" 2>/dev/null || echo 1) --mount --pid -- ps aux 2>/dev/null | grep -E "director|ruby" | grep -v grep || echo "no director process"
+          [ -n "$VMDIR" ] && echo "=== monit-director head20 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | head -20 || true
+          [ -n "$VMDIR" ] && echo "=== monit-director tail50 ===" && sudo cat "$VMDIR/rootfs/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -50 || true
+          echo "Director not reachable after waiting - failing"
+          exit 1
+        fi
+        echo "CPI credentials injected at create_vm time via cpi-inject.json watcher in /bosh-lxc-init"
+        bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
+        bosh alias-env lxc-ci \
+          -e "192.168.122.11" \
+          --ca-cert /tmp/director-ca.crt
+        echo "Waiting for director API (DB migration may still be running)..."
+        API_DEADLINE=$(( $(date +%s) + 1800 ))
+        until curl -skf --max-time 15 \
+          --user admin:admin-password \
+          https://192.168.122.11:25555/deployments > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$API_DEADLINE" ]; then
+            echo "Director API not ready after 30min - failing"
+            exit 1
+          fi
+          echo "Director API not yet ready (migration running?), retrying in 15s..."
+          sleep 15
+        done
+        echo "Director API ready"
+        echo "=== cpi-inject log (LXC) ===" && sudo find /tmp/bosh_libvirt_cpi/vms -name 'cpi-inject.log' -path '*/bosh/log/*' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || echo "(no cpi-inject.log yet)"
+        echo "Waiting for director task worker (worker_1..3 must subscribe to NATS)..."
+        WORKER_DEADLINE=$(( $(date +%s) + 600 ))
+        until timeout 30 bosh -e lxc-ci deployments \
+            --client admin --client-secret admin-password \
+            > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
+            echo "Director worker not ready after 10min - failing"
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 2 -name 'rootfs' -type d 2>/dev/null | head -1)
+            if [ -n "$VMDIR" ]; then
+              echo "=== monit-req.log (last 30) ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-req.log" 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-worker_1.log ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-worker_1.log" 2>/dev/null | tail -30 || echo "(not found)"
+              echo "=== monit-worker_2.log ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-worker_2.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== monit-director.log (tail) ===" && sudo cat "$VMDIR/var/vcap/bosh/log/monit-director.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_1 stdout log ===" && sudo cat "$VMDIR/var/vcap/sys/log/director/worker_1.stdout.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_1 stderr log ===" && sudo cat "$VMDIR/var/vcap/sys/log/director/worker_1.stderr.log" 2>/dev/null | tail -20 || echo "(not found)"
+              echo "=== worker_ctl exists ===" && sudo ls -la "$VMDIR/var/vcap/jobs/director/bin/worker_ctl" 2>/dev/null || echo "(not found)"
+              echo "=== bpm.yml processes ===" && sudo cat "$VMDIR/var/vcap/jobs/director/config/bpm.yml" 2>/dev/null | grep "name:" | head -20 || echo "(not found)"
+              echo "=== /var/vcap/sys/run/director/ ===" && sudo ls -la "$VMDIR/var/vcap/sys/run/director/" 2>/dev/null || echo "(not found)"
+              echo "=== LXC console log (worker events) ===" && sudo cat "$VMDIR/../../console.log" 2>/dev/null | grep -i "worker\|monit\|start_svc\|started\|failed" | tail -30 || true
+            fi
+            exit 1
+          fi
+          echo "Director worker not yet ready, retrying in 15s..."
+          sleep 15
+        done
+        echo "Director worker ready"
+        timeout 120 bosh -e lxc-ci update-cloud-config manifests/cloud-config-lxc.yml \
+          --client admin --client-secret admin-password \
+          -n
+        timeout 600 bosh -e lxc-ci upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password || {
+            echo "=== upload-stemcell failed - dumping CPI task debug log ==="
+            TASK_ID=$(bosh -e lxc-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e lxc-ci task "$TASK_ID" --debug --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            echo "=== SSH diagnostics from director container ==="
+            ssh -i /tmp/bosh-libvirt-ssh-key \
+              -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+              root@192.168.122.11 '
+              echo "--- CPI binary ---"
+              ls -lh /var/vcap/packages/libvirt_cpi/bin/cpi 2>&1 || echo NOT FOUND
+              echo "--- bundled libs ---"
+              ls -lh /var/vcap/packages/libvirt_cpi/lib/ 2>&1 || echo NOT FOUND
+              echo "--- ldd on CPI binary ---"
+              LD_LIBRARY_PATH=/var/vcap/packages/libvirt_cpi/lib ldd /var/vcap/packages/libvirt_cpi/bin/cpi 2>&1 || true
+              echo "--- cpi.json (redacted) ---"
+              python3 -c "import json,sys; d=json.load(open(\"/var/vcap/jobs/libvirt_cpi/config/cpi.json\")); d.get(\"PrivateKey\") and d.__setitem__(\"PrivateKey\",\"(redacted)\"); print(json.dumps(d,indent=2))" 2>/dev/null || echo NOT FOUND
+              echo "--- bin/cpi script ---"
+              cat /var/vcap/jobs/libvirt_cpi/bin/cpi 2>/dev/null || echo NOT FOUND
+              echo "--- run CPI directly (stderr) ---"
+              echo "{}" | LD_LIBRARY_PATH=/var/vcap/packages/libvirt_cpi/lib /var/vcap/packages/libvirt_cpi/bin/cpi -configPath /var/vcap/jobs/libvirt_cpi/config/cpi.json 2>&1 | tail -30 || true
+              echo "--- test SSH to host 192.168.122.1 ---"
+              ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@192.168.122.1 "echo SSH_OK; virsh -c lxc:/// list --all" 2>&1 | head -10 || true
+              ' 2>&1 || echo "(SSH into director container failed - check sshd/key setup)"
+            exit 1
+          }
+        echo "Waiting for blobstore (port 25250)..."
+        DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z 192.168.122.11 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          [ -n "$DIRVM" ] && echo "=== monit-blobstore*.log ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore_nginx.log" "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore*.log)"
+          [ -n "$DIRVM" ] && echo "=== monit-stub.log ===" && sudo tail -30 "$DIRVM/rootfs/tmp/monit-svcs.log" 2>/dev/null || echo "(no monit-svcs.log)"
+          [ -n "$DIRVM" ] && echo "=== /var/vcap/sys/run/bpm/blobstore/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/sys/run/bpm/blobstore/" 2>/dev/null || echo "(no blobstore run dir)"
+          [ -n "$DIRVM" ] && echo "=== /var/vcap/packages/nginx/logs/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/packages/nginx/logs/" 2>/dev/null || echo "(no nginx logs dir)"
+          exit 1
+        fi
+        echo "Blobstore ready"
+        timeout 300 bosh -e lxc-ci upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
+        timeout 3600 bosh -e lxc-ci -d lxc-test-deployment deploy manifests/lxc-deployment.yml \
+          --client admin --client-secret admin-password \
+          --vars-store /tmp/bosh-deploy-vars.yml \
+          -n --fix || {
+            echo "=== bosh deploy failed - dumping last task log ==="
+            TASK_ID=$(bosh -e lxc-ci tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
+            [ -n "$TASK_ID" ] && bosh -e lxc-ci task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
+            VMDIR=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | tail -2)
+            for vd in $VMDIR; do
+              echo "=== VM dir: $vd ==="
+              sudo ls -la "$vd/" 2>/dev/null | head -10 || true
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -30 || true
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || true
+              echo "=== warden-cpi-agent-env.json (mbus field) ==="
+              sudo python3 -c "import json; f='$vd/rootfs/var/vcap/bosh/warden-cpi-agent-env.json'; d=json.load(open(f)); c=d.get('env',{}).get('bosh',{}).get('mbus',{}); print('cert.ca present:',bool(c.get('cert',{}).get('ca'))); print('cert.certificate present:',bool(c.get('cert',{}).get('certificate'))); print('cert.private_key present:',bool(c.get('cert',{}).get('private_key'))); print('mbus url:',d.get('env',{}).get('bosh',{}).get('mbus',{}).get('url') or d.get('mbus','(none)'))" 2>/dev/null || echo "(warden-cpi-agent-env.json not found or no cert)"
+              echo "=== agent current log (last 20 lines) ==="
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || echo "(no current log)"
+            done
+            DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
+            [ -n "$DIRVM" ] && echo "=== NATS auth.json full (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
+            [ -n "$DIRVM" ] && echo "=== NATS server log (last 50 lines) ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/data/sys/log/nats/nats.log" 2>/dev/null || echo "(no nats.log)"
+            [ -n "$DIRVM" ] && echo "=== director-subject file ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/director-subject" 2>/dev/null || echo "(no director-subject file)"
+            [ -n "$DIRVM" ] && echo "=== hm-subject file ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/hm-subject" 2>/dev/null || echo "(no hm-subject file)"
+            [ -n "$DIRVM" ] && echo "=== NATS port 4222 reachable from CI host? ===" && (nc -z 192.168.122.11 4222 2>/dev/null && echo "REACHABLE" || echo "NOT REACHABLE")
+            [ -n "$DIRVM" ] && echo "=== monit-nats.log (last 100 lines) ===" && sudo tail -100 "$DIRVM/rootfs/var/vcap/bosh/log/monit-nats.log" 2>/dev/null || echo "(no monit-nats.log)"
+            [ -n "$DIRVM" ] && echo "=== bosh-nats-sync.log (via data path, last 50 lines) ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/data/sys/log/nats/bosh-nats-sync.log" 2>/dev/null || echo "(no bosh-nats-sync.log)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync running? ===" && sudo cat "$DIRVM/rootfs/var/vcap/sys/run/bpm/nats/bosh_nats_sync.pid" 2>/dev/null | xargs -I{} sh -c 'kill -0 {} 2>/dev/null && echo "pid {} alive" || echo "pid {} dead/missing"' || echo "(no bosh_nats_sync pid file)"
+            [ -n "$DIRVM" ] && echo "=== director_ca_cert.pem (via data/jobs symlink) ===" && sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "director_ca_cert.pem" 2>/dev/null | head -1 | xargs -I{} sudo head -5 {} 2>/dev/null || echo "(no director_ca_cert.pem found)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync binary (data/jobs) ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync" "$DIRVM/rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync.real" 2>/dev/null || echo "(no bosh_nats_sync* in data/jobs)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync wrapper content ===" && sudo head -5 "$DIRVM/rootfs/var/vcap/data/jobs/nats/bin/bosh_nats_sync" 2>/dev/null || echo "(no bosh_nats_sync wrapper)"
+            [ -n "$DIRVM" ] && echo "=== nats bpm.yml processes ===" && sudo grep -E "name:|executable:|privileged:" "$DIRVM/rootfs/var/vcap/jobs/nats/config/bpm.yml" 2>/dev/null || sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bpm.yml" 2>/dev/null | xargs sudo grep -E "name:|executable:|privileged:" 2>/dev/null || echo "(no bpm.yml found)"
+            [ -n "$DIRVM" ] && echo "=== bosh_nats_sync_config.yml ===" && sudo find "$DIRVM/rootfs/var/vcap/data/jobs/nats" -name "bosh_nats_sync_config.yml" 2>/dev/null | head -1 | xargs -I{} sudo cat {} 2>/dev/null | head -30 || echo "(no bosh_nats_sync_config.yml found)"
+            [ -n "$DIRVM" ] && echo "=== /var/vcap/data/sys/log/nats/ ===" && sudo ls -la "$DIRVM/rootfs/var/vcap/data/sys/log/nats/" 2>/dev/null || echo "(no data/sys/log/nats/ dir)"
+            [ -n "$DIRVM" ] && echo "=== monit-blobstore*.log (last 30 lines) ===" && sudo tail -30 "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore_nginx.log" "$DIRVM/rootfs/var/vcap/bosh/log/monit-blobstore.log" 2>/dev/null || echo "(no monit-blobstore*.log)"
+            sudo virsh -c lxc:/// list --all 2>/dev/null || true
+            exit 1
+          }
+        echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
+        timeout 120 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done'
+        echo "NATS port 4222 reachable - deployment verified"
+        echo "=== Validating director postgres via BOSH API (deployment list) ==="
+        bosh -e lxc-ci deployments --client admin --client-secret admin-password --json | \
+          python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('Tables',[{}])[0].get('Rows',[]); print('Deployments found:',len(rows)); [print(' -',r.get('name')) for r in rows]"
+        echo "=== Validating deployed VM is visible to director ==="
+        bosh -e lxc-ci -d lxc-test-deployment vms --client admin --client-secret admin-password
+        echo "=== All LXC e2e checks passed ==="
+
+    - name: Clean up Director (LXC)
+      if: always()
+      run: |
+        sudo bosh delete-env manifests/lxc-cpi.yml \
+          -o manifests/ops/lxc-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
+          -o manifests/ops/lxc-director-ssh.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name=bosh-lxc-ci \
+          -v internal_ip=192.168.122.11 \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
 
   code-quality:
     name: Code Quality

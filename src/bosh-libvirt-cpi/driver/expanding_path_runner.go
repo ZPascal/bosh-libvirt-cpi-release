@@ -92,3 +92,5 @@ func (r *ExpandingPathRunner) homeDir() (string, error) {
 
 	return r.resolvedHomeDir, err
 }
+
+func (r *ExpandingPathRunner) Unwrap() RawRunner { return r.other }

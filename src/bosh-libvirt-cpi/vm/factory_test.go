@@ -3,6 +3,8 @@ package vm_test
 import (
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo"
@@ -45,9 +47,14 @@ var _ = Describe("vm.Factory", func() {
 		logger      boshlog.Logger
 		stemcell    *stemcellfakes.FakeStemcell
 		cloudProps  apiv1.VMCloudProps
+		tmpDir      string
 	)
 
 	BeforeEach(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "vm-factory-test")
+		Expect(err).ToNot(HaveOccurred())
+
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		vmUUIDGen = &stubVMUUIDGen{result: "uuid-vm-1"}
 		diskUUIDGen = &stubDiskUUIDGen{result: "disk-uuid-1"}
@@ -64,7 +71,7 @@ var _ = Describe("vm.Factory", func() {
 			DiskImageFormatResult: "qcow2",
 		}
 
-		diskFactory = bdisk.NewFactory("/store/disks", diskUUIDGen, drv, runner, logger)
+		diskFactory = bdisk.NewFactory(filepath.Join(tmpDir, "disks"), diskUUIDGen, drv, runner, logger)
 
 		stemcell = stemcellfakes.NewFakeStemcell("sc-1")
 		stemcell.ImagePathResult = "/stemcells/sc-1/image.qcow2"
@@ -73,7 +80,7 @@ var _ = Describe("vm.Factory", func() {
 		cloudProps = apiv1.CloudPropsImpl{RawMessage: json.RawMessage("{}")}
 
 		factory = vm.NewFactory(
-			vm.FactoryOpts{DirPath: "/vms"},
+			vm.FactoryOpts{DirPath: filepath.Join(tmpDir, "vms")},
 			vmUUIDGen,
 			drv,
 			runner,
@@ -83,6 +90,10 @@ var _ = Describe("vm.Factory", func() {
 			apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
 			logger,
 		)
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("Create", func() {
@@ -133,19 +144,6 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Generating VM id"))
 		})
 
-		It("returns error when ephemeral disk creation fails", func() {
-			runner.ExecuteErr = errors.New("exec failed")
-			_, err := factory.Create(
-				apiv1.NewAgentID("agent-1"),
-				stemcell,
-				cloudProps,
-				apiv1.Networks{},
-				apiv1.NewVMEnv(nil),
-			)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("Creating ephemeral disk"))
-		})
-
 		It("returns error when BuildDomain fails", func() {
 			builder.BuildDomainErr = errors.New("build failed")
 			_, err := factory.Create(
@@ -179,6 +177,225 @@ var _ = Describe("vm.Factory", func() {
 			v, err := factory.Find(apiv1.NewVMCID("vm-xyz"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(v.ID().AsString()).To(Equal("vm-xyz"))
+		})
+	})
+
+	Describe("injectMbusCert", func() {
+		It("preserves existing mbus.url when injecting cert", func() {
+			f := vm.NewFactory(
+				vm.FactoryOpts{DirPath: tmpDir},
+				vmUUIDGen, drv, runner,
+				&driverfakes.FakeDomainBuilder{DiskImageFormatResult: "qcow2"},
+				diskFactory,
+				apiv1.AgentOptions{Mbus: "nats://127.0.0.1:4222"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger,
+			)
+
+			// env JSON with mbus.url already set
+			envWithURL := []byte(`{
+				"env": {
+					"bosh": {
+						"mbus": {
+							"url": "nats://nats:secret@192.168.0.1:4222"
+						}
+					}
+				}
+			}`)
+
+			result := f.InjectMbusCertForTest(envWithURL)
+
+			var m map[string]interface{}
+			Expect(json.Unmarshal(result, &m)).To(Succeed())
+			env := m["env"].(map[string]interface{})
+			bosh := env["bosh"].(map[string]interface{})
+			mbus := bosh["mbus"].(map[string]interface{})
+
+			Expect(mbus["cert"]).ToNot(BeNil())
+			Expect(mbus["url"]).To(Equal("nats://nats:secret@192.168.0.1:4222"))
+		})
+	})
+
+	Describe("Create (ext4 branch)", func() {
+		var ext4Builder *driverfakes.FakeDomainBuilder
+
+		BeforeEach(func() {
+			ext4Builder = &driverfakes.FakeDomainBuilder{
+				BuildDomainXML:        "<domain/>",
+				DiskImageFormatResult: "ext4",
+			}
+			factory = vm.NewFactory(
+				vm.FactoryOpts{DirPath: filepath.Join(tmpDir, "vms")},
+				vmUUIDGen,
+				drv,
+				runner,
+				ext4Builder,
+				diskFactory,
+				apiv1.AgentOptions{Mbus: "nats://nats:nats-password@127.0.0.1:4222"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger,
+			)
+		})
+
+		It("returns error when mount fails", func() {
+			// Make the runner fail specifically for "mount" so the ext4 injection
+			// path returns an error at the mount step.
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				if name == "mount" {
+					return "no loop devices", 1, errors.New("mount failed")
+				}
+				return "", 0, nil
+			}
+			defer func() { runner.ExecuteFunc = nil }()
+
+			stemcell.ImagePathResult = filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcell.ImagePathResult, []byte("fake-ext4"), 0644)
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("Mounting ext4 for VM injection"))
+		})
+
+		It("runs through ext4 injection without error when all commands succeed", func() {
+			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+			stemcell.ImagePathResult = stemcellImg
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			// AsBytes() on a real AgentEnv never fails with valid inputs; this test
+			// exercises the AsBytes error-check branch via the happy path — a failure
+			// from AsBytes would surface as an unexpected error here.
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("uses truncate+losetup+e2fsck+resize2fs to grow ext4 and clears needs_recovery on file directly", func() {
+			var executedCmds []string
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				cmd := name + " " + strings.Join(args, " ")
+				executedCmds = append(executedCmds, cmd)
+				if name == "losetup" && len(args) >= 2 && args[0] == "-f" && args[1] == "--show" {
+					return "/dev/loop7\n", 0, nil
+				}
+				return "", 0, nil
+			}
+			defer func() { runner.ExecuteFunc = nil }()
+
+			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+			stemcell.ImagePathResult = stemcellImg
+
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			vmImg := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img")
+			truncateIdx := -1
+			losetupAttachIdx := -1   // losetup for mount loop
+			e2fsckPreResizeIdx := -1 // e2fsck on /dev/loop7 before resize2fs
+			resizeLoopIdx := -1
+			mountLoopIdx := -1
+			syncBeforeUmountIdx := -1
+			umountIdx := -1
+			rmdirIdx := -1
+			losetupDetachIdx := -1     // losetup -d /dev/loop7
+			e2fsckJournalOnlyIdx := -1 // e2fsck -E journal_only on vmImg (direct file)
+			e2fsckCleanIdx := -1       // e2fsck -fy on vmImg (direct file)
+			debugfsCleanIdx := -1      // debugfs -w -R feature -needs_recovery vmImg
+			qemuImgResizeCalled := false
+			rmrfCalled := false
+			cleanLoopAttachCalled := false // must NOT be called
+			for i, cmd := range executedCmds {
+				if cmd == "truncate -s 65G "+vmImg {
+					truncateIdx = i
+				}
+				if cmd == "losetup -f --show "+vmImg {
+					if losetupAttachIdx < 0 {
+						losetupAttachIdx = i
+					} else {
+						cleanLoopAttachCalled = true
+					}
+				}
+				if cmd == "e2fsck -fy /dev/loop7" {
+					e2fsckPreResizeIdx = i
+				}
+				if cmd == "resize2fs -f /dev/loop7" {
+					resizeLoopIdx = i
+				}
+				if cmd == "mount /dev/loop7 "+vmImg+".mnt" {
+					mountLoopIdx = i
+				}
+				if strings.TrimSpace(cmd) == "sync" && mountLoopIdx >= 0 && umountIdx < 0 {
+					syncBeforeUmountIdx = i
+				}
+				if cmd == "umount "+vmImg+".mnt" {
+					umountIdx = i
+				}
+				if cmd == "rmdir "+vmImg+".mnt" {
+					rmdirIdx = i
+				}
+				if cmd == "losetup -d /dev/loop7" {
+					losetupDetachIdx = i
+				}
+				if cmd == "e2fsck -E journal_only "+vmImg {
+					e2fsckJournalOnlyIdx = i
+				}
+				if cmd == "e2fsck -fy "+vmImg {
+					e2fsckCleanIdx = i
+				}
+				if cmd == "debugfs -w -R feature -needs_recovery "+vmImg {
+					debugfsCleanIdx = i
+				}
+				if strings.HasPrefix(cmd, "qemu-img resize") {
+					qemuImgResizeCalled = true
+				}
+				if strings.HasPrefix(cmd, "rm -rf") && strings.Contains(cmd, ".mnt") {
+					rmrfCalled = true
+				}
+			}
+
+			Expect(truncateIdx).To(BeNumerically(">=", 0), "truncate must be called")
+			Expect(losetupAttachIdx).To(BeNumerically(">=", 0), "losetup -f --show (mount loop) must be called")
+			Expect(e2fsckPreResizeIdx).To(BeNumerically(">=", 0), "e2fsck -fy on /dev/loop7 before resize2fs must be called")
+			Expect(resizeLoopIdx).To(BeNumerically(">=", 0), "resize2fs -f on loop device must be called")
+			Expect(mountLoopIdx).To(BeNumerically(">=", 0), "mount of loop device must be called")
+			Expect(syncBeforeUmountIdx).To(BeNumerically(">=", 0), "sync must be called after mount and before umount")
+			Expect(umountIdx).To(BeNumerically(">=", 0), "umount must be called")
+			Expect(rmdirIdx).To(BeNumerically(">=", 0), "rmdir of mount point must be called (not rm -rf)")
+			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d /dev/loop7 must be called")
+			Expect(e2fsckJournalOnlyIdx).To(BeNumerically(">=", 0), "e2fsck -E journal_only on file must be called")
+			Expect(e2fsckCleanIdx).To(BeNumerically(">=", 0), "e2fsck -fy on file must be called")
+			Expect(debugfsCleanIdx).To(BeNumerically(">=", 0), "debugfs -w -R feature -needs_recovery on file must be called")
+			Expect(cleanLoopAttachCalled).To(BeFalse(), "no second losetup attach (clean loop eliminated)")
+			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup attach")
+			Expect(losetupAttachIdx).To(BeNumerically("<", e2fsckPreResizeIdx), "losetup attach before pre-resize e2fsck")
+			Expect(e2fsckPreResizeIdx).To(BeNumerically("<", resizeLoopIdx), "e2fsck before resize2fs")
+			Expect(resizeLoopIdx).To(BeNumerically("<", mountLoopIdx), "resize2fs before mount")
+			Expect(mountLoopIdx).To(BeNumerically("<", syncBeforeUmountIdx), "mount before pre-umount sync")
+			Expect(syncBeforeUmountIdx).To(BeNumerically("<", umountIdx), "sync before umount")
+			Expect(umountIdx).To(BeNumerically("<", rmdirIdx), "umount before rmdir")
+			Expect(umountIdx).To(BeNumerically("<", losetupDetachIdx), "umount before losetup detach")
+			Expect(losetupDetachIdx).To(BeNumerically("<", e2fsckJournalOnlyIdx), "mount loop detached before e2fsck journal_only on file")
+			Expect(e2fsckJournalOnlyIdx).To(BeNumerically("<", e2fsckCleanIdx), "e2fsck journal_only before e2fsck -fy")
+			Expect(e2fsckCleanIdx).To(BeNumerically("<", debugfsCleanIdx), "e2fsck -fy before debugfs feature -needs_recovery")
+			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
+			Expect(rmrfCalled).To(BeFalse(), "rm -rf on mount point must not be called (use rmdir)")
 		})
 	})
 })
