@@ -130,6 +130,14 @@ jobs:
         sudo apt-get clean
         df -h /
 
+    - name: Add swap to prevent OOM during package compilation
+      run: |
+        sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
+
     - uses: actions/checkout@v7
 
     - name: Set up Go
@@ -582,6 +590,14 @@ jobs:
           /usr/local/share/vcpkg /opt/microsoft || true
         sudo apt-get clean
         df -h /
+
+    - name: Add swap to prevent OOM during package compilation
+      run: |
+        sudo fallocate -l 8G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile
+        free -h
 
     - uses: actions/checkout@v7
 
