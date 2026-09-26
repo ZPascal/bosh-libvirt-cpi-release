@@ -490,6 +490,14 @@ jobs:
                 sudo mount -o loop,ro,noload "$ROOTFS" /mnt/compile-rootfs 2>/dev/null && {
                   echo "--- rootfs root listing ---"
                   sudo ls -la /mnt/compile-rootfs/ 2>/dev/null | head -20
+                  echo "--- bosh-init script (last 15 lines) ---"
+                  sudo tail -15 /mnt/compile-rootfs/bosh-init 2>/dev/null || echo "(no bosh-init)"
+                  echo "--- agent init log ---"
+                  sudo tail -20 /mnt/compile-rootfs/var/vcap/bosh/log/bosh-agent-init.log 2>/dev/null || echo "(no bosh-agent-init.log)"
+                  echo "--- agent current log ---"
+                  sudo tail -20 /mnt/compile-rootfs/var/vcap/bosh/log/current 2>/dev/null || echo "(no current log)"
+                  echo "--- dhclient log ---"
+                  sudo cat /mnt/compile-rootfs/tmp/dhclient.log 2>/dev/null | tail -10 || echo "(no dhclient.log)"
                   sudo umount /mnt/compile-rootfs 2>/dev/null
                 } || echo "(mount of $ROOTFS failed)"
               done
@@ -499,7 +507,7 @@ jobs:
                 root@192.168.122.10 'tail -30 /var/vcap/bosh/log/monit-blobstore_nginx.log /var/vcap/bosh/log/monit-blobstore.log 2>/dev/null || echo "(no monit-blobstore*.log)"' 2>/dev/null || echo "(SSH unavailable)"
             echo "=== CPI log (post-cleanup diagnostics) ===" && \
               ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-                root@192.168.122.10 'grep -h "post-cleanup\|e2fsck\|tune2fs\|needs_recovery\|journal_only\|clean needs_recovery" /var/vcap/bosh/log/libvirt_cpi/*.log /var/vcap/data/jobs/libvirt_cpi/*/*/libvirt_cpi.stdout.log 2>/dev/null | tail -30 || echo "(no CPI log entries)"' 2>/dev/null || echo "(SSH unavailable)"
+                root@192.168.122.10 'grep -h "post-cleanup\|e2fsck\|tune2fs\|needs_recovery\|journal_only\|clean needs_recovery\|cleanloop\|cleanScript" /var/vcap/bosh/log/libvirt_cpi/*.log /var/vcap/data/jobs/libvirt_cpi/*/*/libvirt_cpi.stdout.log 2>/dev/null | tail -30 || echo "(no CPI log entries)"' 2>/dev/null || echo "(SSH unavailable)"
             echo "=== clean.sh scripts on host ===" && \
               sudo find /tmp/bosh_libvirt_cpi -name '*.clean.sh' 2>/dev/null | head -5 | xargs sudo cat 2>/dev/null || echo "(no clean.sh found)"
             echo "=== NATS port 4222 reachable from CI host? ===" && \
@@ -880,11 +888,17 @@ jobs:
               sudo ls -la "$vd/" 2>/dev/null | head -10 || true
               sudo cat "$vd/rootfs/var/vcap/bosh/log/bosh-agent-init.log" 2>/dev/null | tail -30 || true
               sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || true
-              echo "=== warden-cpi-agent-env.json (cert fields only) ==="
-              sudo python3 -c "import json; f='$vd/rootfs/var/vcap/bosh/warden-cpi-agent-env.json'; d=json.load(open(f)); c=d.get('env',{}).get('bosh',{}).get('mbus',{}).get('cert',{}); print('cert.ca present:',bool(c.get('ca'))); print('cert.certificate present:',bool(c.get('certificate'))); print('cert.private_key present:',bool(c.get('private_key')))" 2>/dev/null || echo "(warden-cpi-agent-env.json not found or no cert)"
+              echo "=== warden-cpi-agent-env.json (mbus field) ==="
+              sudo python3 -c "import json; f='$vd/rootfs/var/vcap/bosh/warden-cpi-agent-env.json'; d=json.load(open(f)); c=d.get('env',{}).get('bosh',{}).get('mbus',{}); print('cert.ca present:',bool(c.get('cert',{}).get('ca'))); print('cert.certificate present:',bool(c.get('cert',{}).get('certificate'))); print('cert.private_key present:',bool(c.get('cert',{}).get('private_key'))); print('mbus url:',d.get('env',{}).get('bosh',{}).get('mbus',{}).get('url') or d.get('mbus','(none)'))" 2>/dev/null || echo "(warden-cpi-agent-env.json not found or no cert)"
+              echo "=== agent current log (last 20 lines) ==="
+              sudo cat "$vd/rootfs/var/vcap/bosh/log/current" 2>/dev/null | tail -20 || echo "(no current log)"
             done
             DIRVM=$(sudo find /tmp/bosh_libvirt_cpi/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -1)
-            [ -n "$DIRVM" ] && echo "=== NATS auth.json (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
+            [ -n "$DIRVM" ] && echo "=== NATS auth.json full (director VM) ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/auth.json" 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); users=d.get('authorization',{}).get('users',[]); print(f'{len(users)} users:'); [print('  '+u.get('user','?')) for u in users[:10]]" 2>/dev/null || echo "(no auth.json or parse error)"
+            [ -n "$DIRVM" ] && echo "=== NATS server log (last 50 lines) ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/data/sys/log/nats/nats.log" 2>/dev/null || echo "(no nats.log)"
+            [ -n "$DIRVM" ] && echo "=== director-subject file ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/director-subject" 2>/dev/null || echo "(no director-subject file)"
+            [ -n "$DIRVM" ] && echo "=== hm-subject file ===" && sudo cat "$DIRVM/rootfs/var/vcap/data/nats/hm-subject" 2>/dev/null || echo "(no hm-subject file)"
+            [ -n "$DIRVM" ] && echo "=== NATS port 4222 reachable from CI host? ===" && (nc -z 192.168.122.11 4222 2>/dev/null && echo "REACHABLE" || echo "NOT REACHABLE")
             [ -n "$DIRVM" ] && echo "=== monit-nats.log (last 100 lines) ===" && sudo tail -100 "$DIRVM/rootfs/var/vcap/bosh/log/monit-nats.log" 2>/dev/null || echo "(no monit-nats.log)"
             [ -n "$DIRVM" ] && echo "=== bosh-nats-sync.log (via data path, last 50 lines) ===" && sudo tail -50 "$DIRVM/rootfs/var/vcap/data/sys/log/nats/bosh-nats-sync.log" 2>/dev/null || echo "(no bosh-nats-sync.log)"
             [ -n "$DIRVM" ] && echo "=== bosh_nats_sync running? ===" && sudo cat "$DIRVM/rootfs/var/vcap/sys/run/bpm/nats/bosh_nats_sync.pid" 2>/dev/null | xargs -I{} sh -c 'kill -0 {} 2>/dev/null && echo "pid {} alive" || echo "pid {} dead/missing"' || echo "(no bosh_nats_sync pid file)"

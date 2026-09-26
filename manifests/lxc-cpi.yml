@@ -78,6 +78,7 @@ instance_groups:
   properties:
     nats:
       address: 127.0.0.1
+      listen_address: 0.0.0.0
       user: nats
       password: nats-password
       director_account:

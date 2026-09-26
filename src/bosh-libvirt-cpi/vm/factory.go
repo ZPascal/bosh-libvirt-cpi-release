@@ -1002,7 +1002,7 @@ func (f Factory) Create(
 			}
 		}
 		installNatsSyncWrapperViaRunner(f.runner, mntDir)
-		qemuStaticIP, _ := extractNetworkFromEnv(agentEnvBytes2)
+		qemuStaticIP, qemuStaticGW := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
 			qemuStaticIP = "127.0.0.1"
 		}
@@ -1087,6 +1087,23 @@ func (f Factory) Create(
 		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/sbin/curl")
 		_ = f.runner.Put(mntDir+"/usr/bin/curl", []byte(curlWrapper))
 		_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/bin/curl")
+		var qemuNetScript string
+		if qemuStaticIP != "127.0.0.1" && qemuStaticGW != "" {
+			qemuNetScript = "# Configure network: static IP from agent env\n" +
+				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
+				"if [ -n \"$IFACE\" ]; then\n" +
+				"  ip link set \"$IFACE\" up\n" +
+				"  ip addr add " + qemuStaticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  ip route add default via " + qemuStaticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
+				"fi\n"
+		} else {
+			qemuNetScript = "# Bring up network via DHCP\n" +
+				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
+				"if [ -n \"$IFACE\" ]; then\n" +
+				"  ip link set \"$IFACE\" up\n" +
+				"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
+				"fi\n"
+		}
 		initScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
 			"mount -t proc proc /proc 2>/dev/null || true\n" +
@@ -1101,12 +1118,7 @@ func (f Factory) Create(
 			"# Mount tmpfs at /var/vcap/store so postgres can write its data directory.\n" +
 			"mkdir -p /var/vcap/store\n" +
 			"mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true\n" +
-			"# Bring up network via DHCP\n" +
-			"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}')\n" +
-			"if [ -n \"$IFACE\" ]; then\n" +
-			"  ip link set \"$IFACE\" up\n" +
-			"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
-			"fi\n" +
+			qemuNetScript +
 			"python3 -c \"\n" +
 			"import http.server, socketserver, sys, time, subprocess, os\n" +
 			"socketserver.TCPServer.allow_reuse_address = True\n" +
