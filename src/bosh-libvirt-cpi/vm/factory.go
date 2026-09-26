@@ -287,7 +287,6 @@ func (f Factory) Create(
 				_, _, _ = f.runner.Execute("chmod", "0755", cpiPkgDir+"/cpi")
 			}
 		}
-		installNatsSyncWrapperViaRunner(f.runner, vmRootfs)
 		// Write a stub sv wrapper so the agent's "sv start monit" succeeds
 		// even when runsv can't acquire locks in restricted containers.
 		svStub := "#!/bin/sh\n" +
@@ -608,33 +607,6 @@ func (f Factory) Create(
 			"      for f in filenames:\n" +
 			"        try: os.chown(os.path.join(dirpath, f), 1000, 1000)\n" +
 			"        except: pass\n" +
-			"  # Install bosh_nats_sync retry wrapper before launching nats processes.\n" +
-			"  # /var/vcap/jobs is symlinked by bosh-agent at apply-spec time, so the\n" +
-			"  # binary only exists here in start_svc, not at create_vm time.\n" +
-			"  if svc == 'nats':\n" +
-			"    _ns_orig = '/var/vcap/jobs/nats/bin/bosh_nats_sync'\n" +
-			"    _ns_real = '/var/vcap/jobs/nats/bin/bosh_nats_sync.real'\n" +
-			"    if os.path.exists(_ns_orig) and not os.path.exists(_ns_real):\n" +
-			"      import shutil as _shutil; _shutil.move(_ns_orig, _ns_real)\n" +
-			"    if not os.path.exists(_ns_orig) and os.path.exists(_ns_real):\n" +
-			"      _D=chr(36)\n" +
-			"      open(_ns_orig,'w').write(\n" +
-			"        '#!/bin/sh\\n'\n" +
-			"        'for i in '+_D+'(seq 1 60); do\\n'\n" +
-			"        '  nc -z 127.0.0.1 4222 2>/dev/null && break\\n'\n" +
-			"        '  sleep 1\\n'\n" +
-			"        'done\\n'\n" +
-			"        'mkdir -p /var/vcap/bosh/log\\n'\n" +
-			"        'while true; do\\n'\n" +
-			"        '  _start='+_D+'(date +%s)\\n'\n" +
-			"        '  /var/vcap/jobs/nats/bin/bosh_nats_sync.real '+_D+'@\\n'\n" +
-			"        '  _rc='+_D+'?\\n'\n" +
-			"        '  _elapsed='+_D+'(('+_D+'(date +%s)-_start))\\n'\n" +
-			"        '  echo '+_D+'(date): bosh_nats_sync exited rc='+_D+'_rc after '+_D+'{_elapsed}s, restarting >> /var/vcap/bosh/log/monit-nats.log\\n'\n" +
-			"        '  [ '+_D+'_elapsed -lt 10 ] && sleep 5\\n'\n" +
-			"        'done\\n')\n" +
-			"      os.chmod(_ns_orig, 0o755)\n" +
-			"      log.write('installed bosh_nats_sync retry wrapper\\n'); log.flush()\n" +
 			"  # For postgres and other services: start all processes in bpm.yml\n" +
 			"  bpmyml = '/var/vcap/jobs/' + job + '/config/bpm.yml'\n" +
 			"  if os.path.exists(bpmyml):\n" +
@@ -1001,7 +973,6 @@ func (f Factory) Create(
 				_, _, _ = f.runner.Execute("chmod", "0755", cpiPkgDir+"/cpi")
 			}
 		}
-		installNatsSyncWrapperViaRunner(f.runner, mntDir)
 		qemuStaticIP, qemuStaticGW := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
 			qemuStaticIP = "127.0.0.1"
@@ -1566,36 +1537,19 @@ func (f Factory) Create(
 		//
 		// debugfs -w -R 'feature ...' requires no shell escaping, so it can be
 		// passed directly to runner.Execute.
-		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
-			cleanLoop := strings.TrimSpace(cleanLoopOut)
-			// Step 1: replay only the journal to make the filesystem consistent.
-			if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", cleanLoop); jErr != nil {
-				f.logger.Info(f.logTag, "e2fsck journal_only on %s (exit 1=replayed ok): %s %s", cleanLoop, jErr, jOut)
-			}
-			// Step 2: full check to set Filesystem state = clean.
-			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
-				f.logger.Info(f.logTag, "e2fsck on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
-			}
-			// Step 3: clear the needs_recovery feature bit directly in the superblock.
-			if dbOut, _, dbErr := f.runner.Execute("debugfs", "-w", "-R", "feature -needs_recovery", cleanLoop); dbErr != nil {
-				f.logger.Info(f.logTag, "debugfs feature -needs_recovery on %s: %s %s", cleanLoop, dbErr, dbOut)
-			}
-			_, _, _ = f.runner.Execute("sync")
-			_, _, _ = f.runner.Execute("losetup", "-d", cleanLoop)
-			_, _, _ = f.runner.Execute("sync")
-		} else {
-			f.logger.Warn(f.logTag, "losetup for clean loop failed (%s), falling back to file-based e2fsck", cleanLoopErr)
-			if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", vmExt4); jErr != nil {
-				f.logger.Info(f.logTag, "e2fsck journal_only fallback (exit 1=replayed ok): %s %s", jErr, jOut)
-			}
-			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
-				f.logger.Info(f.logTag, "e2fsck fallback (exit 1=fixed ok): %s %s", e2Err, e2Out)
-			}
-			if dbOut, _, dbErr := f.runner.Execute("debugfs", "-w", "-R", "feature -needs_recovery", vmExt4); dbErr != nil {
-				f.logger.Info(f.logTag, "debugfs feature -needs_recovery fallback on %s: %s %s", vmExt4, dbErr, dbOut)
-			}
-			_, _, _ = f.runner.Execute("sync")
+		// Run directly on the file to avoid a loop-device page-cache flush race:
+		// after losetup -d, dirty pages from debugfs writes may not have been
+		// flushed to the backing file before the kernel unmapped the loop device.
+		if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", vmExt4); jErr != nil {
+			f.logger.Info(f.logTag, "e2fsck journal_only (exit 1=replayed ok): %s %s", jErr, jOut)
 		}
+		if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
+			f.logger.Info(f.logTag, "e2fsck (exit 1=fixed ok): %s %s", e2Err, e2Out)
+		}
+		if dbOut, _, dbErr := f.runner.Execute("debugfs", "-w", "-R", "feature -needs_recovery", vmExt4); dbErr != nil {
+			f.logger.Info(f.logTag, "debugfs feature -needs_recovery on %s: %s %s", vmExt4, dbErr, dbOut)
+		}
+		_, _, _ = f.runner.Execute("sync")
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
 			EphemeralDisk: ephemeralDisk.ImagePath(),
@@ -1826,50 +1780,6 @@ func cpiWrapperScript() string {
 		"  fi\n" +
 		"fi\n" +
 		"exec /var/vcap/packages/libvirt_cpi/bin/cpi.real \"$@\"\n"
-}
-
-func natsSyncWrapperScript() string {
-	return "#!/bin/sh\n" +
-		"# Wait for nats-server port 4222 before first start so --signal reload succeeds.\n" +
-		"for i in $(seq 1 60); do\n" +
-		"  nc -z 127.0.0.1 4222 2>/dev/null && break\n" +
-		"  sleep 1\n" +
-		"done\n" +
-		"mkdir -p /var/vcap/bosh/log\n" +
-		"# Retry loop: restart bosh_nats_sync if it exits (crashes on startup are common\n" +
-		"# if nats-server is not yet ready to accept --signal reload).\n" +
-		"while true; do\n" +
-		"  _start=$(date +%s)\n" +
-		"  /var/vcap/jobs/nats/bin/bosh_nats_sync.real \"$@\"\n" +
-		"  _rc=$?\n" +
-		"  _elapsed=$(( $(date +%s) - _start ))\n" +
-		"  echo \"$(date): bosh_nats_sync exited rc=$_rc after ${_elapsed}s, restarting...\"" +
-		" >> /var/vcap/bosh/log/monit-nats.log\n" +
-		"  [ \"$_elapsed\" -lt 10 ] && sleep 5\n" +
-		"done\n"
-}
-
-// installNatsSyncWrapper replaces /var/vcap/jobs/nats/bin/bosh_nats_sync with a
-// shell wrapper that waits for nats-server readiness and retries on crash.
-// It is idempotent: if bosh_nats_sync.real already exists the rename is skipped.
-
-// installNatsSyncWrapperViaRunner is like installNatsSyncWrapper but uses a
-// Runner so file operations execute on the libvirt host (not locally).
-func installNatsSyncWrapperViaRunner(r driver.Runner, rootfs string) {
-	binDir := rootfs + "/var/vcap/jobs/nats/bin"
-	orig := binDir + "/bosh_nats_sync"
-	real := binDir + "/bosh_nats_sync.real"
-	if _, _, err := r.Execute("test", "-e", orig); err != nil {
-		return // nats job not installed in this rootfs
-	}
-	if _, _, err := r.Execute("test", "-e", real); err != nil {
-		// Not yet renamed — move original out of the way.
-		if _, _, mvErr := r.Execute("mv", orig, real); mvErr != nil {
-			return
-		}
-	}
-	_ = r.Put(orig, []byte(natsSyncWrapperScript()))
-	_, _, _ = r.Execute("chmod", "0755", orig)
 }
 
 // shellEscape single-quote-escapes s for embedding in a shell printf '%s' '...'
