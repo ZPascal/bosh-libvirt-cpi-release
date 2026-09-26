@@ -1539,20 +1539,32 @@ func (f Factory) Create(
 		// explicitly before QEMU boots the image — otherwise the kernel panics
 		// with "VFS: Unable to mount root fs".
 		//
-		// e2fsck on a raw file is unreliable (userspace I/O, no block-device
-		// flush guarantees). Instead: re-attach the image as a fresh loop device,
-		// run e2fsck on the loop device (proper block-device semantics), then
-		// detach. This reliably commits the journal and clears needs_recovery.
+		// Two steps are required:
+		//   1. e2fsck -fy: replay the journal and set Filesystem state = clean.
+		//   2. tune2fs -O ^needs_recovery: clear the needs_recovery bit from
+		//      s_feature_incompat. e2fsck sets the state field but does NOT
+		//      remove the feature bit; tune2fs removes the bit explicitly.
+		//
+		// tune2fs -O ^needs_recovery cannot be passed directly to runner.Execute
+		// because Execute escapes '^' to '\^'. Write a tiny shell script and run
+		// it via 'sh' to avoid the escaping problem.
 		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
 			cleanLoop := strings.TrimSpace(cleanLoopOut)
-			// e2fsck -fy on a loop device replays the journal, runs a full consistency
-			// check, and writes a clean superblock on exit — which clears needs_recovery.
-			// Running on a proper block device (loop) rather than a raw file gives
-			// correct block-device flush semantics so the clean superblock reaches disk.
-			// Exit 1 means errors were found and fixed (expected after an abrupt umount);
-			// exit 0 means no errors — both indicate the fs is now clean.
+			// e2fsck -fy: replay journal, fix metadata, set Filesystem state = clean.
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
+			}
+			// tune2fs -O ^needs_recovery: remove the feature bit from s_feature_incompat.
+			// Must run via a shell script because runner.Execute escapes '^' to '\^'.
+			cleanScript := "/tmp/tune2fs-cleanloop-" + vmID + ".sh"
+			scriptContent := "#!/bin/sh\ntune2fs -O ^needs_recovery " + cleanLoop + "\n"
+			if putErr := f.runner.Put(cleanScript, []byte(scriptContent)); putErr == nil {
+				if t2Out, _, t2Err := f.runner.Execute("sh", cleanScript); t2Err != nil {
+					f.logger.Info(f.logTag, "tune2fs ^needs_recovery on %s: %s %s", cleanLoop, t2Err, t2Out)
+				}
+				_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
+			} else {
+				f.logger.Warn(f.logTag, "could not write tune2fs script (%s); needs_recovery may persist", putErr)
 			}
 			_, _, _ = f.runner.Execute("sync")
 			_, _, _ = f.runner.Execute("losetup", "-d", cleanLoop)
@@ -1563,14 +1575,6 @@ func (f Factory) Create(
 				f.logger.Info(f.logTag, "e2fsck fallback (exit 1=fixed ok): %s %s", e2Err, e2Out)
 			}
 			_, _, _ = f.runner.Execute("sync")
-		}
-		// Diagnostic: log whether needs_recovery is still set after cleanup.
-		if t2Out, _, _ := f.runner.Execute("tune2fs", "-l", vmExt4); t2Out != "" {
-			for _, line := range strings.Split(t2Out, "\n") {
-				if strings.Contains(line, "needs_recovery") || strings.Contains(line, "Filesystem state") || strings.Contains(line, "Filesystem features") {
-					f.logger.Info(f.logTag, "post-cleanup tune2fs: %s", strings.TrimSpace(line))
-				}
-			}
 		}
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,

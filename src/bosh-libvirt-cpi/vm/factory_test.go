@@ -322,6 +322,7 @@ var _ = Describe("vm.Factory", func() {
 			losetupDetachIdx := -1   // losetup -d /dev/loop7
 			cleanLoopAttachIdx := -1 // second losetup: clean loop (/dev/loop8)
 			e2fsckCleanIdx := -1     // e2fsck -fy on /dev/loop8
+			tune2fsCleanIdx := -1    // sh /tmp/tune2fs-cleanloop-vm-uuid-vm-1.sh
 			cleanLoopDetachIdx := -1 // losetup -d /dev/loop8
 			qemuImgResizeCalled := false
 			rmrfCalled := false
@@ -359,6 +360,9 @@ var _ = Describe("vm.Factory", func() {
 				if cmd == "e2fsck -fy /dev/loop8" {
 					e2fsckCleanIdx = i
 				}
+				if cmd == "sh /tmp/tune2fs-cleanloop-vm-uuid-vm-1.sh" {
+					tune2fsCleanIdx = i
+				}
 				if cmd == "losetup -d /dev/loop8" {
 					cleanLoopDetachIdx = i
 				}
@@ -381,6 +385,7 @@ var _ = Describe("vm.Factory", func() {
 			Expect(losetupDetachIdx).To(BeNumerically(">=", 0), "losetup -d /dev/loop7 must be called")
 			Expect(cleanLoopAttachIdx).To(BeNumerically(">=", 0), "second losetup -f --show (clean loop) must be called")
 			Expect(e2fsckCleanIdx).To(BeNumerically(">=", 0), "e2fsck -fy on clean loop must be called")
+			Expect(tune2fsCleanIdx).To(BeNumerically(">=", 0), "sh tune2fs-cleanloop script must be called")
 			Expect(cleanLoopDetachIdx).To(BeNumerically(">=", 0), "losetup -d /dev/loop8 (clean loop detach) must be called")
 			Expect(truncateIdx).To(BeNumerically("<", losetupAttachIdx), "truncate before losetup attach")
 			Expect(losetupAttachIdx).To(BeNumerically("<", e2fsckPreResizeIdx), "losetup attach before pre-resize e2fsck")
@@ -392,7 +397,8 @@ var _ = Describe("vm.Factory", func() {
 			Expect(umountIdx).To(BeNumerically("<", losetupDetachIdx), "umount before losetup detach")
 			Expect(losetupDetachIdx).To(BeNumerically("<", cleanLoopAttachIdx), "mount loop detached before clean loop attached")
 			Expect(cleanLoopAttachIdx).To(BeNumerically("<", e2fsckCleanIdx), "clean loop attached before e2fsck")
-			Expect(e2fsckCleanIdx).To(BeNumerically("<", cleanLoopDetachIdx), "e2fsck before clean loop detach")
+			Expect(e2fsckCleanIdx).To(BeNumerically("<", tune2fsCleanIdx), "e2fsck before tune2fs ^needs_recovery")
+			Expect(tune2fsCleanIdx).To(BeNumerically("<", cleanLoopDetachIdx), "tune2fs before clean loop detach")
 			Expect(qemuImgResizeCalled).To(BeFalse(), "qemu-img resize must not be called")
 			Expect(rmrfCalled).To(BeFalse(), "rm -rf on mount point must not be called (use rmdir)")
 		})
