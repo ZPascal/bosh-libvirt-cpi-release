@@ -152,7 +152,7 @@ instance_groups:
         ca_cert: ((director_ssl.ca))
       resurrector_enabled: true
     agent:
-      mbus: nats://nats:nats-password@((internal_ip)):4222
+      mbus: nats://((internal_ip)):4222
     libvirt_cpi:
       backend_uri: lxc:///
       host: ((libvirt_host))
