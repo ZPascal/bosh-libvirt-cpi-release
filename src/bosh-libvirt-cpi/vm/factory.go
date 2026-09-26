@@ -1545,11 +1545,17 @@ func (f Factory) Create(
 		// detach. This reliably commits the journal and clears needs_recovery.
 		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
 			cleanLoop := strings.TrimSpace(cleanLoopOut)
+			// Step 1: replay the journal so the filesystem is in a consistent state.
+			// e2fsck -E journal_only replays without a full scan; exit 1 means fixes
+			// were applied (expected), exit 0 means nothing to do — both are OK.
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-E", "journal_only", "-fy", cleanLoop); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck journal_only on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
 			}
-			// tune2fs -O ^needs_recovery: runner.Execute escapes ^ to \^ so use a
-			// shell script written via Put to pass the literal ^ character.
+			// Step 2: clear the needs_recovery feature bit from the superblock.
+			// runner.Execute escapes ^ to \^ via shellEscape, so use a shell script
+			// written via Put to pass the literal ^ to tune2fs.
+			// Do NOT run another e2fsck after this — e2fsck re-opens the journal and
+			// would set needs_recovery again, undoing this step.
 			cleanScript := vmExt4 + ".clean.sh"
 			scriptBody := fmt.Sprintf("#!/bin/sh\ntune2fs -O '^needs_recovery' '%s'\n", cleanLoop)
 			if putErr := f.runner.Put(cleanScript, []byte(scriptBody)); putErr == nil {
@@ -1557,9 +1563,6 @@ func (f Factory) Create(
 					f.logger.Info(f.logTag, "tune2fs on clean loop %s: %s %s", cleanLoop, t2Err, t2Out)
 				}
 				_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
-			}
-			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
-				f.logger.Info(f.logTag, "e2fsck full on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
 			}
 			_, _, _ = f.runner.Execute("sync")
 			_, _, _ = f.runner.Execute("losetup", "-d", cleanLoop)
@@ -1572,8 +1575,12 @@ func (f Factory) Create(
 			_, _, _ = f.runner.Execute("sync")
 		}
 		// Diagnostic: log whether needs_recovery is still set after cleanup.
-		if fileOut, _, _ := f.runner.Execute("file", vmExt4); fileOut != "" {
-			f.logger.Info(f.logTag, "post-cleanup fs check: %s", fileOut)
+		if t2Out, _, _ := f.runner.Execute("tune2fs", "-l", vmExt4); t2Out != "" {
+			for _, line := range strings.Split(t2Out, "\n") {
+				if strings.Contains(line, "needs_recovery") || strings.Contains(line, "Filesystem state") || strings.Contains(line, "Filesystem features") {
+					f.logger.Info(f.logTag, "post-cleanup tune2fs: %s", strings.TrimSpace(line))
+				}
+			}
 		}
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmExt4,
