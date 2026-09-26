@@ -1545,28 +1545,30 @@ func (f Factory) Create(
 			_, _, _ = f.runner.Execute("sync")
 		}
 		// Clear the needs_recovery flag left by the mount/inject/umount cycle.
-		// The kernel ext4 driver sets needs_recovery when the journal is active
-		// and only clears it after a successful journal checkpoint on unmount.
-		// In practice the flag persists through losetup -d and must be cleared
-		// explicitly before QEMU boots the image — otherwise the kernel panics
-		// with "VFS: Unable to mount root fs".
+		// The kernel ext4 driver sets needs_recovery in s_feature_incompat when it
+		// journals a write. On a clean umount the driver should clear the bit, but
+		// with a loopback device the final journal checkpoint may not reach the
+		// backing file before losetup -d completes, leaving the bit set.
+		// A QEMU guest kernel then refuses to mount the image and panics.
 		//
-		// Three steps are required:
-		//   1. e2fsck -E journal_only: replay ONLY the journal transactions and
-		//      checkpoint the journal superblock. This is the canonical way to
-		//      clear needs_recovery — tune2fs refuses to remove the bit if the
-		//      journal's internal sequence number shows uncommitted transactions.
-		//   2. e2fsck -fy: full filesystem check to set Filesystem state = clean.
-		//   3. tune2fs -O ^needs_recovery: belt-and-suspenders removal of the
-		//      feature bit from s_feature_incompat.
+		// The only reliable way to clear needs_recovery on a journaled ext4 is
+		// debugfs -w -R 'feature -needs_recovery'. tune2fs -O ^needs_recovery
+		// prints "Cannot clear needs_recovery on a journaling filesystem" and
+		// exits non-zero when has_journal is also set (which it always is here).
+		// e2fsck -E journal_only replays the journal but does not remove the
+		// feature bit from s_feature_incompat.
 		//
-		// tune2fs -O ^needs_recovery cannot be passed directly to runner.Execute
-		// because Execute escapes '^' to '\^'. Write a tiny shell script and run
-		// it via 'sh' to avoid the escaping problem.
+		// Sequence:
+		//   1. e2fsck -E journal_only: replay the journal so the filesystem is
+		//      internally consistent before we edit the superblock.
+		//   2. e2fsck -fy: full check to set Filesystem state = clean.
+		//   3. debugfs -w -R 'feature -needs_recovery': directly clear the bit.
+		//
+		// debugfs -w -R 'feature ...' requires no shell escaping, so it can be
+		// passed directly to runner.Execute.
 		if cleanLoopOut, _, cleanLoopErr := f.runner.Execute("losetup", "-f", "--show", vmExt4); cleanLoopErr == nil {
 			cleanLoop := strings.TrimSpace(cleanLoopOut)
-			// Step 1: replay only the journal to checkpoint it and clear needs_recovery.
-			// Exit 0 = already clean; exit 1 = journal replayed (both are fine here).
+			// Step 1: replay only the journal to make the filesystem consistent.
 			if jOut, _, jErr := f.runner.Execute("e2fsck", "-E", "journal_only", cleanLoop); jErr != nil {
 				f.logger.Info(f.logTag, "e2fsck journal_only on %s (exit 1=replayed ok): %s %s", cleanLoop, jErr, jOut)
 			}
@@ -1574,16 +1576,9 @@ func (f Factory) Create(
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", cleanLoop); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck on clean loop %s (exit 1=fixed ok): %s %s", cleanLoop, e2Err, e2Out)
 			}
-			// Step 3: remove the needs_recovery feature bit via shell script (^ escaping).
-			cleanScript := "/tmp/tune2fs-cleanloop-" + vmID + ".sh"
-			scriptContent := "#!/bin/sh\ntune2fs -O ^needs_recovery " + cleanLoop + "\n"
-			if putErr := f.runner.Put(cleanScript, []byte(scriptContent)); putErr == nil {
-				if t2Out, _, t2Err := f.runner.Execute("sh", cleanScript); t2Err != nil {
-					f.logger.Info(f.logTag, "tune2fs ^needs_recovery on %s: %s %s", cleanLoop, t2Err, t2Out)
-				}
-				_, _, _ = f.runner.Execute("rm", "-f", cleanScript)
-			} else {
-				f.logger.Warn(f.logTag, "could not write tune2fs script (%s); needs_recovery may persist", putErr)
+			// Step 3: clear the needs_recovery feature bit directly in the superblock.
+			if dbOut, _, dbErr := f.runner.Execute("debugfs", "-w", "-R", "feature -needs_recovery", cleanLoop); dbErr != nil {
+				f.logger.Info(f.logTag, "debugfs feature -needs_recovery on %s: %s %s", cleanLoop, dbErr, dbOut)
 			}
 			_, _, _ = f.runner.Execute("sync")
 			_, _, _ = f.runner.Execute("losetup", "-d", cleanLoop)
@@ -1595,6 +1590,9 @@ func (f Factory) Create(
 			}
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", vmExt4); e2Err != nil {
 				f.logger.Info(f.logTag, "e2fsck fallback (exit 1=fixed ok): %s %s", e2Err, e2Out)
+			}
+			if dbOut, _, dbErr := f.runner.Execute("debugfs", "-w", "-R", "feature -needs_recovery", vmExt4); dbErr != nil {
+				f.logger.Info(f.logTag, "debugfs feature -needs_recovery fallback on %s: %s %s", vmExt4, dbErr, dbOut)
 			}
 			_, _, _ = f.runner.Execute("sync")
 		}
