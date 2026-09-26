@@ -494,6 +494,11 @@ jobs:
                 root@192.168.122.10 'grep -h "post-cleanup\|e2fsck\|tune2fs\|needs_recovery\|journal_only\|clean needs_recovery" /var/vcap/bosh/log/libvirt_cpi/*.log /var/vcap/data/jobs/libvirt_cpi/*/*/libvirt_cpi.stdout.log 2>/dev/null | tail -30 || echo "(no CPI log entries)"' 2>/dev/null || echo "(SSH unavailable)"
             echo "=== clean.sh scripts on host ===" && \
               sudo find /tmp/bosh_libvirt_cpi -name '*.clean.sh' 2>/dev/null | head -5 | xargs sudo cat 2>/dev/null || echo "(no clean.sh found)"
+            echo "=== NATS port 4222 reachable from CI host? ===" && \
+              (nc -z 192.168.122.10 4222 2>/dev/null && echo "REACHABLE" || echo "NOT REACHABLE (connection refused - NATS not listening on 0.0.0.0?)")
+            echo "=== NATS listen address (via SSH to director) ===" && \
+              ssh -i /tmp/bosh-libvirt-ssh-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                root@192.168.122.10 'ss -tlnp | grep 4222 || echo "(nothing on 4222)"' 2>/dev/null || echo "(SSH unavailable)"
             exit 1
           }
         echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
