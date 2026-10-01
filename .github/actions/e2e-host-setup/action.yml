@@ -1,0 +1,41 @@
+name: E2E Host Setup
+description: Common setup steps shared by e2e-qemu and e2e-lxc jobs
+
+runs:
+  using: composite
+  steps:
+  - name: Free disk space
+    shell: bash
+    run: |
+      sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+        /usr/lib/jvm /usr/share/swift /usr/local/share/chromium /usr/local/share/powershell \
+        /opt/hostedtoolcache/CodeQL /opt/hostedtoolcache/Ruby /opt/hostedtoolcache/PyPy \
+        /usr/local/share/vcpkg /opt/microsoft || true
+      sudo apt-get clean
+      df -h /
+
+  - name: Add swap to prevent OOM during package compilation
+    shell: bash
+    run: |
+      sudo fallocate -l 8G /swapfile2 || sudo dd if=/dev/zero of=/swapfile2 bs=1M count=8192
+      sudo chmod 600 /swapfile2
+      sudo mkswap /swapfile2
+      sudo swapon /swapfile2
+      free -h
+
+  - name: Patch golang-1-linux packaging with actual GOROOT
+    shell: bash
+    run: |
+      GO_VERSION=$(go env GOVERSION | sed 's/go//')
+      # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
+      # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
+      # fills it up, causing all subsequent package compilations to fail with ENOSPC.
+      printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
+      printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
+      printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+      printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
+      printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
+      printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging
+      chmod +x packages/golang-1-linux/packaging
+      printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+

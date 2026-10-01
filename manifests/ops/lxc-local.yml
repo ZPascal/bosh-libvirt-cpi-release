@@ -1,0 +1,6 @@
+---
+# Placeholder: no modifications needed for local LXC create-env.
+# SSH credentials remain in both cloud_provider and instance_groups so
+# both the bootstrap CPI (running on this host) and the deployed director's
+# CPI can reach libvirtd via the SSH tunnel on 192.168.122.1.
+[]

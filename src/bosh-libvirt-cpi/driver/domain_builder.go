@@ -7,6 +7,13 @@ type VMDomainProps struct {
 	// Network is the libvirt network name for the VM's interface (e.g. "default").
 	// If empty, builders use "default".
 	Network string
+	// MAC is an optional fixed MAC address for the VM's network interface.
+	// If empty, libvirt auto-generates one.
+	MAC string
+	// Kernel and Initrd enable direct kernel boot (skips BIOS/disk bootloader).
+	// When set, the VM boots the given kernel with the rootfs as a 9p filesystem.
+	Kernel string
+	Initrd string
 }
 
 // DomainDiskPaths holds the paths to disk images for a VM domain.
