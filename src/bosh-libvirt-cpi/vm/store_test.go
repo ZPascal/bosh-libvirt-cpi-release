@@ -2,6 +2,7 @@ package vm_test
 
 import (
 	"errors"
+	"os"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -14,11 +15,20 @@ var _ = Describe("Store", func() {
 	var (
 		runner *fakes.FakeRunner
 		store  vm.Store
+		tmpDir string
 	)
 
 	BeforeEach(func() {
+		var err error
+		tmpDir, err = os.MkdirTemp("", "store-test")
+		Expect(err).ToNot(HaveOccurred())
+
 		runner = &fakes.FakeRunner{}
-		store = vm.NewStore("/vms", runner)
+		store = vm.NewStore(tmpDir, runner)
+	})
+
+	AfterEach(func() {
+		_ = os.RemoveAll(tmpDir)
 	})
 
 	Describe("List", func() {

@@ -47,6 +47,33 @@ properties:
       The '~' prefix is expanded to the connecting user's home directory.
     default: "~/.bosh_libvirt_cpi"
 
+  inject_backend_uri:
+    description: >
+      Libvirt connection URI for the deployed director's CPI. Injected at create_vm time
+      so the agent-rendered cpi.json (which defaults to qemu:///system) is overwritten
+      with the correct backend. Falls back to backend_uri if unset.
+    default: ""
+  inject_host:
+    description: >
+      SSH host for the deployed director's CPI to use when tunnelling to libvirtd.
+      Injected into the VM rootfs at create_vm time so the agent-rendered cpi.json
+      is overwritten with correct credentials on first boot. Falls back to host if unset.
+    default: ""
+  inject_username:
+    description: SSH username for inject_host. Falls back to username if unset.
+    default: ""
+  inject_private_key:
+    description: SSH private key (PEM) for inject_host. Falls back to private_key if unset.
+    default: ""
+  inject_host_key:
+    description: SSH host public key for inject_host in authorized_keys format. Falls back to host_key if unset.
+    default: ""
+  inject_store_dir:
+    description: >
+      store_dir for the deployed director's CPI. Injected at create_vm time.
+      Falls back to store_dir if unset.
+    default: ""
+
   ntp:
     description: List of NTP server addresses for the BOSH agent.
     default:
@@ -75,3 +102,13 @@ properties:
     description: HTTPS proxy for outbound connections.
   env.no_proxy:
     description: Comma-separated list of hosts to bypass the proxy.
+
+  mbus_bootstrap_ssl.ca:
+    description: CA certificate for the mbus bootstrap TLS listener (from mbus_bootstrap_ssl variable).
+    default: ""
+  mbus_bootstrap_ssl.certificate:
+    description: Certificate for the mbus bootstrap TLS listener.
+    default: ""
+  mbus_bootstrap_ssl.private_key:
+    description: Private key for the mbus bootstrap TLS listener.
+    default: ""

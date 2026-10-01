@@ -12,6 +12,6 @@ func NewMisc() Misc {
 
 func (m Misc) Info() (apiv1.Info, error) {
 	return apiv1.Info{
-		StemcellFormats: []string{"general-ovf", "vsphere-ovf"},
+		StemcellFormats: []string{"warden-tar"},
 	}, nil
 }
