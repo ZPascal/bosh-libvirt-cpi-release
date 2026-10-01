@@ -1,0 +1,12 @@
+---
+# Replaces the manual network with a dynamic network for local CI use
+# where the runner IP is DHCP-assigned and outside the hardcoded subnet.
+- type: replace
+  path: /networks/name=default/type
+  value: dynamic
+- type: replace
+  path: /networks/name=default/subnets
+  value:
+  - cloud_properties: {}
+- type: remove
+  path: /instance_groups/name=bosh/networks/0/static_ips?
