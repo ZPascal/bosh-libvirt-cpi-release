@@ -148,4 +148,38 @@ var _ = Describe("stemcell.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Uploading stemcell tarball to remote host"))
 		})
 	})
+
+	Describe("ImportFromPath (ext4 format)", func() {
+		BeforeEach(func() {
+			builder.DiskImageFormatResult = "ext4"
+			builder.BuildStemcellDomainXML = "<domain/>"
+		})
+
+		It("builds the ext4 image by extracting, formatting, mounting and copying the rootfs", func() {
+			runner.UploadFunc = func(src, dst string) error { return nil }
+			defer func() { runner.UploadFunc = nil }()
+
+			var executedCmds []string
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				executedCmds = append(executedCmds, name+" "+strings.Join(args, " "))
+				// du -sm must return a parseable size so the ext4 image is sized.
+				if name == "du" {
+					return "500\t/store/stemcells/sc-uuid-1/image.ext4.rootfs", 0, nil
+				}
+				return "", 0, nil
+			}
+			defer func() { runner.ExecuteFunc = nil }()
+
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			Expect(err).ToNot(HaveOccurred())
+
+			joined := strings.Join(executedCmds, "\n")
+			Expect(joined).To(ContainSubstring("tar"), "rootfs tarball must be extracted")
+			Expect(joined).To(ContainSubstring("du -sm"), "ext4 size must be derived from the rootfs")
+			Expect(joined).To(ContainSubstring("mkfs.ext4 -F"), "ext4 image must be formatted")
+			Expect(joined).To(ContainSubstring("mount -o loop"), "ext4 image must be mounted")
+			Expect(joined).To(ContainSubstring("cp -a"), "rootfs must be copied into the ext4 image")
+			Expect(joined).To(ContainSubstring("umount"), "ext4 image must be unmounted")
+		})
+	})
 })
