@@ -256,7 +256,7 @@ func (f Factory) Create(
 // provisionLXCRootfs prepares the per-VM rootfs for the LXC (dir) backend:
 // it copies the stemcell rootfs, injects the agent env, wrapper scripts and
 // the /bosh-lxc-init script, and returns the disk paths for the domain XML.
-// On error the caller (Create) cleans up the VM.
+// On any error it returns the error; the caller (Create) cleans up the VM.
 func (f Factory) provisionLXCRootfs(
 	vmID string,
 	stemcell bstem.Stemcell,
@@ -1202,13 +1202,20 @@ func (f Factory) provisionExt4Rootfs(
 	// Grow the root ext4 image to 65G so /var/vcap/data has enough space for
 	// BOSH package compilation. The stemcell ships a ~2GB image.
 	//
-	// Two non-obvious choices below:
-	//   - truncate (not qemu-img) to extend the file: qemu-img updates s_mtime,
-	//     which makes resize2fs demand an e2fsck first.
-	//   - losetup before resize2fs: on a loop device resize2fs reads the size via
-	//     BLKGETSIZE64; against a plain file it falls back to fstat, which on some
-	//     e2fsprogs versions silently returns the wrong size.
-	// The per-step comments inline below cover the rest.
+	// Resize sequence:
+	//   1. truncate -s 65G  — extends the file (sparse); avoids qemu-img
+	//      which updates s_mtime and causes resize2fs to demand e2fsck.
+	//   2. losetup -f --show — attach as loop device so resize2fs can use
+	//      BLKGETSIZE64 ioctl; without a loop device resize2fs falls back to
+	//      fstat which on some e2fsprogs versions silently returns wrong size.
+	//   3. e2fsck -fy /dev/loopN — fix any metadata inconsistencies (e.g.
+	//      bitmap checksum mismatch) BEFORE resize2fs so it doesn't abort.
+	//      Safe here: the loop device sees the original 2GB filesystem, so
+	//      e2fsck knows the correct size and won't truncate data.
+	//   4. resize2fs -f /dev/loopN — grows the filesystem to fill 65G.
+	//   5. Mount /dev/loopN directly (keep loop alive through mount so the
+	//      resized view is guaranteed — no re-attach, no cache flush needed).
+	//   6. After umount: losetup -d /dev/loopN.
 	mntDir := vmExt4 + ".mnt"
 	if _, _, mkErr := f.runner.Execute("mkdir", "-p", mntDir); mkErr != nil {
 		return driver.DomainDiskPaths{}, bosherr.WrapError(mkErr, "Creating ext4 mount dir")
@@ -1253,7 +1260,7 @@ func (f Factory) provisionExt4Rootfs(
 		}
 	}
 	// Mount: prefer the still-attached loop device so the kernel uses the
-	// same block-device representation that resize2fs operated on. Fall back
+	// same block-device representation that resize2fs operated on.  Fall back
 	// to "mount -o loop vmExt4" when losetup was unavailable or resize failed.
 	var mountArgs []string
 	if loopDevForMount != "" {
