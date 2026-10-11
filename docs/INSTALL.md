@@ -46,7 +46,7 @@ The binary reads a single JSON config file on startup. That file's path is passe
 | Backend | URI | OS requirement | Disk format | Good for |
 |---------|-----|---------------|-------------|----------|
 | QEMU/KVM | `qemu:///system` | Linux with KVM | qcow2 | Production, full isolation |
-| QEMU/KVM kernel-boot | `qemu:///system` | Linux with KVM | ext4 raw | Package compilation VMs |
+| QEMU/KVM kernel-boot | `qemu:///system?kernel=1` | Linux with KVM | ext4 raw | Package compilation VMs |
 | LXC | `lxc:///` | Linux only | directory tree | Low-overhead CI workloads |
 | VirtualBox | `vbox:///session` | macOS or Linux | vmdk | Local development |
 
@@ -450,7 +450,7 @@ bosh create-env manifests/lxc-cpi.yml \
 |----------|--------|
 | `qemu-local.yml` | Sets `internal_ip` to `192.168.122.10`, network to libvirt default |
 | `lxc-local.yml` | Sets `internal_ip` to `192.168.122.11`, network to libvirt default |
-| `qemu-kernel-boot.yml` | Switches backend URI to `qemu:///system` and disk format to ext4 for direct kernel boot |
+| `qemu-kernel-boot.yml` | Switches backend URI to `qemu:///system?kernel=1` and disk format to ext4 for direct kernel boot |
 | `qemu-mac.yml` | Pins the Director VM's MAC address so it always gets the same DHCP lease |
 | `lxc-mac.yml` | Same as above for LXC |
 | `qemu-director-ssh.yml` | Injects `Host`, `Username`, `PrivateKey`, `HostKey` into the Director's CPI config so the deployed Director can SSH back to the host |
@@ -607,7 +607,7 @@ Download the warden-boshlite stemcell and upload it:
 
 ```bash
 bosh -e your-director upload-stemcell \
-  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-jammy-go_agent \
+  https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-noble-go_agent \
   --client admin --client-secret admin-password
 ```
 
@@ -720,7 +720,7 @@ To enable this mode include the `qemu-kernel-boot.yml` ops file in your `create-
 -v kernel_path=/boot/vmlinuz-$(uname -r)
 ```
 
-The kernel must be compatible with the Ubuntu Jammy userspace in the stemcell. The host's own kernel works if the host is also Ubuntu Jammy. If the host runs a different distribution, copy a compatible kernel to the host and point `kernel_path` at it.
+The kernel must be compatible with the Ubuntu Noble userspace in the stemcell. The host's own kernel works if the host is also Ubuntu Noble. If the host runs a different distribution, copy a compatible kernel to the host and point `kernel_path` at it.
 
 ---
 

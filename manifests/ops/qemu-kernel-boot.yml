@@ -1,8 +1,8 @@
 ---
-# Switches the QEMU CPI to direct kernel boot mode (virtio-9p rootfs).
+# Switches the QEMU CPI to direct kernel boot mode (ext4 raw rootfs on /dev/vda).
 # Requires the host kernel path to be set via cloud_properties.kernel per VM,
 # and changes the backend URI to qemu:///system?kernel=1 so the CPI selects
-# QEMUKernelDomainBuilder which extracts the stemcell as a directory.
+# QEMUKernelDomainBuilder which builds the stemcell as an ext4 disk image.
 - type: replace
   path: /instance_groups/name=bosh/properties/libvirt_cpi/backend_uri
   value: qemu:///system?kernel=1
