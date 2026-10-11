@@ -1,0 +1,8 @@
+---
+# Uses /tmp for store_dir in CI to avoid cross-filesystem rename failures.
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/store_dir
+  value: /tmp/bosh_libvirt_cpi
+- type: replace
+  path: /cloud_provider/properties/store_dir
+  value: /tmp/bosh_libvirt_cpi

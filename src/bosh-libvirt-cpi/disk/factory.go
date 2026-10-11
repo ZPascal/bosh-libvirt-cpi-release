@@ -50,22 +50,30 @@ func (f Factory) Create(size int) (Disk, error) {
 
 	disk := f.newDisk(apiv1.NewDiskCID(id))
 
-	_, _, err = f.runner.Execute("mkdir", "-p", disk.Path())
-	if err != nil {
+	if _, _, err := f.runner.Execute("mkdir", "-p", disk.Path()); err != nil {
 		return nil, bosherr.WrapError(err, "Creating disk parent")
 	}
 
-	// Create a sparse raw disk image of `size` MB at disk.ImagePath().
-	_, _, err = f.runner.Execute(
-		"dd",
-		"if=/dev/zero",
-		"of="+disk.ImagePath(),
-		"bs=1M",
-		"count=0",
-		"seek="+strconv.Itoa(size),
-	)
-	if err != nil {
-		return nil, bosherr.WrapError(err, "Creating disk image")
+	sizeStr := strconv.Itoa(size) + "M"
+	// Try qemu-img first (produces qcow2 for QEMU/KVM); fall back to dd (raw).
+	out, _, qemuErr := f.runner.Execute("qemu-img", "create", "-f", "qcow2", disk.ImagePath(), sizeStr)
+	if qemuErr != nil {
+		// Fall back to sparse raw image via dd.
+		_, _, err = f.runner.Execute(
+			"dd",
+			"if=/dev/zero",
+			"of="+disk.ImagePath(),
+			"bs=1M",
+			"count=0",
+			"seek="+strconv.Itoa(size),
+		)
+		if err != nil {
+			return nil, bosherr.WrapErrorf(err, "Creating disk image (qemu-img failed: %s)", out)
+		}
+	} else {
+		if _, _, err := f.runner.Execute("chmod", "0644", disk.ImagePath()); err != nil {
+			return nil, bosherr.WrapError(err, "Setting disk image permissions")
+		}
 	}
 
 	return disk, nil

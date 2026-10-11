@@ -8,9 +8,12 @@ fi
 
 source ${pkg_dir}/bosh/compile.env
 
-# CGO_ENABLED=1 is required by libvirt.org/go/libvirt (cgo bindings).
-# The build host must have libvirt-dev installed:
-#   apt-get install -y libvirt-dev
+# Install libvirt development headers and runtime library so CGO can compile
+# and link against libvirt.  pkg-config is required by the libvirt Go bindings.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y --no-install-recommends libvirt-dev libvirt0 pkg-config patchelf
+
 export CGO_ENABLED=1
 
 mkdir -p /tmp/go/.cache
@@ -19,8 +22,63 @@ export GOCACHE=${GOPATH}/.cache
 
 cd ${BOSH_COMPILE_TARGET}/bosh-libvirt-cpi
 mkdir -p ${BOSH_INSTALL_TARGET}/bin
+mkdir -p ${BOSH_INSTALL_TARGET}/lib
 
 export GOARCH=amd64
 export GOOS=linux
 
 go build -mod=vendor -o ${BOSH_INSTALL_TARGET}/bin/cpi ./main/*.go
+
+# Bundle libvirt.so.0 and its full transitive dependency closure into
+# $BOSH_INSTALL_TARGET/lib/ so the CPI works at runtime in the director VM
+# even after the compilation container (where apt installed libvirt0) is gone.
+# We then patch the binary's RPATH to $ORIGIN/../lib so ld.so finds them.
+copy_deps() {
+  local lib="$1"
+  local dest="$2"
+  local libname
+  libname=$(basename "$lib")
+  [ -f "$dest/$libname" ] && return   # already copied
+  cp -L "$lib" "$dest/$libname"
+  # Recurse into dependencies of this library.
+  ldd "$lib" 2>/dev/null | awk '{print $3}' | grep '^/' | while read dep; do
+    copy_deps "$dep" "$dest"
+  done
+}
+
+# Seed from libvirt.so.0 and its siblings (qemu/lxc drivers).
+for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
+  libpath=$(ldconfig -p 2>/dev/null | awk -v n="$libname" '$0 ~ n {print $NF}' | head -1 || true)
+  [ -z "$libpath" ] && libpath=$(find /usr/lib /usr/local/lib -name "$libname" 2>/dev/null | head -1 || true)
+  if [ -n "$libpath" ]; then
+    copy_deps "$libpath" "${BOSH_INSTALL_TARGET}/lib"
+  else
+    echo "WARNING: $libname not found in compilation environment"
+  fi
+done
+
+# Remove libc/libm/libpthread/ld-linux from the bundle — these must come from
+# the host OS to avoid ABI mismatches.
+for skip in libc.so libm.so libpthread.so ld-linux ld-musl; do
+  find "${BOSH_INSTALL_TARGET}/lib" -maxdepth 1 -name "${skip}*" -delete 2>/dev/null || true
+done
+
+ls -lh "${BOSH_INSTALL_TARGET}/lib/"
+
+if [ ! -f "${BOSH_INSTALL_TARGET}/lib/libvirt.so.0" ]; then
+  echo "ERROR: libvirt.so.0 not bundled"
+  exit 1
+fi
+
+# Patch the binary's RPATH so it finds bundled libs at $ORIGIN/../lib
+# regardless of what is or isn't installed on the target system.
+# cpi.real exists when create_vm already replaced bin/cpi with a shell wrapper
+# (bootstrap re-compilation inside the running director VM). Patchelf the real
+# ELF in that case; skip silently if neither exists.
+CPI_ELF="${BOSH_INSTALL_TARGET}/bin/cpi"
+[ -f "${BOSH_INSTALL_TARGET}/bin/cpi.real" ] && CPI_ELF="${BOSH_INSTALL_TARGET}/bin/cpi.real"
+if file "$CPI_ELF" 2>/dev/null | grep -q ELF; then
+  patchelf --set-rpath '$ORIGIN/../lib' "$CPI_ELF"
+else
+  echo "WARNING: $CPI_ELF is not an ELF binary, skipping patchelf"
+fi

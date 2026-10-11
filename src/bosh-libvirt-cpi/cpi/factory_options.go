@@ -22,6 +22,29 @@ type FactoryOpts struct {
 
 	StoreDir string
 
+	// InjectHost/Username/PrivateKey/HostKey/StoreDir carry the SSH credentials
+	// that the deployed director's CPI must use. They are written into the VM
+	// rootfs at create_vm time so the agent-rendered cpi.json is overwritten on
+	// first boot. When unset they fall back to Host/Username/PrivateKey/HostKey/
+	// StoreDir respectively (useful when bootstrap and deployed CPI share the
+	// same credentials, e.g. the QEMU case).
+	InjectBackendURI string
+	InjectHost       string
+	InjectUsername   string
+	InjectPrivateKey string
+	InjectHostKey    string
+	InjectStoreDir   string
+
+	// MbusBootstrapSSL is the TLS cert/key for the agent mbus bootstrap listener.
+	// When provided (via cloud_provider.properties.mbus_bootstrap_ssl in the manifest),
+	// it is injected into the agent env so bosh create-env can verify the mbus endpoint
+	// using cloud_provider.cert: ((mbus_bootstrap_ssl)).
+	MbusBootstrapSSL struct {
+		CA          string `json:"ca"`
+		Certificate string `json:"certificate"`
+		PrivateKey  string `json:"private_key"`
+	}
+
 	Agent apiv1.AgentOptions
 }
 

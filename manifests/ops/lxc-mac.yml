@@ -1,0 +1,6 @@
+---
+# Sets a fixed MAC address on the LXC Director VM for CI use.
+# The DHCP reservation pins 192.168.122.11 to this MAC.
+- type: replace
+  path: /resource_pools/name=vms/cloud_properties/mac?
+  value: "52:54:00:ab:cd:11"

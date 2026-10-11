@@ -90,7 +90,13 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	case "lxc":
 		domBuilder = domains.LXCDomainBuilder{}
 	default: // "qemu"
-		domBuilder = domains.QEMUDomainBuilder{}
+		// Use QEMUKernelDomainBuilder when the URI carries ?kernel=1 to enable
+		// direct-kernel boot with a virtio-9p rootfs (for CI without a bootable disk).
+		if u.Query().Get("kernel") != "" {
+			domBuilder = domains.QEMUKernelDomainBuilder{}
+		} else {
+			domBuilder = domains.QEMUDomainBuilder{}
+		}
 	}
 
 	var libvirtConn driver.LibvirtConn
@@ -115,9 +121,18 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 	disks := bdisk.NewFactory(f.opts.DisksDir(), f.uuidGen, d, runner, f.logger)
 
 	vmsOpts := bvm.FactoryOpts{
-		DirPath: f.opts.VMsDir(),
-		Network: f.opts.Network,
+		DirPath:       f.opts.VMsDir(),
+		Network:       f.opts.Network,
+		CPIBackendURI: coalesce(f.opts.InjectBackendURI, f.opts.BackendURI),
+		CPIHost:       coalesce(f.opts.InjectHost, f.opts.Host),
+		CPIUsername:   coalesce(f.opts.InjectUsername, f.opts.Username),
+		CPIPrivateKey: coalesce(f.opts.InjectPrivateKey, f.opts.PrivateKey),
+		CPIHostKey:    coalesce(f.opts.InjectHostKey, f.opts.HostKey),
+		CPIStoreDir:   coalesce(f.opts.InjectStoreDir, f.opts.StoreDir),
 	}
+	vmsOpts.MbusBootstrapSSL.CA = f.opts.MbusBootstrapSSL.CA
+	vmsOpts.MbusBootstrapSSL.Certificate = f.opts.MbusBootstrapSSL.Certificate
+	vmsOpts.MbusBootstrapSSL.PrivateKey = f.opts.MbusBootstrapSSL.PrivateKey
 
 	vms := bvm.NewFactory(
 		vmsOpts, f.uuidGen, d, runner, domBuilder, disks,
@@ -130,4 +145,12 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 		NewDisks(disks, disks, vms),
 		NewSnapshots(),
 	}, nil
+}
+
+// coalesce returns the first non-empty string.
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
