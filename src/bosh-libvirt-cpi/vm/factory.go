@@ -432,7 +432,8 @@ func (f Factory) Create(
 		// sv stub handles "sv start monit" without needing runsv.
 		// Extract static IP/gateway from the agent env and bake them in so the
 		// container has network connectivity before bosh-agent starts.
-		staticIP, staticGW := extractNetworkFromEnv(agentEnvBytes)
+		staticIP, staticGW, staticPrefix := extractNetworkFromEnv(agentEnvBytes)
+		staticCIDR := fmt.Sprintf("%s/%d", staticIP, staticPrefix)
 		// monit stub: persistent HTTP server on port 2822 returning valid monit XML.
 		// bosh-agent parses incarnation as an XML *attribute* on the root <monit> element
 		// (xml:"incarnation,attr" in status.go) and hits /_status2?format=xml.
@@ -925,7 +926,7 @@ func (f Factory) Create(
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
 				"  ip link set \"$IFACE\" up\n" +
-				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  ip addr add " + staticCIDR + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  ip route add default via " + staticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  # Gratuitous ARP so the host bridge learns our MAC/IP immediately.\n" +
 				"  arping -c 3 -U -I \"$IFACE\" " + staticIP + " 2>/dev/null || true\n" +
@@ -993,7 +994,7 @@ func (f Factory) Create(
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
 				"  ip link set \"$IFACE\" up\n" +
-				"  ip addr add " + staticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  ip addr add " + staticCIDR + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  ip route add default via " + staticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  arping -c 3 -U -I \"$IFACE\" " + staticIP + " 2>/dev/null || true\n" +
 				"fi\n" +
@@ -1093,9 +1094,13 @@ func (f Factory) Create(
 		}
 
 		// Override disk paths to use the per-VM rootfs copy.
+		// libvirt-lxc bind-mounts the ephemeral source as a directory, so point
+		// it at the disk's directory (ephemeralDisk.Path()), not the disk.img
+		// file inside it. Mounting the file as a dir would fail to start the
+		// domain. The directory already exists (disk.Factory.Create ran mkdir -p).
 		disks = driver.DomainDiskPaths{
 			RootDisk:      vmRootfs,
-			EphemeralDisk: ephemeralDisk.ImagePath(),
+			EphemeralDisk: ephemeralDisk.Path(),
 		}
 	} else if f.domBuilder.DiskImageFormat() == "ext4" {
 		// QEMU kernel-boot: copy the stemcell ext4 image per-VM, mount it,
@@ -1240,10 +1245,11 @@ func (f Factory) Create(
 				_, _, _ = f.runner.Execute("chmod", "0755", cpiPkgDir+"/cpi")
 			}
 		}
-		qemuStaticIP, qemuStaticGW := extractNetworkFromEnv(agentEnvBytes2)
+		qemuStaticIP, qemuStaticGW, qemuStaticPrefix := extractNetworkFromEnv(agentEnvBytes2)
 		if qemuStaticIP == "" {
 			qemuStaticIP = "127.0.0.1"
 		}
+		qemuStaticCIDR := fmt.Sprintf("%s/%d", qemuStaticIP, qemuStaticPrefix)
 		// Symlink bosh tools into /usr/local/bin
 		_, _, _ = f.runner.Execute("mkdir", "-p", mntDir+"/usr/local/bin")
 		if boshBinsOut, _, _ := f.runner.Execute("ls", "-1", mntDir+"/var/vcap/bosh/bin"); boshBinsOut != "" {
@@ -1351,7 +1357,7 @@ func (f Factory) Create(
 				"IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')\n" +
 				"if [ -n \"$IFACE\" ]; then\n" +
 				"  ip link set \"$IFACE\" up\n" +
-				"  ip addr add " + qemuStaticIP + "/24 dev \"$IFACE\" 2>/dev/null || true\n" +
+				"  ip addr add " + qemuStaticCIDR + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"  ip route add default via " + qemuStaticGW + " dev \"$IFACE\" 2>/dev/null || true\n" +
 				"fi\n"
 		} else {
@@ -1361,6 +1367,15 @@ func (f Factory) Create(
 				"  ip link set \"$IFACE\" up\n" +
 				"  /usr/sbin/dhclient -v \"$IFACE\" 2>/tmp/dhclient.log || true\n" +
 				"fi\n"
+		}
+		// Redirect director-IP:5432 to the loopback postgres (served by the monit
+		// stub). Only meaningful with a real static IP: on the 127.0.0.1 fallback
+		// the DNAT target equals the destination, so skip it to avoid a dead rule.
+		var qemuPgDNAT string
+		if qemuStaticIP != "127.0.0.1" {
+			qemuPgDNAT = "iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+				"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
+				"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n"
 		}
 		initScript := "#!/bin/sh\n" +
 			"export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
@@ -1765,10 +1780,8 @@ func (f Factory) Create(
 			"      sleep 5\n" +
 			"    done\n" +
 			"  fi ) &\n" +
-			"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub\n" +
-			"iptables -t nat -A PREROUTING -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
-			"iptables -t nat -A OUTPUT -p tcp -d " + qemuStaticIP + " --dport 5432 -j DNAT --to-destination 127.0.0.1:5432 2>/dev/null || true\n" +
-			"echo 'iptables dnat 5432 installed' >> /var/vcap/bosh/log/pg-patch.log\n" +
+			"# Redirect external IP:5432 -> 127.0.0.1:5432 for monit stub (static IP only)\n" +
+			qemuPgDNAT +
 			"# Run bosh-agent under a restart supervisor so PID 1 never exits.\n" +
 			"# The warden-boshlite agent calls os.Exit(0) after certain one-shot\n" +
 			"# tasks (e.g. apply on compilation VMs); without a supervisor, PID 1\n" +
@@ -1981,22 +1994,48 @@ func isDirectorAgentEnv(envBytes []byte) bool {
 	return strings.HasPrefix(mbus, "https://")
 }
 
-// extractNetworkFromEnv returns the first non-empty static IP and gateway
-// from the agent env's networks map. Returns empty strings for dynamic networks.
-func extractNetworkFromEnv(envBytes []byte) (ip, gateway string) {
+// extractNetworkFromEnv returns the first non-empty static IP, gateway and
+// CIDR prefix length from the agent env's networks map. The prefix is derived
+// from the network's netmask (e.g. 255.255.255.0 -> 24); it falls back to 24
+// when no usable netmask is present. Returns empty IP/gateway for dynamic networks.
+func extractNetworkFromEnv(envBytes []byte) (ip, gateway string, prefix int) {
+	prefix = 24
 	var m map[string]interface{}
 	if err := json.Unmarshal(envBytes, &m); err != nil {
-		return "", ""
+		return "", "", prefix
 	}
 	networks, _ := m["networks"].(map[string]interface{})
 	for _, v := range networks {
 		net, _ := v.(map[string]interface{})
 		if ipVal, _ := net["ip"].(string); ipVal != "" {
 			gwVal, _ := net["gateway"].(string)
-			return ipVal, gwVal
+			if nmVal, _ := net["netmask"].(string); nmVal != "" {
+				if p, ok := netmaskToPrefix(nmVal); ok {
+					prefix = p
+				}
+			}
+			return ipVal, gwVal, prefix
 		}
 	}
-	return "", ""
+	return "", "", prefix
+}
+
+// netmaskToPrefix converts a dotted-quad netmask (e.g. "255.255.255.0") to a
+// CIDR prefix length (e.g. 24). The ok return is false for malformed masks.
+func netmaskToPrefix(netmask string) (int, bool) {
+	ipMask := net.ParseIP(netmask)
+	if ipMask == nil {
+		return 0, false
+	}
+	v4 := ipMask.To4()
+	if v4 == nil {
+		return 0, false
+	}
+	ones, bits := net.IPv4Mask(v4[0], v4[1], v4[2], v4[3]).Size()
+	if bits == 0 {
+		return 0, false
+	}
+	return ones, true
 }
 
 // injectMbusCert injects a TLS cert into env.bosh.mbus.cert so the agent can
@@ -2028,7 +2067,7 @@ func (f Factory) injectMbusCert(envBytes []byte) []byte {
 	}
 
 	// Fallback: generate a self-signed cert with the director's IP SAN.
-	ip, _ := extractNetworkFromEnv(envBytes)
+	ip, _, _ := extractNetworkFromEnv(envBytes)
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return envBytes

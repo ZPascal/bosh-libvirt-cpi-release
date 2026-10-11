@@ -188,16 +188,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		defer func() { _, _, _ = f.runner.Execute("rm", "-rf", remoteTmpDir) }()
 
 		// Extract the rootfs gzip-tar on the host.
-		// Try --no-same-devices first (GNU tar); fall back to plain tar on failure.
-		out, _, tarErr := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteImage, "-C", remoteTmpDir)
-		if tarErr != nil {
-			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
-				if out2, _, e2 := f.runner.Execute("tar", "-xzf", remoteImage, "-C", remoteTmpDir); e2 != nil {
-					return bosherr.WrapErrorf(e2, "Extracting stemcell rootfs on host: %s", out2)
-				}
-			} else {
-				return bosherr.WrapErrorf(tarErr, "Extracting stemcell rootfs on host: %s", out)
-			}
+		if err := f.extractRootfsTar(remoteImage, remoteTmpDir); err != nil {
+			return err
 		}
 
 		// Calculate ext4 image size from extracted rootfs.
@@ -248,16 +240,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 			return bosherr.WrapError(uploadErr, "Uploading stemcell tarball to remote host")
 		}
 		defer func() { _, _, _ = f.runner.Execute("rm", "-f", remoteTar) }()
-		out, exitCode, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", remoteTar, "-C", dstImage)
-		if err != nil {
-			if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
-				out2, exitCode2, err2 := f.runner.Execute("tar", "-xzf", remoteTar, "-C", dstImage)
-				if err2 != nil && exitCode2 != 2 {
-					return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs on remote: %s", out2)
-				}
-			} else if exitCode != 2 {
-				return bosherr.WrapErrorf(err, "Extracting stemcell rootfs on remote: %s", out)
-			}
+		if err := f.extractRootfsTar(remoteTar, dstImage); err != nil {
+			return err
 		}
 	default:
 		if err := f.fs.CopyFile(imagePath, dstImage); err != nil {
@@ -332,4 +316,32 @@ func isSSHRunner(r driver.Runner) bool {
 	}
 	_, ok := r.(*driver.SSHRunner)
 	return ok
+}
+
+// extractRootfsTar extracts a gzip tarball into destDir on the host via runner.
+// It prefers GNU tar's --no-same-devices and falls back to plain tar when that
+// option isn't recognised.
+//
+// A warden rootfs tarball contains device nodes and files with ownership that
+// tar cannot always restore (e.g. "Cannot mknod"), which makes tar exit with
+// status 2 even though the regular files extracted fine. Those errors are
+// benign here, so exit code 2 is tolerated. The downside is that a genuinely
+// fatal tar failure (truncated archive, disk full) also exits 2 and is not
+// surfaced; such failures show up downstream when the VM can't boot.
+func (f Factory) extractRootfsTar(tarball, destDir string) error {
+	out, exitCode, err := f.runner.Execute("tar", "--no-same-devices", "-xzf", tarball, "-C", destDir)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(out, "unrecognized option") || strings.Contains(out, "unknown option") {
+		out2, exitCode2, err2 := f.runner.Execute("tar", "-xzf", tarball, "-C", destDir)
+		if err2 != nil && exitCode2 != 2 {
+			return bosherr.WrapErrorf(err2, "Extracting stemcell rootfs on host: %s", out2)
+		}
+		return nil
+	}
+	if exitCode != 2 {
+		return bosherr.WrapErrorf(err, "Extracting stemcell rootfs on host: %s", out)
+	}
+	return nil
 }

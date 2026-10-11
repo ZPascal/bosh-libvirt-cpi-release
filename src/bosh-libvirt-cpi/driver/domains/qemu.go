@@ -121,8 +121,8 @@ func (b QEMUDomainBuilder) BuildStemcellDomain(id string, imagePath string) (str
 }
 
 // QEMUKernelDomainBuilder is like QEMUDomainBuilder but uses direct kernel
-// boot with the stemcell extracted as a directory (virtio-9p rootfs).
-// The kernel path is supplied per-VM via VMDomainProps.Kernel.
+// boot: the stemcell is built as an ext4 image that the kernel mounts as root
+// on /dev/vda. The kernel path is supplied per-VM via VMDomainProps.Kernel.
 type QEMUKernelDomainBuilder struct{}
 
 var _ driver.DomainBuilder = QEMUKernelDomainBuilder{}
