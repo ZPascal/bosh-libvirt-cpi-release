@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/cloudfoundry/bosh-cpi-go v0.0.0-20230608150715-1e134ab6c93b
 	github.com/cloudfoundry/bosh-utils v0.0.288
-	github.com/onsi/ginkgo v1.16.4
+	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.44.0
 	golang.org/x/crypto v0.53.0
 	libvirt.org/go/libvirt v1.12007.0
