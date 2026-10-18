@@ -150,17 +150,8 @@ func (f Factory) upload(imagePath, stemcellPath string) error {
 		}
 	case "ext4":
 		// Build an ext4 raw image from the warden-tar stemcell on the libvirt host.
-		//
-		// BOSH unpacks the outer stemcell tgz itself and passes the inner `image`
-		// file path to create_stemcell.  The `image` file is a gzip-compressed tar
-		// of the rootfs (warden-tar format).  We upload it to the host, extract it
-		// directly into remoteTmpDir, then build the ext4.
-		//
-		// Steps:
-		//   1. Upload imagePath (the rootfs gzip-tar) to a temp path on the host.
-		//   2. Extract it on the host → rootfs tree in remoteTmpDir.
-		//   3. Create dd-sparse ext4, format, mount, copy rootfs, sync, umount.
-		//   4. Clean up temp dirs.
+		// imagePath is the inner `image` file BOSH passes to create_stemcell: a
+		// gzip-compressed tar of the rootfs. The steps below run on the host.
 		remoteTmpBase := filepath.Dir(dstImage)
 		remoteImage := dstImage + ".rootfs.tgz"
 		remoteTmpDir := dstImage + ".rootfs"

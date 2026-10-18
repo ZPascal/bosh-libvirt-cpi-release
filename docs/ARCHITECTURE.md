@@ -2,7 +2,7 @@
 
 ## Overview
 
-The BOSH Libvirt CPI provides a unified interface to multiple virtualization technologies through libvirt. This architecture leverages libvirt's abstraction layer to support various hypervisors without code duplication.
+The BOSH Libvirt CPI provides a unified interface to multiple virtualization technologies through libvirt. It uses libvirt's abstraction layer to support various hypervisors without code duplication.
 
 ## Architecture Diagram
 
