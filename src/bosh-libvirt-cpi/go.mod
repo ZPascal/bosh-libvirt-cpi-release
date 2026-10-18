@@ -1,12 +1,12 @@
 module bosh-libvirt-cpi
 
-go 1.26.0
+go 1.27.0
 
 require (
-	github.com/cloudfoundry/bosh-cpi-go v0.0.0-20230608150715-1e134ab6c93b
-	github.com/cloudfoundry/bosh-utils v0.0.659
+	github.com/cloudfoundry/bosh-cpi-go v0.0.0-20261017100100-5481e9266ff3
+	github.com/cloudfoundry/bosh-utils v0.0.660
 	github.com/onsi/ginkgo v1.16.5
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	golang.org/x/crypto v0.58.0
 	libvirt.org/go/libvirt v1.12007.0
 )
