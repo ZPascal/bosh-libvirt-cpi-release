@@ -174,9 +174,10 @@ func (r *SSHRunner) client() (*ssh.Client, error) {
 	}
 
 	config := &ssh.ClientConfig{
-		User:            r.opts.Username,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
-		HostKeyCallback: ssh.FixedHostKey(pubKey),
+		User:              r.opts.Username,
+		Auth:              []ssh.AuthMethod{ssh.PublicKeys(keySigner)},
+		HostKeyCallback:   ssh.FixedHostKey(pubKey),
+		HostKeyAlgorithms: []string{pubKey.Type()},
 	}
 
 	r.existingClient, err = ssh.Dial("tcp", fmt.Sprintf("%s:%d", r.opts.Host, r.sshPort()), config)

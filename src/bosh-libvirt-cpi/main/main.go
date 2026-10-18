@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"net/url"
 	"os"
 
 	"github.com/cloudfoundry/bosh-cpi-go/rpc"
@@ -33,7 +34,23 @@ func main() {
 
 	compressor := boshcmd.NewTarballCompressor(cmdRunner, fs)
 
-	conn, err := libvirt.NewConnect(config.BackendURI)
+	libvirtURI := config.BackendURI
+	if config.Host != "" {
+		u, _ := url.Parse(config.BackendURI)
+		tunnelURI, cleanupTunnel, tunnelErr := sshLibvirtURI(
+			u.Scheme, config.Host, config.Port,
+			config.Username, config.PrivateKey, config.HostKey,
+			logger,
+		)
+		if tunnelErr != nil {
+			logger.Error("main", "Setting up libvirt SSH tunnel: %s", tunnelErr.Error())
+			os.Exit(1)
+		}
+		defer cleanupTunnel()
+		libvirtURI = tunnelURI
+	}
+
+	conn, err := libvirt.NewConnect(libvirtURI)
 	if err != nil {
 		logger.Error("main", "Connecting to libvirt: %s", err.Error())
 		os.Exit(1)
