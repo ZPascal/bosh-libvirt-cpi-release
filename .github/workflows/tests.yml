@@ -105,11 +105,11 @@ jobs:
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
-      run: sudo -E go test -tags integration -mod=vendor ./...
+      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
 
     - name: Generate coverage
       working-directory: src/bosh-libvirt-cpi
-      run: sudo -E go test -coverprofile=coverage.out -mod=vendor ./...
+      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7
@@ -624,7 +624,17 @@ jobs:
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: lxc:///
-      run: sudo -E go test -tags integration -mod=vendor ./...
+      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
+
+    - name: Generate coverage
+      working-directory: src/bosh-libvirt-cpi
+      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v7
+      with:
+        files: src/bosh-libvirt-cpi/coverage.out
+        flags: integration-lxc
 
   e2e-lxc:
     name: E2E bosh-lite (LXC)
