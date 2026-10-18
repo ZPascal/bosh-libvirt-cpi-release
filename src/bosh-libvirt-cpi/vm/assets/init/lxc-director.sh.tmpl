@@ -1,0 +1,69 @@
+#!/bin/sh
+export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+mkdir -p /var/vcap/bosh/log
+exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1
+# Mount pseudo-filesystems needed by BPM/runc
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true
+mkdir -p /sys/fs/cgroup
+mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true
+# Ensure /var/vcap/sys/run/postgresql is on rootfs (not tmpfs) for postgres socket
+mkdir -p /var/vcap/sys/run/postgresql /var/vcap/sys/run/bpm /var/vcap/sys/log
+# Pre-create per-job log dirs so BPM processes can open their logfiles
+mkdir -p /var/vcap/sys/log/nats /var/vcap/data/nats
+# Pre-create blob dir with vcap ownership so nginx can write blobs as uid 1000
+mkdir -p /var/vcap/data/blobs
+chown -R 1000:1000 /var/vcap/sys/run/postgresql /var/vcap/sys/log /var/vcap/data/nats /var/vcap/data/blobs 2>/dev/null || true
+cat /proc/mounts > /bosh-mounts.txt 2>/dev/null || true
+cat /proc/mounts > /var/vcap/bosh/log/container-mounts.txt 2>/dev/null || true
+ip link set lo up 2>/dev/null || true
+IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')
+if [ -n "$IFACE" ]; then
+  ip link set "$IFACE" up
+  ip addr add {{.StaticCIDR}} dev "$IFACE" 2>/dev/null || true
+  ip route add default via {{.StaticGW}} dev "$IFACE" 2>/dev/null || true
+  # Gratuitous ARP so the host bridge learns our MAC/IP immediately.
+  arping -c 3 -U -I "$IFACE" {{.StaticIP}} 2>/dev/null || true
+fi
+# Background watcher: replace post-start scripts with no-ops when installed.
+( while true; do
+  for JOB in director nats; do
+    PS=/var/vcap/jobs/$JOB/bin/post-start
+    if [ -f "$PS" ] && ! grep -q 'bosh-noop' "$PS" 2>/dev/null; then
+      echo '#!/bin/sh' > "$PS"
+      echo '# bosh-noop: post-start stubbed out' >> "$PS"
+      chmod 755 "$PS"
+    fi
+  done
+  sleep 2
+done ) &
+# Background watcher: once the agent renders libvirt_cpi/cpi.json, merge
+# pre-baked CPI credentials so the deployed director reaches libvirtd.
+( INJ=/var/vcap/bosh/cpi-inject.json
+  if [ -f "$INJ" ]; then
+    while true; do
+      for CJ in /var/vcap/data/jobs/libvirt_cpi/*/config/cpi.json; do
+        [ -f "$CJ" ] || continue
+        grep -q '"patched_by_cpi"' "$CJ" 2>/dev/null && continue
+        TMP=$(mktemp)
+        python3 -c "import json,sys; a=json.load(open('$CJ')); b=json.load(open('$INJ')); a.update(b); a['patched_by_cpi']=True; json.dump(a,sys.stdout,indent=2)" > "$TMP" 2>/dev/null
+        if [ -s "$TMP" ]; then
+          cp "$TMP" "$CJ"
+          BACKEND=$(python3 -c "import json; print(json.load(open('$CJ')).get('BackendURI','(missing)'))" 2>/dev/null || echo '(err)')
+          echo "cpi-inject: patched $CJ BackendURI=$BACKEND" >> /var/vcap/bosh/log/cpi-inject.log
+          # Also update the /var/vcap/jobs symlink target
+          JLINK=/var/vcap/jobs/libvirt_cpi/config/cpi.json
+          if [ -L "$JLINK" ]; then
+            REAL=$(readlink -f "$JLINK" 2>/dev/null)
+            [ -n "$REAL" ] && [ "$REAL" != "$CJ" ] && cp "$CJ" "$REAL"
+          fi
+        fi
+        rm -f "$TMP"
+      done
+      sleep 5
+    done
+  fi ) &
+{{.MonitStub}}exec /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu

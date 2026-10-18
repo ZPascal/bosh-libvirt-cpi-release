@@ -11,3 +11,8 @@ files:
 - "bosh-libvirt-cpi/**/*.c"
 - "bosh-libvirt-cpi/go.{mod,sum}"
 - "bosh-libvirt-cpi/vendor/modules.txt"
+# Embedded CI-runtime assets loaded via //go:embed in vm/factory.go. Without
+# these the package compile fails with "pattern assets: no matching files found".
+- "bosh-libvirt-cpi/vm/assets/**/*.sh"
+- "bosh-libvirt-cpi/vm/assets/**/*.tmpl"
+- "bosh-libvirt-cpi/vm/assets/**/*.conf"
