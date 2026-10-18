@@ -29,18 +29,16 @@ import (
 	bstem "bosh-libvirt-cpi/stemcell"
 )
 
-// assetsFS holds the CI-runtime emulation scripts (monit stubs, shell wrappers,
-// and VM init scripts) injected into the VM rootfs by Create(). They live as
-// real files under assets/ rather than inline Go string literals so the
-// hand-escaped Python/shell is editable and reviewable. The characterization
-// tests in characterization_test.go hash every injected file to guard against
-// byte drift.
+// assetsFS holds the CI-runtime emulation scripts (monit stubs, shell wrappers
+// and VM init scripts) that Create() injects into the VM rootfs. Keeping them as
+// files rather than inline string literals keeps the hand-escaped Python/shell
+// readable. characterization_test.go hashes every injected file to catch drift.
 //
 //go:embed assets
 var assetsFS embed.FS
 
-// mustAsset reads a verbatim asset. Assets are compiled into the binary, so a
-// missing path is a programming error and panics.
+// mustAsset returns a verbatim asset. The assets are compiled into the binary,
+// so a missing path means a broken build and panics.
 func mustAsset(path string) []byte {
 	b, err := assetsFS.ReadFile(path)
 	if err != nil {
@@ -49,8 +47,7 @@ func mustAsset(path string) []byte {
 	return b
 }
 
-// renderAsset parses a text/template asset and executes it with data, returning
-// the rendered bytes. A parse/execute failure is a programming error and panics.
+// renderAsset runs a text/template asset through data and returns the result.
 func renderAsset(path string, data any) []byte {
 	tmpl, err := template.New(filepath.Base(path)).Parse(string(mustAsset(path)))
 	if err != nil {
@@ -508,10 +505,9 @@ func (f Factory) provisionLXCRootfs(
 	// pre-start scripts (which need cgroup namespaces unavailable in LXC) fail
 	// fast instead of blocking the HTTP response handler for 120s.
 	deployMonitStub := string(mustAsset("assets/monit/deploy-dir.sh"))
-	// Choose the LXC init wrapper by VM role. All three variants bake the
-	// static IP/gateway into the container's networking and launch the monit
-	// stub before exec'ing bosh-agent; they differ in director vs. deployment
-	// VM start logic (see the init/ assets).
+	// Pick the LXC init wrapper for this VM. All three bake the static IP and
+	// gateway into the container network and start the monit stub before exec'ing
+	// bosh-agent; they only differ in how director vs. deployment jobs are started.
 	isDirectorVM := isDirectorAgentEnv(agentEnvBytes)
 	initData := struct {
 		StaticCIDR string
