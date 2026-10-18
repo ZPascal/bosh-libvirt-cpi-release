@@ -98,6 +98,15 @@ typedef int (*virConnectDomainEventCallback)(virConnectPtr conn,
                                              void * opaque);
 #endif
 
+#if !LIBVIR_CHECK_VERSION(12, 4, 0)
+typedef void (*virConnectDomainEventChannelLifecycleCallback)(virConnectPtr conn,
+                                                              virDomainPtr dom,
+                                                              const char * channelName,
+                                                              int state,
+                                                              int reason,
+                                                              void * opaque);
+#endif
+
 #if !LIBVIR_CHECK_VERSION(1, 2, 15)
 typedef void (*virConnectDomainEventDeviceAddedCallback)(virConnectPtr conn,
                                                          virDomainPtr dom,
@@ -205,6 +214,15 @@ typedef void (*virConnectDomainEventMigrationIterationCallback)(virConnectPtr co
                                                                 void * opaque);
 #endif
 
+#if !LIBVIR_CHECK_VERSION(11, 2, 0)
+typedef void (*virConnectDomainEventNICMACChangeCallback)(virConnectPtr conn,
+                                                          virDomainPtr dom,
+                                                          const char * alias,
+                                                          const char * oldMAC,
+                                                          const char * newMAC,
+                                                          void * opaque);
+#endif
+
 #if !LIBVIR_CHECK_VERSION(0, 9, 11)
 typedef void (*virConnectDomainEventPMSuspendCallback)(virConnectPtr conn,
                                                        virDomainPtr dom,
@@ -249,6 +267,13 @@ typedef void (*virConnectDomainEventTunableCallback)(virConnectPtr conn,
                                                      void * opaque);
 #endif
 
+#if !LIBVIR_CHECK_VERSION(12, 4, 0)
+typedef void (*virConnectDomainEventVcpuRemovedCallback)(virConnectPtr conn,
+                                                         virDomainPtr dom,
+                                                         unsigned int vcpuid,
+                                                         void * opaque);
+#endif
+
 #if !LIBVIR_CHECK_VERSION(0, 8, 0)
 typedef void (*virConnectDomainEventWatchdogCallback)(virConnectPtr conn,
                                                       virDomainPtr dom,
@@ -268,6 +293,14 @@ typedef void (*virConnectNetworkEventLifecycleCallback)(virConnectPtr conn,
                                                         int event,
                                                         int detail,
                                                         void * opaque);
+#endif
+
+#if !LIBVIR_CHECK_VERSION(9, 8, 0)
+typedef void (*virConnectNetworkEventMetadataChangeCallback)(virConnectPtr conn,
+                                                             virNetworkPtr net,
+                                                             int type,
+                                                             const char * nsuri,
+                                                             void * opaque);
 #endif
 
 #if !LIBVIR_CHECK_VERSION(2, 2, 0)

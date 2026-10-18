@@ -392,6 +392,18 @@ const (
 
 	// more than one matching domain found
 	ERR_MULTIPLE_DOMAINS = ErrorNumber(C.VIR_ERR_MULTIPLE_DOMAINS)
+
+	// The metadata is not present
+	ERR_NO_NETWORK_METADATA = ErrorNumber(C.VIR_ERR_NO_NETWORK_METADATA)
+
+	// Guest agent didn't respond to a non-sync command within timeout
+	ERR_AGENT_COMMAND_TIMEOUT = ErrorNumber(C.VIR_ERR_AGENT_COMMAND_TIMEOUT)
+
+	// Guest agent responded with failure to a command
+	ERR_AGENT_COMMAND_FAILED = ErrorNumber(C.VIR_ERR_AGENT_COMMAND_FAILED)
+
+	// Encryption key secret error
+	ERR_INVALID_ENCR_KEY_SECRET = ErrorNumber(C.VIR_ERR_INVALID_ENCR_KEY_SECRET)
 )
 
 type ErrorDomain int
