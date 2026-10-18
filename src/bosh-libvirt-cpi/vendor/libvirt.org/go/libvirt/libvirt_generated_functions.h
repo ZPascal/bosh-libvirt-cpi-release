@@ -478,6 +478,14 @@ virDomainAgentSetResponseTimeoutWrapper(virDomainPtr domain,
                                         virErrorPtr err);
 
 int
+virDomainAnnounceInterfaceWrapper(virDomainPtr dom,
+                                  const char * device,
+                                  virTypedParameterPtr params,
+                                  int nparams,
+                                  unsigned int flags,
+                                  virErrorPtr err);
+
+int
 virDomainAttachDeviceWrapper(virDomainPtr domain,
                              const char * xml,
                              virErrorPtr err);
@@ -712,6 +720,12 @@ virDomainDelIOThreadWrapper(virDomainPtr domain,
                             virErrorPtr err);
 
 int
+virDomainDelThrottleGroupWrapper(virDomainPtr dom,
+                                 const char * group,
+                                 unsigned int flags,
+                                 virErrorPtr err);
+
+int
 virDomainDestroyWrapper(virDomainPtr domain,
                         virErrorPtr err);
 
@@ -777,6 +791,11 @@ int
 virDomainGetAutostartWrapper(virDomainPtr domain,
                              int * autostart,
                              virErrorPtr err);
+
+int
+virDomainGetAutostartOnceWrapper(virDomainPtr domain,
+                                 int * autostart,
+                                 virErrorPtr err);
 
 int
 virDomainGetBlkioParametersWrapper(virDomainPtr domain,
@@ -1036,6 +1055,12 @@ char *
 virDomainGetXMLDescWrapper(virDomainPtr domain,
                            unsigned int flags,
                            virErrorPtr err);
+
+int
+virDomainGraphicsReloadWrapper(virDomainPtr domain,
+                               unsigned int type,
+                               unsigned int flags,
+                               virErrorPtr err);
 
 int
 virDomainHasCurrentSnapshotWrapper(virDomainPtr domain,
@@ -1431,6 +1456,11 @@ virDomainSetAutostartWrapper(virDomainPtr domain,
                              virErrorPtr err);
 
 int
+virDomainSetAutostartOnceWrapper(virDomainPtr domain,
+                                 int autostart,
+                                 virErrorPtr err);
+
+int
 virDomainSetBlkioParametersWrapper(virDomainPtr domain,
                                    virTypedParameterPtr params,
                                    int nparams,
@@ -1553,6 +1583,14 @@ virDomainSetSchedulerParametersFlagsWrapper(virDomainPtr domain,
                                             int nparams,
                                             unsigned int flags,
                                             virErrorPtr err);
+
+int
+virDomainSetThrottleGroupWrapper(virDomainPtr dom,
+                                 const char * group,
+                                 virTypedParameterPtr params,
+                                 int nparams,
+                                 unsigned int flags,
+                                 virErrorPtr err);
 
 int
 virDomainSetTimeWrapper(virDomainPtr dom,
@@ -2008,6 +2046,13 @@ virNetworkGetDHCPLeasesWrapper(virNetworkPtr network,
                                unsigned int flags,
                                virErrorPtr err);
 
+char *
+virNetworkGetMetadataWrapper(virNetworkPtr network,
+                             int type,
+                             const char * uri,
+                             unsigned int flags,
+                             virErrorPtr err);
+
 const char *
 virNetworkGetNameWrapper(virNetworkPtr network,
                          virErrorPtr err);
@@ -2126,6 +2171,15 @@ int
 virNetworkSetAutostartWrapper(virNetworkPtr network,
                               int autostart,
                               virErrorPtr err);
+
+int
+virNetworkSetMetadataWrapper(virNetworkPtr network,
+                             int type,
+                             const char * metadata,
+                             const char * key,
+                             const char * uri,
+                             unsigned int flags,
+                             virErrorPtr err);
 
 int
 virNetworkUndefineWrapper(virNetworkPtr network,
@@ -2254,6 +2308,12 @@ int
 virNodeDeviceUndefineWrapper(virNodeDevicePtr dev,
                              unsigned int flags,
                              virErrorPtr err);
+
+int
+virNodeDeviceUpdateWrapper(virNodeDevicePtr dev,
+                           const char * xmlDesc,
+                           unsigned int flags,
+                           virErrorPtr err);
 
 int
 virNodeGetCPUMapWrapper(virConnectPtr conn,

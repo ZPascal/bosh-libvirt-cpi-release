@@ -100,9 +100,9 @@ func (d *Domain) QemuMonitorCommand(command string, flags DomainQemuMonitorComma
 
 // See also https://libvirt.org/html/libvirt-libvirt-qemu.html#virDomainQemuMonitorCommandWithFiles
 func (d *Domain) QemuMonitorCommandWithFiles(command string, infiles []os.File, flags DomainQemuMonitorCommandFlags) (string, []*os.File, error) {
-	cninfiles := C.uint(len(infiles))
-	cinfiles := make([]C.int, len(infiles))
-	for i := 0; i < len(infiles); i++ {
+	ninfiles := len(infiles)
+	cinfiles := make([]C.int, ninfiles)
+	for i := 0; i < ninfiles; i++ {
 		cinfiles[i] = C.int(infiles[i].Fd())
 	}
 	cCommand := C.CString(command)
@@ -112,8 +112,12 @@ func (d *Domain) QemuMonitorCommandWithFiles(command string, infiles []os.File, 
 	var cnoutfiles C.uint
 	var coutfiles *C.int
 	var err C.virError
+	var cinfilesPtr *C.int = nil
+	if ninfiles > 0 {
+		cinfilesPtr = &cinfiles[0]
+	}
 	result := C.virDomainQemuMonitorCommandWithFilesWrapper(d.ptr, cCommand,
-		cninfiles, &cinfiles[0], &cnoutfiles, &coutfiles,
+		C.uint(ninfiles), cinfilesPtr, &cnoutfiles, &coutfiles,
 		&cResult, C.uint(flags), &err)
 
 	if result != 0 {
@@ -168,8 +172,8 @@ type DomainQemuMonitorEvent struct {
 
 type DomainQemuMonitorEventCallback func(c *Connect, d *Domain, event *DomainQemuMonitorEvent)
 
-//export domainQemuMonitorEventCallback
-func domainQemuMonitorEventCallback(c C.virConnectPtr, d C.virDomainPtr,
+//export virGoDomainQemuMonitorEventCallback
+func virGoDomainQemuMonitorEventCallback(c C.virConnectPtr, d C.virDomainPtr,
 	event *C.char, seconds C.longlong, micros C.uint, details *C.char, goCallbackId int) {
 
 	domain := &Domain{ptr: d}
@@ -207,7 +211,7 @@ func (c *Connect) DomainQemuMonitorEventRegister(dom *Domain, event string, call
 		C.long(goCallBackId),
 		C.uint(flags), &err)
 	if ret < 0 {
-		freeCallbackId(goCallBackId)
+		virGoFreeCallbackId(goCallBackId)
 		return 0, makeError(&err)
 	}
 	return int(ret), nil
