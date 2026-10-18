@@ -1,10 +1,12 @@
-//+build !windows
+//go:build !windows
 
 package system
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -23,7 +25,7 @@ func (fs *osFileSystem) homeDir(username string) (string, error) {
 
 func (fs *osFileSystem) chown(path, owner string) error {
 	if owner == "" {
-		return errors.New("Failed to lookup user ''")
+		return errors.New("failed to lookup user ''")
 	}
 
 	var group string
@@ -33,20 +35,31 @@ func (fs *osFileSystem) chown(path, owner string) error {
 	user := ownerSplit[0]
 
 	if len(ownerSplit) <= 1 {
-		group, err = fs.runCommand(fmt.Sprintf("id -g %s", user))
+		group, err = runWithoutShell("id", "-g", "--", user)
 		if err != nil {
-			return bosherr.WrapErrorf(err, "Failed to lookup user '%s'", user)
+			return bosherr.WrapErrorf(err, "failed to lookup user '%s'", user)
 		}
 	} else {
 		group = ownerSplit[1]
 	}
 
-	_, err = fs.runCommand(fmt.Sprintf("chown '%s:%s' '%s'", user, group, path))
+	_, err = runWithoutShell("chown", "--", user+":"+group, path)
 	if err != nil {
-		return bosherr.WrapError(err, "Failed to chown")
+		return bosherr.WrapError(err, "failed to chown")
 	}
 
 	return nil
+}
+
+// runWithoutShell passes each argument as is, so a path or user name cannot run shell commands.
+func runWithoutShell(name string, args ...string) (string, error) {
+	var stdout bytes.Buffer
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(stdout.String()), nil
 }
 
 func (fs *osFileSystem) symlinkPaths(oldPath, newPath string) (old, new string, err error) {

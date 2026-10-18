@@ -1,8 +1,9 @@
-// +build !windows
+//go:build !windows
 
 package system
 
 import (
+	"errors"
 	"strings"
 	"syscall"
 	"time"
@@ -87,7 +88,7 @@ func (p *execProcess) TerminateNicely(killGracePeriod time.Duration) error {
 	}
 
 	// It takes some time for the process to disappear
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if !p.groupExists() {
 			return nil
 		}
@@ -108,17 +109,15 @@ func (p *execProcess) signalGroup(sig syscall.Signal) error {
 
 func (p *execProcess) groupExists() bool {
 	err := syscall.Kill(-p.pgid, syscall.Signal(0))
-	if p.isGroupDoesNotExistError(err) {
-		return false
-	}
-	return true
+
+	return !p.isGroupDoesNotExistError(err)
 }
 
 func (p *execProcess) isGroupDoesNotExistError(err error) bool {
-	if err == syscall.ESRCH {
+	if errors.Is(err, syscall.ESRCH) {
 		return true
 	}
-	if err == syscall.EPERM {
+	if errors.Is(err, syscall.EPERM) {
 		// On BSD process is owned by no user while waiting to be reaped
 		return true
 	}
