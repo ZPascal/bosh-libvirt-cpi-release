@@ -22,8 +22,8 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
 		macElem = fmt.Sprintf("\n      <mac address='%s'/>", xmlEscape(props.MAC))
 	}
 
-	// Direct kernel boot: mount the stemcell rootfs directory via virtio-9p
-	// and exec bosh-agent directly, bypassing disk boot.
+	// Direct kernel boot: boot the given kernel with the ext4 rootfs image on
+	// /dev/vda and init=/bosh-init, skipping the disk bootloader.
 	if props.Kernel != "" {
 		xml := fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>

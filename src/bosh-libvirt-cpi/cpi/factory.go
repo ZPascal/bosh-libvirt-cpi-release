@@ -91,7 +91,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 		domBuilder = domains.LXCDomainBuilder{}
 	default: // "qemu"
 		// Use QEMUKernelDomainBuilder when the URI carries ?kernel=1 to enable
-		// direct-kernel boot with a virtio-9p rootfs (for CI without a bootable disk).
+		// direct-kernel boot with an ext4 rootfs (for CI without a bootable disk).
 		if u.Query().Get("kernel") != "" {
 			domBuilder = domains.QEMUKernelDomainBuilder{}
 		} else {
