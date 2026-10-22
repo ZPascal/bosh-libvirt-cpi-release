@@ -1,0 +1,62 @@
+#!/bin/sh
+export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+mkdir -p /var/vcap/bosh/log
+exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+mkdir -p /dev/shm && mount -t tmpfs -o size=256m tmpfs /dev/shm 2>/dev/null || true
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts 2>/dev/null || true
+mkdir -p /sys/fs/cgroup
+mount -t cgroup2 cgroup2 /sys/fs/cgroup 2>/dev/null || mount --bind /sys/fs/cgroup /sys/fs/cgroup 2>/dev/null || true
+mkdir -p /var/vcap/sys/run/bpm /var/vcap/sys/log
+chown -R 1000:1000 /var/vcap/sys/log 2>/dev/null || true
+cat /proc/mounts > /var/vcap/bosh/log/container-mounts.txt 2>/dev/null || true
+ip link set lo up 2>/dev/null || true
+IFACE=$(ip -o link show 2>/dev/null | awk -F': ' '$2 !~ /lo/ {print $2; exit}' | sed 's/@.*//')
+if [ -n "$IFACE" ]; then
+  ip link set "$IFACE" up
+  ip addr add {{.StaticCIDR}} dev "$IFACE" 2>/dev/null || true
+  ip route add default via {{.StaticGW}} dev "$IFACE" 2>/dev/null || true
+  arping -c 3 -U -I "$IFACE" {{.StaticIP}} 2>/dev/null || true
+fi
+# Stub the bpm binary before the agent starts so any BPM-based pre-start
+# scripts (which hang in LXC due to missing cgroup namespace support)
+# return 0 immediately. The background watcher re-stubs after each agent
+# package extraction cycle and stubs pre-start/post-start scripts too.
+mkdir -p /var/vcap/packages/bpm/bin
+printf '#!/bin/sh\n# bosh-lxc-noop: bpm stubbed for LXC deployment VM\nexit 0\n' > /var/vcap/packages/bpm/bin/bpm
+chmod 755 /var/vcap/packages/bpm/bin/bpm
+echo 'bpm binary pre-stubbed' >> /var/vcap/bosh/log/deploy-pre-start-stub.log
+( while true; do
+  for SCRIPT in /var/vcap/jobs/*/bin/pre-start /var/vcap/jobs/*/bin/post-start \
+                /var/vcap/data/jobs/*/*/bin/pre-start /var/vcap/data/jobs/*/*/bin/post-start; do
+    [ -f "$SCRIPT" ] || continue
+    grep -q 'bosh-lxc-noop' "$SCRIPT" 2>/dev/null && continue
+    printf '#!/bin/sh\n# bosh-lxc-noop\nexit 0\n' > "$SCRIPT"
+    chmod 755 "$SCRIPT"
+    echo "stubbed $SCRIPT" >> /var/vcap/bosh/log/deploy-pre-start-stub.log
+  done
+  if [ -f /var/vcap/packages/bpm/bin/bpm ] && ! grep -q 'bosh-lxc-noop' /var/vcap/packages/bpm/bin/bpm 2>/dev/null; then
+    printf '#!/bin/sh\n# bosh-lxc-noop: bpm stubbed for LXC deployment VM\nexit 0\n' > /var/vcap/packages/bpm/bin/bpm
+    chmod 755 /var/vcap/packages/bpm/bin/bpm
+    echo 're-stubbed bpm' >> /var/vcap/bosh/log/deploy-pre-start-stub.log
+  fi
+  NATS_SRV=/var/vcap/packages/nats/bin/nats-server
+  if [ -f "$NATS_SRV" ] && ! grep -q 'bosh-lxc-noop' "$NATS_SRV" 2>/dev/null; then
+    mv "$NATS_SRV" "${NATS_SRV}.real"
+    printf '#!/bin/sh\n# bosh-lxc-noop: nats-server stub\ncase "$*" in *--signal*) exit 0 ;;\nesac\nexec "${0}.real" "$@"\n' > "$NATS_SRV"
+    chmod 755 "$NATS_SRV"
+    echo 'stubbed nats-server' >> /var/vcap/bosh/log/deploy-pre-start-stub.log
+  fi
+  sleep 0.5
+done ) &
+{{.MonitStub}}# Restart loop: bosh-agent exits after update_settings (NATS reconnect with new
+# TLS certs), expecting monit/runit to restart it. Since this LXC container has
+# no service supervisor, we restart in-process. The container stays alive across
+# the reconnect cycle and the director's get_task succeeds on the next attempt.
+while true; do
+  /var/vcap/bosh/bin/bosh-agent -C /var/vcap/bosh/agent.json -P ubuntu
+  echo "bosh-agent exited with rc=$?, restarting in 1s" >> /var/vcap/bosh/log/bosh-agent-init.log
+  sleep 1
+done
