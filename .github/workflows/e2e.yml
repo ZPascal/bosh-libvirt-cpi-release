@@ -1,0 +1,448 @@
+name: E2E bosh-lite
+
+on:
+  workflow_call:
+    inputs:
+      backend:
+        description: 'Virtualization backend: qemu or lxc'
+        required: true
+        type: string
+      bosh_cli_version:
+        description: 'BOSH CLI version to install'
+        required: false
+        type: string
+        default: v7.10.8
+
+jobs:
+  e2e:
+    name: E2E Tests (${{ inputs.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Validate backend input
+      run: |
+        case "${{ inputs.backend }}" in
+          qemu|lxc) echo "backend=${{ inputs.backend }}";;
+          *) echo "ERROR: unsupported backend '${{ inputs.backend }}' (expected qemu or lxc)"; exit 1;;
+        esac
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: E2E host setup (disk, swap, golang packaging)
+      uses: ./.github/actions/e2e-host-setup
+
+    - name: Export backend-specific environment
+      run: |
+        {
+          if [ "${{ inputs.backend }}" = "qemu" ]; then
+            echo "DIRECTOR_IP=192.168.122.10"
+            echo "DIRECTOR_MAC=52:54:00:ab:cd:10"
+            echo "BOSH_ENV_ALIAS=qemu-ci"
+            echo "DIRECTOR_NAME=bosh-qemu-ci"
+            echo "DEPLOYMENT_NAME=qemu-test-deployment"
+          else
+            echo "DIRECTOR_IP=192.168.122.11"
+            echo "DIRECTOR_MAC=52:54:00:ab:cd:11"
+            echo "BOSH_ENV_ALIAS=lxc-ci"
+            echo "DIRECTOR_NAME=bosh-lxc-ci"
+            echo "DEPLOYMENT_NAME=lxc-test-deployment"
+          fi
+          echo "STORE_DIR=/tmp/bosh_libvirt_cpi"
+          echo "SSH_KEY=/tmp/bosh-libvirt-ssh-key"
+        } >> "$GITHUB_ENV"
+
+    - name: Install QEMU + libvirt
+      if: inputs.backend == 'qemu'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients virtinst libvirt-dev linux-image-generic e2fsprogs
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt "$USER"
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+
+    - name: Install LXC + libvirt
+      if: inputs.backend == 'lxc'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev systemd-container
+        sudo mkdir -p /sys/fs/cgroup
+        ls /sys/fs/cgroup/ 2>/dev/null || echo "cgroup not available at /sys/fs/cgroup"
+        sudo sysctl -w kernel.unprivileged_userns_clone=1 2>/dev/null || true
+        sudo sysctl -w user.max_user_namespaces=15000 2>/dev/null || true
+        sudo sysctl -w kernel.shmmax=67108864 2>/dev/null || true
+        sudo sysctl -w kernel.shmall=4194304 2>/dev/null || true
+        sudo systemctl mask libvirtd.socket libvirtd-ro.socket libvirtd-admin.socket 2>/dev/null || true
+        printf '\nshutdown_timeout = 0\n' | sudo tee -a /etc/libvirt/libvirtd.conf > /dev/null
+        sudo systemctl start libvirtd
+        sudo virsh -c lxc:/// list --all &>/dev/null &
+        sudo nohup sh -c 'while true; do virsh -c lxc:/// list --all &>/dev/null; sleep 30; done' &>/dev/null &
+        sudo usermod -aG libvirt "$USER"
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
+        sudo iptables -I FORWARD -s 192.168.122.0/24 -d 192.168.122.0/24 -j ACCEPT 2>/dev/null || true
+        sudo iptables -I FORWARD -i virbr0 -o virbr0 -j ACCEPT 2>/dev/null || true
+
+    - name: Setup SSH for director to host libvirt tunnel
+      run: |
+        ssh-keygen -t ed25519 -f /tmp/bosh-libvirt-ssh-key -N "" -C "bosh-director-libvirt"
+        sudo mkdir -p /root/.ssh
+        sudo chmod 700 /root/.ssh
+        sudo sh -c 'cat /tmp/bosh-libvirt-ssh-key.pub >> /root/.ssh/authorized_keys'
+        sudo chmod 600 /root/.ssh/authorized_keys
+        sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+        sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd 2>/dev/null || true
+        for _i in $(seq 1 20); do
+          if ss -tlnp | grep -q ':22 '; then break; else sleep 1; fi
+        done
+        LIBVIRT_HOST_KEY=$(sudo ssh-keyscan -t ed25519 192.168.122.1 2>/dev/null | grep ed25519 | awk '{print $2" "$3}')
+        if [ -z "${LIBVIRT_HOST_KEY}" ]; then
+          echo "ERROR: ssh-keyscan returned no key for 192.168.122.1 - virbr0 not up?"
+          sudo ss -tlnp | grep ':22' || true
+          ip addr show virbr0 2>/dev/null || echo "virbr0 not found"
+          exit 1
+        fi
+        echo "LIBVIRT_HOST_KEY=${LIBVIRT_HOST_KEY}" >> "$GITHUB_ENV"
+        echo "Libvirt SSH host key: ${LIBVIRT_HOST_KEY}"
+
+    - name: Install BOSH CLI
+      run: |
+        VER=${{ inputs.bosh_cli_version }}
+        curl -fsSL "https://github.com/cloudfoundry/bosh-cli/releases/download/${VER}/bosh-cli-${VER#v}-linux-amd64" \
+          -o /usr/local/bin/bosh
+        chmod +x /usr/local/bin/bosh
+        bosh --version
+
+    - name: Build CPI release tarball
+      run: bosh create-release --force --tarball /tmp/bosh-libvirt-cpi.tgz
+
+    - name: Download BOSH stemcell
+      run: |
+        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-noble \
+          -o /tmp/bosh-stemcell.tgz
+
+    - name: Prepare host kernel for direct boot (QEMU only)
+      if: inputs.backend == 'qemu'
+      run: |
+        KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*' | sort -V | tail -1)
+        echo "Using kernel: $KERNEL"
+        sudo cp "$KERNEL" /tmp/vmlinuz
+        sudo chmod 644 /tmp/vmlinuz
+        echo "KERNEL_PATH=/tmp/vmlinuz" >> "$GITHUB_ENV"
+
+    - name: Configure DHCP reservation for Director VM (QEMU)
+      if: inputs.backend == 'qemu'
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='${DIRECTOR_MAC}' ip='${DIRECTOR_IP}'/>" \
+          --live --config || true
+        sudo arp -s "${DIRECTOR_IP}" "${DIRECTOR_MAC}" 2>/dev/null || true
+
+    - name: Configure DHCP reservation for Director VM (LXC)
+      if: inputs.backend == 'lxc'
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='${DIRECTOR_MAC}' ip='${DIRECTOR_IP}'/>" \
+          --live --config || true
+        sudo arp -s "${DIRECTOR_IP}" "${DIRECTOR_MAC}" 2>/dev/null || true
+
+    - name: Bootstrap BOSH Director (QEMU)
+      if: inputs.backend == 'qemu'
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-kernel-boot.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
+            -v director_name='"${DIRECTOR_NAME}"' \
+            -v internal_ip='"${DIRECTOR_IP}"' \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v "kernel_path='"${KERNEL_PATH}"'" \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Bootstrap BOSH Director (LXC)
+      if: inputs.backend == 'lxc'
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/lxc-cpi.yml \
+            -o manifests/ops/lxc-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/lxc-mac.yml \
+            -o manifests/ops/lxc-director-ssh.yml \
+            -v director_name='"${DIRECTOR_NAME}"' \
+            -v internal_ip='"${DIRECTOR_IP}"' \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Wait for BOSH Director
+      shell: bash
+      run: |
+        DIRECTOR_UP=0
+        DEADLINE=$(( $(date +%s) + 14400 ))
+        i=0
+        while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+          i=$(( i + 1 ))
+          if [ -f /tmp/bosh-create-env.failed ]; then
+            echo "bosh create-env failed - aborting wait"
+            echo "=== bosh create-env log (last 50 lines) ===" && tail -50 /tmp/bosh-create-env.log || true
+            break
+          fi
+          if [ -f /tmp/bosh-create-env.done ]; then
+            if curl -skf --max-time 10 "https://${DIRECTOR_IP}:25555/info" > /tmp/director-info.json 2>&1; then
+              echo "Director is up! (attempt $i)"
+              cat /tmp/director-info.json
+              DIRECTOR_UP=1
+              break
+            fi
+          else
+            echo "Attempt $i - create-env still running, waiting 15s..."
+          fi
+          sleep 15
+        done
+        if [ "$DIRECTOR_UP" = "0" ]; then
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh wait || true
+          echo "Director not reachable after waiting - failing"
+          exit 1
+        fi
+
+    - name: Alias director and wait for API and workers
+      shell: bash
+      run: |
+        bosh int /tmp/bosh-vars.yml --path /director_ssl/ca > /tmp/director-ca.crt
+        bosh alias-env "${BOSH_ENV_ALIAS}" -e "${DIRECTOR_IP}" --ca-cert /tmp/director-ca.crt
+        echo "Waiting for director API (DB migration may still be running)..."
+        API_DEADLINE=$(( $(date +%s) + 1800 ))
+        until curl -skf --max-time 15 --user admin:admin-password \
+          "https://${DIRECTOR_IP}:25555/deployments" > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$API_DEADLINE" ]; then
+            echo "Director API not ready after 30min - failing"; exit 1
+          fi
+          echo "Director API not yet ready (migration running?), retrying in 15s..."
+          sleep 15
+        done
+        echo "Director API ready"
+        echo "=== cpi-inject log ===" && sudo find "${STORE_DIR}/vms" -name 'cpi-inject.log' -path '*/bosh/log/*' 2>/dev/null | xargs sudo cat 2>/dev/null | tail -10 || echo "(no cpi-inject.log yet)"
+        echo "Waiting for director task worker..."
+        WORKER_DEADLINE=$(( $(date +%s) + 600 ))
+        until timeout 30 bosh -e "${BOSH_ENV_ALIAS}" deployments \
+            --client admin --client-secret admin-password > /dev/null 2>&1; do
+          if [ "$(date +%s)" -ge "$WORKER_DEADLINE" ]; then
+            echo "Director worker not ready after 10min - failing"
+            bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh worker || true
+            exit 1
+          fi
+          echo "Director worker not yet ready, retrying in 15s..."
+          sleep 15
+        done
+        echo "Director worker ready"
+
+    - name: Upload stemcell and release (QEMU)
+      if: inputs.backend == 'qemu'
+      shell: bash
+      run: |
+        timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-qemu.yml \
+          --client admin --client-secret admin-password \
+          -v "kernel_path=${KERNEL_PATH}" \
+          -n
+        timeout 600 bosh -e "${BOSH_ENV_ALIAS}" upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password || {
+            bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+            exit 1
+          }
+        echo "Waiting for blobstore (port 25250)..."
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z "${DIRECTOR_IP}" 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+          exit 1
+        fi
+        echo "Blobstore ready"
+        echo "=== stemcell ext4 pre-deploy check ==="
+        SC_IMG=$(sudo find /tmp/bosh_libvirt_cpi/stemcells -name 'image.ext4' 2>/dev/null | head -1)
+        if [ -n "$SC_IMG" ]; then
+          echo "Stemcell: $SC_IMG ($(sudo du -sh "$SC_IMG" 2>/dev/null | cut -f1))"
+          sudo file "$SC_IMG" 2>/dev/null || true
+          sudo tune2fs -l "$SC_IMG" 2>/dev/null | grep -E 'Block count|Inode count|Free blocks|Free inodes|Filesystem state' || echo "(tune2fs failed)"
+        else
+          echo "WARNING: no stemcell image.ext4 found before deploy"
+        fi
+        timeout 300 bosh -e "${BOSH_ENV_ALIAS}" upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
+
+    - name: Upload stemcell and release (LXC)
+      if: inputs.backend == 'lxc'
+      shell: bash
+      run: |
+        timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-lxc.yml \
+          --client admin --client-secret admin-password \
+          -n
+        timeout 600 bosh -e "${BOSH_ENV_ALIAS}" upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password || {
+            bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+            exit 1
+          }
+        echo "Waiting for blobstore (port 25250)..."
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z "${DIRECTOR_IP}" 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+          exit 1
+        fi
+        echo "Blobstore ready"
+        timeout 300 bosh -e "${BOSH_ENV_ALIAS}" upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
+
+    - name: Deploy smoke test
+      shell: bash
+      run: |
+        SB_WATCH_PID=""
+        if [ "${{ inputs.backend }}" = "qemu" ]; then
+          ( known=""; while true; do
+              for img in $(sudo find "${STORE_DIR}/vms" -name 'rootfs.img' 2>/dev/null); do
+                if ! echo "$known" | grep -qF "$img"; then
+                  known="$known $img"
+                  sz=$(sudo du -sh "$img" 2>/dev/null | cut -f1)
+                  val=$(sudo python3 -c "import struct; f=open('$img','rb'); f.seek(1120); v=struct.unpack('<I',f.read(4))[0]; f.close(); print('0x{:08x} nr={}'.format(v,(v>>2)&1))" 2>/dev/null || echo "read_err")
+                  echo "[sb-watch] new rootfs.img: $img ($sz) incompat=$val" | sudo tee -a /tmp/sb-watch.log
+                fi
+              done
+              sleep 5
+            done ) &
+          SB_WATCH_PID=$!
+        fi
+        DEPLOY_RC=0
+        timeout 3600 bosh -e "${BOSH_ENV_ALIAS}" -d "${DEPLOYMENT_NAME}" deploy manifests/test-deployment.yml \
+          --client admin --client-secret admin-password \
+          --vars-store /tmp/bosh-deploy-vars.yml \
+          -v deployment_name="${DEPLOYMENT_NAME}" \
+          -v director_address="${DIRECTOR_IP}" \
+          -n --fix || DEPLOY_RC=$?
+        if [ -n "$SB_WATCH_PID" ]; then
+          kill "$SB_WATCH_PID" 2>/dev/null || true
+          echo "=== sb-watch log ===" && cat /tmp/sb-watch.log 2>/dev/null || true
+          echo "=== final superblock state of all VM rootfs.img files ==="
+          sudo find "${STORE_DIR}/vms" -name 'rootfs.img' 2>/dev/null | while read -r img; do
+            sz=$(sudo du -sh "$img" 2>/dev/null | cut -f1)
+            val=$(sudo python3 -c "import struct; f=open('$img','rb'); f.seek(1120); v=struct.unpack('<I',f.read(4))[0]; f.close(); print('incompat=0x{:08x} nr={}'.format(v,(v>>2)&1))" 2>/dev/null || echo "read_err")
+            echo "[final-sb] $img ($sz) $val"
+          done || true
+        fi
+        if [ $DEPLOY_RC -ne 0 ]; then
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh deploy || true
+          exit 1
+        fi
+
+    - name: Verify smoke test deployment
+      shell: bash
+      run: |
+        echo "=== Checking NATS port 4222 on 192.168.122.20 ==="
+        timeout 240 bash -c 'until nc -z 192.168.122.20 4222; do echo "waiting for nats..."; sleep 5; done' || {
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh verify || true
+          exit 1
+        }
+        echo "NATS port 4222 reachable - deployment verified"
+        bosh -e "${BOSH_ENV_ALIAS}" deployments --client admin --client-secret admin-password --json | \
+          python3 -c "import sys,json; d=json.load(sys.stdin); rows=d.get('Tables',[{}])[0].get('Rows',[]); print('Deployments found:',len(rows)); [print(' -',r.get('name')) for r in rows]"
+        bosh -e "${BOSH_ENV_ALIAS}" -d "${DEPLOYMENT_NAME}" vms --client admin --client-secret admin-password
+        bosh -e "${BOSH_ENV_ALIAS}" vms --client admin --client-secret admin-password
+        nc -zv "${DIRECTOR_IP}" 5432 2>&1 && echo "DB port reachable" || echo "WARNING: DB port 5432 not reachable from CI host"
+        echo "=== DB network connectivity: director postgres self-check (via SSH) ==="
+        ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+          root@"${DIRECTOR_IP}" 'nc -zv 127.0.0.1 5432 2>&1 && echo "DB local ok" || echo "DB not listening locally"' 2>/dev/null || echo "(SSH unavailable)"
+        echo "=== All ${{ inputs.backend }} e2e checks passed ==="
+
+    - name: Clean up Director (QEMU)
+      if: always() && inputs.backend == 'qemu'
+      run: |
+        sudo bosh delete-env manifests/qemu-cpi.yml \
+          -o manifests/ops/qemu-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/qemu-mac.yml \
+          -o manifests/ops/qemu-kernel-boot.yml \
+          -o manifests/ops/qemu-director-ssh.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name="${DIRECTOR_NAME}" \
+          -v internal_ip="${DIRECTOR_IP}" \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v "kernel_path=${KERNEL_PATH}" \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+
+    - name: Clean up Director (LXC)
+      if: always() && inputs.backend == 'lxc'
+      run: |
+        sudo bosh delete-env manifests/lxc-cpi.yml \
+          -o manifests/ops/lxc-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/lxc-mac.yml \
+          -o manifests/ops/lxc-director-ssh.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name="${DIRECTOR_NAME}" \
+          -v internal_ip="${DIRECTOR_IP}" \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true

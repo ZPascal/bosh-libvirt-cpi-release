@@ -24,6 +24,8 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 
 See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
 
+For how these backends are exercised in CI (the reusable E2E workflow), see [docs/e2e-backends.md](docs/e2e-backends.md).
+
 ## Quick Start
 
 ### Prerequisites
