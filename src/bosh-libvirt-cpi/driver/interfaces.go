@@ -1,5 +1,6 @@
 package driver
 
+// Driver abstracts libvirt domain and storage operations.
 type Driver interface {
 	// Domain lifecycle
 	DefineDomain(xml string) error
@@ -21,6 +22,7 @@ type Driver interface {
 	IsMissingDomainErr(err error) bool
 }
 
+// Domain wraps a libvirt domain for state queries.
 type Domain interface {
 	GetName() (string, error)
 	GetState() (int, int, error)
@@ -28,6 +30,7 @@ type Domain interface {
 	Free() error
 }
 
+// Runner executes commands and transfers files on a target host.
 type Runner interface {
 	Execute(path string, args ...string) (string, int, error)
 	Upload(srcDir, dstDir string) error
@@ -39,6 +42,7 @@ var _ Runner = LocalRunner{}
 var _ Runner = &SSHRunner{}
 var _ Runner = &ExpandingPathRunner{}
 
+// RawRunner extends Runner with a HomeDir lookup used by ExpandingPathRunner.
 type RawRunner interface {
 	HomeDir() (string, error)
 	Runner

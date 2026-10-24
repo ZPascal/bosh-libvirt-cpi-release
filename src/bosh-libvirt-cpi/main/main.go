@@ -20,6 +20,8 @@ var (
 	configPathOpt = flag.String("configPath", "", "Path to configuration file")
 )
 
+// main reads config from -configPath, optionally opens an SSH tunnel to the
+// libvirt host, connects to libvirt, and serves one CPI request on stdin/stdout.
 func main() {
 	logger, fs, cmdRunner, uuidGen := basicDeps()
 	defer logger.HandlePanic("Main")
@@ -71,6 +73,8 @@ func main() {
 	}
 }
 
+// basicDeps constructs the standard logger, filesystem, command runner and UUID
+// generator used throughout the CPI process.
 func basicDeps() (boshlog.Logger, boshsys.FileSystem, boshsys.CmdRunner, boshuuid.Generator) {
 	logger := boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
 	fs := boshsys.NewOsFileSystem(logger)

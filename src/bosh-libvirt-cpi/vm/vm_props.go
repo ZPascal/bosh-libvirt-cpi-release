@@ -4,6 +4,7 @@ import (
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 )
 
+// VMProps holds per-VM cloud_properties from the BOSH manifest.
 type VMProps struct {
 	Memory        int
 	CPUs          int
@@ -12,6 +13,7 @@ type VMProps struct {
 	Kernel        string `json:"kernel"`
 }
 
+// NewVMProps parses VMCloudProps into VMProps, applying defaults.
 func NewVMProps(props apiv1.VMCloudProps) (VMProps, error) {
 	vmProps := VMProps{
 		Memory:        512,

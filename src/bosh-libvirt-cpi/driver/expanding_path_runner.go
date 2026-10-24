@@ -9,11 +9,13 @@ var (
 	homeMarker = "~"
 )
 
+// ExpandingPathRunner wraps a RawRunner and expands ~ to the runner's home directory in all path arguments.
 type ExpandingPathRunner struct {
 	other           RawRunner
 	resolvedHomeDir string
 }
 
+// NewExpandingPathRunner returns an ExpandingPathRunner wrapping other.
 func NewExpandingPathRunner(other RawRunner) *ExpandingPathRunner {
 	return &ExpandingPathRunner{other, ""}
 }

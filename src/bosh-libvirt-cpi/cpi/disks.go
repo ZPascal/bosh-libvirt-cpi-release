@@ -8,12 +8,14 @@ import (
 	bvm "bosh-libvirt-cpi/vm"
 )
 
+// Disks implements the CPI disk lifecycle methods.
 type Disks struct {
 	creator  bdisk.Creator
 	finder   bdisk.Finder
 	vmFinder bvm.Finder
 }
 
+// NewDisks returns a Disks using the given creator, finder, and VM finder.
 func NewDisks(creator bdisk.Creator, finder bdisk.Finder, vmFinder bvm.Finder) Disks {
 	return Disks{creator, finder, vmFinder}
 }

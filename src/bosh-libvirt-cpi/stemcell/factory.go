@@ -18,10 +18,12 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// FactoryOpts holds configuration for the stemcell Factory.
 type FactoryOpts struct {
 	DirPath string
 }
 
+// Factory imports stemcell images and locates existing ones.
 type Factory struct {
 	opts FactoryOpts
 
@@ -42,6 +44,7 @@ type Factory struct {
 	logger boshlog.Logger
 }
 
+// NewFactory returns a Factory with the given options and dependencies.
 func NewFactory(
 	opts FactoryOpts,
 	driver driver.Driver,

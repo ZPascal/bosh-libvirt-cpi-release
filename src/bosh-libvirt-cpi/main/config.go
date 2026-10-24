@@ -9,8 +9,12 @@ import (
 	"bosh-libvirt-cpi/cpi"
 )
 
+// Config is the on-disk JSON config for the CPI process.
+// It is a thin alias of cpi.FactoryOpts so a single struct covers both
+// the config file format and the options passed to the factory.
 type Config cpi.FactoryOpts
 
+// NewConfigFromPath reads and validates the JSON config at path.
 func NewConfigFromPath(path string, fs boshsys.FileSystem) (Config, error) {
 	var config Config
 

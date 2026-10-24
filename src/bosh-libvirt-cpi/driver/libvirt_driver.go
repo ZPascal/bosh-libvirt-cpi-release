@@ -10,6 +10,7 @@ import (
 	libvirt "libvirt.org/go/libvirt"
 )
 
+// LibvirtDriver implements Driver against a real libvirt connection.
 type LibvirtDriver struct {
 	conn       LibvirtConn
 	domBuilder DomainBuilder
@@ -17,6 +18,7 @@ type LibvirtDriver struct {
 	logger     boshlog.Logger
 }
 
+// NewLibvirtDriver returns a LibvirtDriver using conn and builder.
 func NewLibvirtDriver(conn LibvirtConn, builder DomainBuilder, logger boshlog.Logger) LibvirtDriver {
 	return LibvirtDriver{
 		conn:       conn,
