@@ -8,12 +8,14 @@ import (
 	bvm "bosh-libvirt-cpi/vm"
 )
 
+// VMs implements the CPI VM lifecycle methods.
 type VMs struct {
 	stemcellFinder bstem.Finder
 	creator        bvm.Creator
 	finder         bvm.Finder
 }
 
+// NewVMs returns a VMs using the given stemcell finder, VM creator, and VM finder.
 func NewVMs(stemcellFinder bstem.Finder, creator bvm.Creator, finder bvm.Finder) VMs {
 	return VMs{stemcellFinder, creator, finder}
 }

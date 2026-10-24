@@ -7,11 +7,13 @@ import (
 	bstem "bosh-libvirt-cpi/stemcell"
 )
 
+// Stemcells implements the CPI stemcell lifecycle methods.
 type Stemcells struct {
 	importer bstem.Importer
 	finder   bstem.Finder
 }
 
+// NewStemcells returns a Stemcells using the given importer and finder.
 func NewStemcells(importer bstem.Importer, finder bstem.Finder) Stemcells {
 	return Stemcells{importer, finder}
 }

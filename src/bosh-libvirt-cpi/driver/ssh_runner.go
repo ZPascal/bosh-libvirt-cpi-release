@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// SSHRunner implements Runner and RawRunner over an SSH connection to a remote host.
 type SSHRunner struct {
 	opts SSHRunnerOpts
 
@@ -25,6 +26,7 @@ type SSHRunner struct {
 	existingClient *ssh.Client
 }
 
+// SSHRunnerOpts holds connection parameters for SSHRunner.
 type SSHRunnerOpts struct {
 	Host       string
 	Port       int // SSH port; defaults to 22 if zero
@@ -33,6 +35,7 @@ type SSHRunnerOpts struct {
 	HostKey    string // authorized_keys format, e.g. "ssh-ed25519 AAAA..."
 }
 
+// NewSSHRunner returns an SSHRunner with the given opts.
 func NewSSHRunner(opts SSHRunnerOpts, fs boshsys.FileSystem, logger boshlog.Logger) *SSHRunner {
 	return &SSHRunner{opts, fs, "driver.SSHRunner", logger, nil}
 }

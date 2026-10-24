@@ -6,10 +6,12 @@ import (
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 )
 
+// RetryableError marks an error as safe to retry.
 type RetryableError interface {
 	Retryable()
 }
 
+// RetryableErrorImpl wraps an error to mark it retryable.
 type RetryableErrorImpl struct {
 	Err error
 }
@@ -17,11 +19,13 @@ type RetryableErrorImpl struct {
 func (RetryableErrorImpl) Retryable()      {}
 func (e RetryableErrorImpl) Error() string { return e.Err.Error() }
 
+// Retrier retries a function until it succeeds or exhausts attempts.
 type Retrier interface {
 	Retry(func() error) error
 	RetryComplex(func() error, int, time.Duration) error
 }
 
+// RetrierImpl is the default Retrier implementation.
 type RetrierImpl struct{}
 
 func (r RetrierImpl) Retry(actionFunc func() error) error {

@@ -10,6 +10,7 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// VMImpl is the concrete VM implementation backed by a libvirt domain.
 type VMImpl struct {
 	cid   apiv1.VMCID
 	store Store
@@ -20,6 +21,7 @@ type VMImpl struct {
 	logger boshlog.Logger
 }
 
+// NewVMImpl returns a VMImpl for the given CID.
 func NewVMImpl(
 	cid apiv1.VMCID,
 	store Store,

@@ -60,6 +60,7 @@ func renderAsset(path string, data any) []byte {
 	return buf.Bytes()
 }
 
+// FactoryOpts holds configuration for the VM Factory.
 type FactoryOpts struct {
 	DirPath string
 	Network string // libvirt network name; defaults to "default" if empty
@@ -114,6 +115,7 @@ func (o FactoryOpts) buildCPIInjectJSON() []byte {
 	return b
 }
 
+// Factory creates and locates VMs.
 type Factory struct {
 	opts    FactoryOpts
 	uuidGen boshuuid.Generator
@@ -130,6 +132,7 @@ type Factory struct {
 	logger boshlog.Logger
 }
 
+// NewFactory returns a Factory with the given options and dependencies.
 func NewFactory(
 	opts FactoryOpts,
 	uuidGen boshuuid.Generator,
