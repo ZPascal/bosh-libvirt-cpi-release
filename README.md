@@ -24,8 +24,6 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 
 See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
 
-For how these backends are exercised in CI (the reusable E2E workflow), see [docs/e2e-backends.md](docs/e2e-backends.md).
-
 ## Quick Start
 
 ### Prerequisites
@@ -109,8 +107,27 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields — see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
 
 
+## CI
+
+Tests run on every push and PR to `main`. The pipeline is defined in `.github/workflows/tests.yml` and calls two reusable workflows:
+
+**E2E (`e2e.yml`)** — spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
+
+```yaml
+jobs:
+  e2e:
+    uses: ./.github/workflows/e2e.yml
+    with:
+      backend: qemu   # or lxc
+```
+
+**Setup BOSH Director (`setup-bosh-director.yml`)** — bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` — both require the same runner for libvirt networking to work.
+
+Full workflow documentation (inputs, outputs, step-by-step breakdown) is in [docs/e2e-backends.md](docs/e2e-backends.md).
+
 ## Documentation
 
+- **[CI/CD Workflows](docs/e2e-backends.md)** - E2E workflow inputs, backend comparison, diagnostics
 - **[Hypervisor Configuration Guide](docs/HYPERVISOR_CONFIGURATION.md)** - Per-backend installation prerequisites and known limitations
 - **Configuration Examples**:
   - [QEMU/KVM Local](config/cpi-qemu.json)
