@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       backend:
-        description: 'Virtualization backend: qemu or lxc'
+        description: 'Virtualization backend: qemu, lxc, or vbox'
         required: true
         type: string
       bosh_cli_version:
@@ -25,8 +25,8 @@ jobs:
     - name: Validate backend input
       run: |
         case "${{ inputs.backend }}" in
-          qemu|lxc) echo "backend=${{ inputs.backend }}";;
-          *) echo "ERROR: unsupported backend '${{ inputs.backend }}' (expected qemu or lxc)"; exit 1;;
+          qemu|lxc|vbox) echo "backend=${{ inputs.backend }}";;
+          *) echo "ERROR: unsupported backend '${{ inputs.backend }}' (expected qemu, lxc, or vbox)"; exit 1;;
         esac
 
     - name: Set up Go
@@ -47,12 +47,18 @@ jobs:
             echo "BOSH_ENV_ALIAS=qemu-ci"
             echo "DIRECTOR_NAME=bosh-qemu-ci"
             echo "DEPLOYMENT_NAME=qemu-test-deployment"
-          else
+          elif [ "${{ inputs.backend }}" = "lxc" ]; then
             echo "DIRECTOR_IP=192.168.122.11"
             echo "DIRECTOR_MAC=52:54:00:ab:cd:11"
             echo "BOSH_ENV_ALIAS=lxc-ci"
             echo "DIRECTOR_NAME=bosh-lxc-ci"
             echo "DEPLOYMENT_NAME=lxc-test-deployment"
+          else
+            echo "DIRECTOR_IP=192.168.1.8"
+            echo "DIRECTOR_MAC=52:54:00:ab:cd:12"
+            echo "BOSH_ENV_ALIAS=vbox-ci"
+            echo "DIRECTOR_NAME=bosh-vbox-ci"
+            echo "DEPLOYMENT_NAME=vbox-test-deployment"
           fi
           echo "STORE_DIR=/tmp/bosh_libvirt_cpi"
           echo "SSH_KEY=/tmp/bosh-libvirt-ssh-key"
@@ -89,6 +95,16 @@ jobs:
         sudo virsh net-autostart default || true
         sudo iptables -I FORWARD -s 192.168.122.0/24 -d 192.168.122.0/24 -j ACCEPT 2>/dev/null || true
         sudo iptables -I FORWARD -i virbr0 -o virbr0 -j ACCEPT 2>/dev/null || true
+
+    - name: Install VirtualBox + libvirt
+      if: inputs.backend == 'vbox'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y virtualbox libvirt-daemon-system libvirt-daemon-driver-vbox libvirt-dev
+        sudo systemctl start libvirtd
+        sudo usermod -aG libvirt "$USER"
+        sudo virsh net-start default || true
+        sudo virsh net-autostart default || true
 
     - name: Setup SSH for director to host libvirt tunnel
       run: |
@@ -154,6 +170,14 @@ jobs:
           --live --config || true
         sudo arp -s "${DIRECTOR_IP}" "${DIRECTOR_MAC}" 2>/dev/null || true
 
+    - name: Configure DHCP reservation for Director VM (VBox)
+      if: inputs.backend == 'vbox'
+      run: |
+        sudo virsh net-update default add ip-dhcp-host \
+          "<host mac='${DIRECTOR_MAC}' ip='${DIRECTOR_IP}'/>" \
+          --live --config || true
+        sudo arp -s "${DIRECTOR_IP}" "${DIRECTOR_MAC}" 2>/dev/null || true
+
     - name: Bootstrap BOSH Director (QEMU)
       if: inputs.backend == 'qemu'
       shell: bash
@@ -202,6 +226,37 @@ jobs:
             -o manifests/ops/local-store-dir.yml \
             -o manifests/ops/lxc-mac.yml \
             -o manifests/ops/lxc-director-ssh.yml \
+            -v director_name='"${DIRECTOR_NAME}"' \
+            -v internal_ip='"${DIRECTOR_IP}"' \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Bootstrap BOSH Director (VBox)
+      if: inputs.backend == 'vbox'
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/vbox-cpi.yml \
+            -o manifests/ops/vbox-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/vbox-mac.yml \
+            -o manifests/ops/vbox-director-ssh.yml \
             -v director_name='"${DIRECTOR_NAME}"' \
             -v internal_ip='"${DIRECTOR_IP}"' \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
@@ -348,6 +403,35 @@ jobs:
           --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
           --client admin --client-secret admin-password
 
+    - name: Upload stemcell and release (VBox)
+      if: inputs.backend == 'vbox'
+      shell: bash
+      run: |
+        timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-vbox.yml \
+          --client admin --client-secret admin-password \
+          -n
+        timeout 600 bosh -e "${BOSH_ENV_ALIAS}" upload-stemcell /tmp/bosh-stemcell.tgz \
+          --client admin --client-secret admin-password || {
+            bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+            exit 1
+          }
+        echo "Waiting for blobstore (port 25250)..."
+        _blob_ok=0
+        for _i in $(seq 1 80); do
+          if nc -z "${DIRECTOR_IP}" 25250 2>/dev/null; then _blob_ok=1; break; fi
+          sleep 3
+        done
+        if [ "$_blob_ok" != "1" ]; then
+          echo "ERROR: blobstore port 25250 never opened after 240s"
+          bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+          exit 1
+        fi
+        echo "Blobstore ready"
+        timeout 300 bosh -e "${BOSH_ENV_ALIAS}" upload-release \
+          https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
+          --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
+          --client admin --client-secret admin-password
+
     - name: Deploy smoke test
       shell: bash
       run: |
@@ -437,6 +521,25 @@ jobs:
           -o manifests/ops/local-store-dir.yml \
           -o manifests/ops/lxc-mac.yml \
           -o manifests/ops/lxc-director-ssh.yml \
+          --state /tmp/bosh-state.json \
+          --vars-store /tmp/bosh-vars.yml \
+          -v director_name="${DIRECTOR_NAME}" \
+          -v internal_ip="${DIRECTOR_IP}" \
+          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+          -v libvirt_host=192.168.122.1 \
+          -v libvirt_username=root \
+          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+
+    - name: Clean up Director (VBox)
+      if: always() && inputs.backend == 'vbox'
+      run: |
+        sudo bosh delete-env manifests/vbox-cpi.yml \
+          -o manifests/ops/vbox-local.yml \
+          -o manifests/local-release.yml \
+          -o manifests/ops/local-store-dir.yml \
+          -o manifests/ops/vbox-mac.yml \
+          -o manifests/ops/vbox-director-ssh.yml \
           --state /tmp/bosh-state.json \
           --vars-store /tmp/bosh-vars.yml \
           -v director_name="${DIRECTOR_NAME}" \
