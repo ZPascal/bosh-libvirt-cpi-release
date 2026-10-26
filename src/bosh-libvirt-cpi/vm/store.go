@@ -9,11 +9,13 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// Store is a simple key/value store for VM metadata backed by a directory on the runner.
 type Store struct {
 	path   string
 	runner driver.Runner
 }
 
+// NewStore returns a Store rooted at path.
 func NewStore(path string, runner driver.Runner) Store {
 	return Store{path, runner}
 }

@@ -12,6 +12,7 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// Factory creates and locates persistent disks.
 type Factory struct {
 	dirPath string
 	uuidGen boshuuid.Generator
@@ -22,6 +23,7 @@ type Factory struct {
 	logger boshlog.Logger
 }
 
+// NewFactory returns a Factory storing disks under dirPath.
 func NewFactory(
 	dirPath string,
 	uuidGen boshuuid.Generator,

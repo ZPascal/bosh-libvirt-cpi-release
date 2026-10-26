@@ -5,6 +5,7 @@ import (
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 )
 
+// ConfigureAgent writes the agent env to the VM's store.
 func (vm VMImpl) ConfigureAgent(agentEnv apiv1.AgentEnv) error {
 	_, err := vm.configureAgent(agentEnv)
 	return err

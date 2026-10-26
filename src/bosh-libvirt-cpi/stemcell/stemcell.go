@@ -10,6 +10,7 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// StemcellImpl is the concrete Stemcell implementation backed by a directory on the runner.
 type StemcellImpl struct {
 	cid  apiv1.StemcellCID
 	path string
@@ -21,6 +22,7 @@ type StemcellImpl struct {
 	logger boshlog.Logger
 }
 
+// NewStemcellImpl returns a StemcellImpl for the given CID at path.
 func NewStemcellImpl(
 	cid apiv1.StemcellCID,
 	path string,

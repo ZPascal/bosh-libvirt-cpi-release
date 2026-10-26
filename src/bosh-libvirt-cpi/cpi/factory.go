@@ -17,6 +17,7 @@ import (
 	bvm "bosh-libvirt-cpi/vm"
 )
 
+// Factory builds a CPI for each incoming RPC call. Shared resources (filesystem, runner, UUID generator) are held here; per-call objects are created in New.
 type Factory struct {
 	fs          boshsys.FileSystem
 	cmdRunner   boshsys.CmdRunner
@@ -29,6 +30,7 @@ type Factory struct {
 
 var _ apiv1.CPIFactory = Factory{}
 
+// CPI composes all CPI method groups into a single type that satisfies the apiv1.CPI interface.
 type CPI struct {
 	Misc
 	Stemcells
@@ -39,6 +41,7 @@ type CPI struct {
 
 var _ apiv1.CPI = CPI{}
 
+// NewFactory returns a Factory using a new libvirt connection on each call.
 func NewFactory(
 	fs boshsys.FileSystem,
 	cmdRunner boshsys.CmdRunner,

@@ -10,6 +10,7 @@ import (
 	"bosh-libvirt-cpi/driver"
 )
 
+// DiskImpl is the concrete Disk implementation backed by a directory on the runner.
 type DiskImpl struct {
 	cid  apiv1.DiskCID
 	path string
@@ -18,6 +19,7 @@ type DiskImpl struct {
 	logger boshlog.Logger
 }
 
+// NewDiskImpl returns a DiskImpl for the given CID at path.
 func NewDiskImpl(
 	cid apiv1.DiskCID,
 	path string,

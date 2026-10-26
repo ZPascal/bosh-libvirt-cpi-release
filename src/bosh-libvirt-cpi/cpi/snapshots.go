@@ -4,8 +4,10 @@ import (
 	"github.com/cloudfoundry/bosh-cpi-go/apiv1"
 )
 
+// Snapshots implements the CPI snapshot methods (no-ops: libvirt snapshots are not supported).
 type Snapshots struct{}
 
+// NewSnapshots returns a Snapshots.
 func NewSnapshots() Snapshots {
 	return Snapshots{}
 }

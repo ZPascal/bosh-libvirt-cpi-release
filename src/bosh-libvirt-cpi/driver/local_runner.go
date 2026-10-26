@@ -10,6 +10,7 @@ import (
 	boshsys "github.com/cloudfoundry/bosh-utils/system"
 )
 
+// LocalRunner implements Runner and RawRunner using the local filesystem and command runner.
 type LocalRunner struct {
 	fs        boshsys.FileSystem
 	cmdRunner boshsys.CmdRunner
@@ -18,6 +19,7 @@ type LocalRunner struct {
 	logger boshlog.Logger
 }
 
+// NewLocalRunner returns a LocalRunner.
 func NewLocalRunner(fs boshsys.FileSystem, cmdRunner boshsys.CmdRunner, logger boshlog.Logger) LocalRunner {
 	return LocalRunner{fs, cmdRunner, "driver.LocalRunner", logger}
 }

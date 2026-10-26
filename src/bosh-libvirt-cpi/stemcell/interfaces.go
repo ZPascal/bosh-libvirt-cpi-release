@@ -4,18 +4,21 @@ import (
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 )
 
+// Importer imports a stemcell image from a local path.
 type Importer interface {
 	ImportFromPath(string) (Stemcell, error)
 }
 
 var _ Importer = Factory{}
 
+// Finder looks up a stemcell by CID.
 type Finder interface {
 	Find(apiv1.StemcellCID) (Stemcell, error)
 }
 
 var _ Finder = Factory{}
 
+// Stemcell represents an imported stemcell managed by the CPI.
 type Stemcell interface {
 	ID() apiv1.StemcellCID
 
