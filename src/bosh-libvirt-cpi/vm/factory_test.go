@@ -216,6 +216,73 @@ var _ = Describe("vm.Factory", func() {
 		})
 	})
 
+	Describe("Create (vmdk/VBox branch)", func() {
+		var vboxBuilder *driverfakes.FakeDomainBuilder
+
+		BeforeEach(func() {
+			vboxBuilder = &driverfakes.FakeDomainBuilder{
+				BuildDomainXML:        "<domain/>",
+				DiskImageFormatResult: "vmdk",
+			}
+			factory = vm.NewFactory(
+				vm.FactoryOpts{DirPath: filepath.Join(tmpDir, "vms")},
+				vmUUIDGen,
+				drv,
+				runner,
+				vboxBuilder,
+				diskFactory,
+				apiv1.AgentOptions{Mbus: "nats://nats:nats-password@127.0.0.1:4222"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger,
+			)
+			stemcell.ImagePathResult = "/stemcells/sc-1/image.vmdk"
+		})
+
+		It("writes env.iso to the VM store", func() {
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			isoPath := filepath.Join(tmpDir, "vms", "vm-uuid-vm-1", "env.iso")
+			Expect(runner.PutContents).To(HaveKey(isoPath))
+			Expect(runner.PutContents[isoPath]).ToNot(BeEmpty())
+		})
+
+		It("sets ConfigDisk to the env.iso store path", func() {
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			expectedIsoPath := filepath.Join(tmpDir, "vms", "vm-uuid-vm-1", "env.iso")
+			Expect(vboxBuilder.LastBuildDomainDisks.ConfigDisk).To(Equal(expectedIsoPath))
+		})
+
+		It("sets RootDisk and EphemeralDisk from stemcell and ephemeral disk", func() {
+			_, err := factory.Create(
+				apiv1.NewAgentID("agent-1"),
+				stemcell,
+				cloudProps,
+				apiv1.Networks{},
+				apiv1.NewVMEnv(nil),
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(vboxBuilder.LastBuildDomainDisks.RootDisk).To(Equal("/stemcells/sc-1/image.vmdk"))
+			// EphemeralDisk is the image path returned by the disk factory; it ends with disk.img.
+			Expect(vboxBuilder.LastBuildDomainDisks.EphemeralDisk).To(ContainSubstring("disk.img"))
+		})
+	})
+
 	Describe("Create (ext4 branch)", func() {
 		var ext4Builder *driverfakes.FakeDomainBuilder
 
