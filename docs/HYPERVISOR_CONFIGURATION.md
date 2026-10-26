@@ -10,11 +10,8 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 
 | Hypervisor | Type | Status | Best For |
 |------------|------|--------|----------|
-| **qemu** | Full virtualization (KVM) | ✅ Production Ready | Production deployments, best performance |
-| **vbox** | VirtualBox | ✅ Stable | Development, desktop environments |
-| **lxc** | Linux Containers | ✅ Stable | Lightweight workloads, fast startup |
-| **xen** | Xen Hypervisor | ⚠️ Experimental | Xen-based infrastructure |
-| **vmware** | VMware Workstation | ⚠️ Experimental | VMware environments |
+| **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers, fast setup |
+| **qemu** (KVM) | `qemu:///system` | ✅ Stable | ARM support, good performance |
 
 ## Configuration Parameters
 
@@ -43,10 +40,7 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 If you don't specify a `uri`, it will be automatically generated based on the `hypervisor`:
 
 - `qemu` → `qemu:///system`
-- `vbox` → `vbox:///session`
 - `lxc` → `lxc:///`
-- `xen` → `xen:///`
-- `vmware` → `vmware:///session`
 
 ## Hypervisor-Specific Configuration
 
@@ -111,39 +105,6 @@ sudo usermod -aG kvm $USER
 - Advanced CPU and memory management
 - qcow2 disk format with compression and snapshots
 
-### VirtualBox (Development)
-
-**Prerequisites:**
-```bash
-# Install VirtualBox and libvirt-vbox driver
-sudo apt-get install virtualbox virtualbox-ext-pack
-sudo apt-get install libvirt-daemon-driver-vbox
-
-# Restart libvirt
-sudo systemctl restart libvirtd
-```
-
-**Configuration:**
-```json
-{
-  "hypervisor": "vbox",
-  "uri": "vbox:///session",
-  "bin_path": "virsh",
-  "store_dir": "/var/vcap/store/libvirt-vbox",
-  "storage_controller": "SATA",
-  "auto_enable_networks": true,
-  "agent": { ... }
-}
-```
-
-**Features:**
-- Desktop-friendly virtualization
-- Good for development and testing
-- GUI support via RDP
-- Integration with VirtualBox ecosystem
-
-**Note:** VirtualBox integration via libvirt uses the `vbox:///session` URI and runs VMs in user session mode.
-
 ### LXC (Containers)
 
 **Prerequisites:**
@@ -180,52 +141,6 @@ sudo systemctl restart libvirtd
 - Linux containers only
 - Less isolation than full VMs
 - Shared kernel version with host
-
-### Xen (Experimental)
-
-**Prerequisites:**
-```bash
-# Install Xen hypervisor
-sudo apt-get install xen-hypervisor-amd64 libvirt-daemon-driver-xen
-
-# Reboot to Xen kernel
-sudo reboot
-
-# Verify Xen is running
-sudo xl info
-```
-
-**Configuration:**
-```json
-{
-  "hypervisor": "xen",
-  "uri": "xen:///",
-  "bin_path": "virsh",
-  "store_dir": "/var/vcap/store/libvirt-xen",
-  "storage_controller": "SATA",
-  "auto_enable_networks": true,
-  "agent": { ... }
-}
-```
-
-### VMware (Experimental)
-
-**Prerequisites:**
-- VMware Workstation or Player installed
-- libvirt-daemon-driver-vmware package
-
-**Configuration:**
-```json
-{
-  "hypervisor": "vmware",
-  "uri": "vmware:///session",
-  "bin_path": "virsh",
-  "store_dir": "/var/vcap/store/libvirt-vmware",
-  "storage_controller": "SATA",
-  "auto_enable_networks": true,
-  "agent": { ... }
-}
-```
 
 ## Network Configuration
 
@@ -325,7 +240,6 @@ echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 ```bash
 # Test libvirt connection
 virsh -c qemu:///system list --all
-virsh -c vbox:///session list --all
 virsh -c lxc:/// list --all
 
 # Check libvirt service
@@ -360,15 +274,6 @@ lsmod | grep kvm
 
 # Check CPU virtualization support
 egrep -c '(vmx|svm)' /proc/cpuinfo
-```
-
-**VirtualBox:**
-```bash
-# Check VirtualBox status
-VBoxManage --version
-
-# List VMs
-VBoxManage list vms
 ```
 
 **LXC:**
@@ -413,13 +318,11 @@ To switch from one hypervisor to another:
 See the `config/` directory for complete examples:
 - `cpi-libvirt.json` - QEMU/KVM local
 - `cpi-libvirt-remote.json` - QEMU/KVM remote
-- `cpi-vbox.json` - VirtualBox
 - `cpi-lxc.json` - LXC containers
 
 ## Further Reading
 
 - [Libvirt Documentation](https://libvirt.org/docs.html)
 - [KVM Documentation](https://www.linux-kvm.org/page/Documents)
-- [VirtualBox Libvirt Driver](https://libvirt.org/drvvbox.html)
 - [LXC Libvirt Driver](https://libvirt.org/drvlxc.html)
 - [BOSH CPI Documentation](https://bosh.io/docs/cpi-api-v1/)
