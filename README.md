@@ -6,10 +6,7 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 
 - **Multi-Hypervisor Support**: Support for different virtualization backends through libvirt
   - QEMU/KVM - Full virtualization with KVM acceleration
-  - VirtualBox - Desktop virtualization via libvirt-vbox
   - LXC - Linux Containers
-  - Xen - Xen hypervisor
-  - VMware - VMware ESX (experimental)
 - **Unified Interface**: Single libvirt-based implementation for all hypervisors
 - **Flexible Architecture**: Easy switching between hypervisors via configuration
 - **Remote Management**: Support for managing VMs on remote hosts via SSH
@@ -19,7 +16,6 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 | Backend | URI | Use case | Disk format |
 |---------|-----|----------|-------------|
 | QEMU/KVM | `qemu:///system` | Production workloads on KVM-capable Linux hosts | qcow2 |
-| VirtualBox | `vbox:///session` | Desktop development on macOS or Windows (no KVM available) | vmdk |
 | LXC | `lxc:///` | Container workloads, low overhead, shared kernel | raw |
 
 See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
@@ -149,10 +145,10 @@ Libvirt Provider
 ┌────────────────────────────────────┐
 │         Libvirt API                │
 └────────────────────────────────────┘
-    ↓           ↓           ↓
-┌─────────┐ ┌─────────┐ ┌─────────┐
-│QEMU/KVM │ │VBox     │ │ LXC     │
-└─────────┘ └─────────┘ └─────────┘
+    ↓           ↓           
+┌─────────┐ ┌─────────┐ 
+│QEMU/KVM │ │LXC      │
+└─────────┘ └─────────┘
 ```
 
 The `BackendURI` configuration field determines which virtualization backend libvirt uses.
@@ -161,11 +157,8 @@ The `BackendURI` configuration field determines which virtualization backend lib
 
 | Hypervisor | URI Format | Status | Use Case |
 |------------|-----------|--------|----------|
-| **qemu** (KVM) | `qemu:///system` | ✅ Stable | Production, best performance |
-| **vbox** (VirtualBox) | `vbox:///session` | ✅ Stable | Development, desktop |
-| **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers |
-| **xen** | `xen:///` | ⚠️ Experimental | Xen environments |
-| **vmware** | `vmware:///session` | ⚠️ Experimental | VMware workstation |
+| **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers, fast setup |
+| **qemu** (KVM) | `qemu:///system` | ✅ Stable | ARM support, good performance |
 
 ## Building
 
