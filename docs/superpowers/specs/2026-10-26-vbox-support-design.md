@@ -52,7 +52,18 @@ When `disks.ConfigDisk == ""` the output is identical to today.
 
 ### 3. `provisionVBoxConfigDrive()` (`vm/factory.go`)
 
-New method on `Factory`. Steps:
+New method on `Factory`. Signature mirrors the other provisioners:
+
+```go
+func (f Factory) provisionVBoxConfigDrive(
+    vm VMImpl,
+    stemcell bstem.Stemcell,
+    ephemeralDisk bdisk.Disk,
+    initialAgentEnv apiv1.AgentEnv,
+) (driver.DomainDiskPaths, error)
+```
+
+Steps:
 
 1. Serialize `initialAgentEnv` to JSON bytes via `addBlobstoreToEnv` + `injectMbusCert` (same pipeline as the ext4 provisioner).
 2. Build an ISO9660 image: `ISO9660{FileName: "ENV", Contents: agentEnvBytes}.Bytes()`.
@@ -63,7 +74,7 @@ The `Create()` switch gains a `case "vmdk":` alongside `"dir"` and `"ext4"`:
 
 ```go
 case "vmdk":
-    disks, err = f.provisionVBoxConfigDrive(vm, initialAgentEnv)
+    disks, err = f.provisionVBoxConfigDrive(vm, stemcell, ephemeralDisk, initialAgentEnv)
     if err != nil {
         f.cleanUpPartialCreate(vm)
         return nil, err
