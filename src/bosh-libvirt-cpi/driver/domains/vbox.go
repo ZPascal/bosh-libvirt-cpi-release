@@ -20,11 +20,11 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
 	configDiskXML := ""
 	if disks.ConfigDisk != "" {
 		configDiskXML = fmt.Sprintf(`
-        <disk type='file' device='cdrom'>
-          <source file='%s'/>
-          <target dev='sdc' bus='ide'/>
-          <readonly/>
-        </disk>`, xmlEscape(disks.ConfigDisk))
+    <disk type='file' device='cdrom'>
+      <source file='%s'/>
+      <target dev='sdc' bus='ide'/>
+      <readonly/>
+    </disk>`, xmlEscape(disks.ConfigDisk))
 	}
 	xml := fmt.Sprintf(`<domain type='vbox'>
   <name>%s</name>
