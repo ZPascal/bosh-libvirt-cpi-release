@@ -17,7 +17,9 @@ import (
 
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
+	"bosh-libvirt-cpi/driver/domains"
 	"bosh-libvirt-cpi/stemcell"
+	stemcellfakes "bosh-libvirt-cpi/stemcell/fakes"
 	bvm "bosh-libvirt-cpi/vm"
 )
 
@@ -122,5 +124,57 @@ var _ = Describe("VM (integration)", func() {
 		ids, err = v.DiskIDs()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ids).To(BeEmpty())
+	})
+
+	Context("vbox backend", func() {
+		It("creates a VM from a VMDK stemcell and deletes it", func() {
+			if os.Getenv("LIBVIRT_URI") != "vbox:///session" || os.Getenv("VBOX_STEMCELL_VMDK") == "" {
+				Skip("Skipping: requires LIBVIRT_URI=vbox:///session and VBOX_STEMCELL_VMDK set")
+			}
+
+			vboxLogger := boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
+			vboxFS := boshsys.NewOsFileSystem(vboxLogger)
+			vboxUUIDGen := boshuuid.NewGenerator()
+			vboxLocalRunner := driver.NewLocalRunner(vboxFS, boshsys.NewExecCmdRunner(vboxLogger), vboxLogger)
+			vboxRunner := driver.NewExpandingPathRunner(vboxLocalRunner)
+			vboxDomBuilder := domains.VBoxDomainBuilder{}
+
+			vboxConn, err := libvirt.NewConnect("vbox:///session")
+			if err != nil {
+				Skip("libvirt vbox connection unavailable: " + err.Error())
+			}
+			defer vboxConn.Close()
+
+			vboxLibvirtConn := driver.NewLibvirtConnImpl(vboxConn)
+			vboxDriver := driver.NewLibvirtDriver(vboxLibvirtConn, vboxDomBuilder, vboxLogger)
+
+			vboxTmpDir, err := os.MkdirTemp("", "vm-integration-vbox-test")
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = os.RemoveAll(vboxTmpDir) }()
+
+			sc := stemcellfakes.NewFakeStemcell("sc-vbox-integration")
+			sc.ImagePathResult = os.Getenv("VBOX_STEMCELL_VMDK")
+
+			vboxDiskFactory := bdisk.NewFactory(vboxTmpDir+"/disks", vboxUUIDGen, vboxDriver, vboxRunner, vboxLogger)
+
+			agentOpts := apiv1.AgentOptions{
+				Mbus: "https://mbus:password@0.0.0.0:6868",
+			}
+			vboxVMFactory := bvm.NewFactory(
+				bvm.FactoryOpts{DirPath: vboxTmpDir + "/vms"},
+				vboxUUIDGen, vboxDriver, vboxRunner, vboxDomBuilder, vboxDiskFactory,
+				agentOpts, apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				vboxLogger)
+
+			cloudProps := apiv1.NewVMCloudPropsFromMap(map[string]interface{}{
+				"memory": 256, "cpus": 1, "ephemeral_disk": 1000,
+			})
+			agentID := apiv1.NewAgentID("agent-vbox-integration-1")
+
+			v, err := vboxVMFactory.Create(agentID, sc, cloudProps, apiv1.Networks{}, apiv1.VMEnv{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(v.ID().AsString()).To(HavePrefix("vm-"))
+			defer v.Delete()
+		})
 	})
 })
