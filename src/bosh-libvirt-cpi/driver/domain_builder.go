@@ -19,6 +19,7 @@ type VMDomainProps struct {
 type DomainDiskPaths struct {
 	RootDisk      string
 	EphemeralDisk string
+	ConfigDisk    string
 }
 
 // DomainBuilder produces libvirt XML domain definitions for a specific backend.
