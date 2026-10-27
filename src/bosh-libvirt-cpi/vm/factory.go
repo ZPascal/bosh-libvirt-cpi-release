@@ -887,7 +887,7 @@ func (f Factory) provisionExt4Rootfs(
 	if putErr := f.runner.Put(verifyScriptPath, verifyScriptContent); putErr != nil {
 		f.logger.Error(f.logTag, "Failed to write verify script: %s", putErr)
 	} else {
-		fixOut, fixRc, fixErr := f.runner.Execute("python3", verifyScriptPath, vmExt4)
+		fixOut, fixRc, fixErr := f.runner.Execute("python3", verifyScriptPath, vmExt4) // #nosec G204 — args are operator-configured paths, not user input; runner uses exec.Command (no shell)
 		f.logger.Info(f.logTag, "nr_raw_fix rc=%d err=%v output: %s", fixRc, fixErr, fixOut)
 		_, _, _ = f.runner.Execute("rm", "-f", verifyScriptPath)
 	}
@@ -940,7 +940,7 @@ func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
 
 // DefaultExecCommand is the real exec implementation. Tests may override ExecCommand.
 var DefaultExecCommand = func(name string, args ...string) ([]byte, error) {
-	return exec.Command(name, args...).CombinedOutput()
+	return exec.Command(name, args...).CombinedOutput() // #nosec G204 — callers pass literal binary names (python3, tune2fs, etc.) resolved from a fixed PATH
 }
 
 // ExecCommand is the package-level exec hook. Override in tests.

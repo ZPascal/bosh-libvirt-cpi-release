@@ -7,6 +7,11 @@ on:
         description: 'Virtualization backend: qemu, lxc, or vbox'
         required: true
         type: string
+      arch:
+        description: 'Runner architecture: amd64 or arm64'
+        required: false
+        type: string
+        default: amd64
       bosh_cli_version:
         description: 'BOSH CLI version to install'
         required: false
@@ -15,8 +20,8 @@ on:
 
 jobs:
   e2e:
-    name: E2E Tests (${{ inputs.backend }})
-    runs-on: ubuntu-latest
+    name: E2E Tests (${{ inputs.backend }}/${{ inputs.arch }})
+    runs-on: ${{ inputs.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 240
 
     steps:
@@ -37,6 +42,8 @@ jobs:
 
     - name: E2E host setup (disk, swap, golang packaging)
       uses: ./.github/actions/e2e-host-setup
+      with:
+        arch: ${{ inputs.arch }}
 
     - name: Export backend-specific environment
       run: |
@@ -138,7 +145,8 @@ jobs:
     - name: Install BOSH CLI
       run: |
         VER=${{ inputs.bosh_cli_version }}
-        curl -fsSL "https://github.com/cloudfoundry/bosh-cli/releases/download/${VER}/bosh-cli-${VER#v}-linux-amd64" \
+        GOARCH=${{ inputs.arch == 'arm64' && 'arm64' || 'amd64' }}
+        curl -fsSL "https://github.com/cloudfoundry/bosh-cli/releases/download/${VER}/bosh-cli-${VER#v}-linux-${GOARCH}" \
           -o /usr/local/bin/bosh
         chmod +x /usr/local/bin/bosh
         bosh --version
@@ -148,11 +156,16 @@ jobs:
 
     - name: Download BOSH stemcell
       run: |
-        curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-noble \
-          -o /tmp/bosh-stemcell.tgz
+        if [ "${{ inputs.arch }}" = "arm64" ] && [ "${{ inputs.backend }}" = "qemu" ]; then
+          curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-noble?arch=arm64 \
+            -o /tmp/bosh-stemcell.tgz
+        else
+          curl -fsSL https://bosh.io/d/stemcells/bosh-warden-boshlite-ubuntu-noble \
+            -o /tmp/bosh-stemcell.tgz
+        fi
 
-    - name: Prepare host kernel for direct boot (QEMU only)
-      if: inputs.backend == 'qemu'
+    - name: Prepare host kernel for direct boot (QEMU/amd64 only)
+      if: inputs.backend == 'qemu' && inputs.arch != 'arm64'
       run: |
         KERNEL=$(find /boot -maxdepth 1 -name 'vmlinuz-*' | sort -V | tail -1)
         echo "Using kernel: $KERNEL"
@@ -184,8 +197,8 @@ jobs:
           --live --config || true
         sudo arp -s "${DIRECTOR_IP}" "${DIRECTOR_MAC}" 2>/dev/null || true
 
-    - name: Bootstrap BOSH Director (QEMU)
-      if: inputs.backend == 'qemu'
+    - name: Bootstrap BOSH Director (QEMU/amd64)
+      if: inputs.backend == 'qemu' && inputs.arch != 'arm64'
       shell: bash
       run: |
         sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
@@ -204,6 +217,38 @@ jobs:
             -v internal_ip='"${DIRECTOR_IP}"' \
             -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
             -v "kernel_path='"${KERNEL_PATH}"'" \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key='"${LIBVIRT_HOST_KEY}"'" \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            > /tmp/bosh-create-env.log 2>&1 \
+            && touch /tmp/bosh-create-env.done \
+            || touch /tmp/bosh-create-env.failed
+        ' &
+        disown $!
+        echo "bosh create-env started in new session (PID $!)"
+
+    - name: Bootstrap BOSH Director (QEMU/arm64)
+      if: inputs.backend == 'qemu' && inputs.arch == 'arm64'
+      shell: bash
+      run: |
+        sudo mkdir -p /tmp/bosh_libvirt_cpi/{stemcells,vms,disks}
+        sudo chmod -R 755 /tmp/bosh_libvirt_cpi
+        sudo chown -R root:root /tmp/bosh_libvirt_cpi
+        rm -f /tmp/bosh-create-env.done /tmp/bosh-create-env.failed
+        setsid bash -c '
+          sudo bosh create-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-arm64.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
+            -v director_name='"${DIRECTOR_NAME}"' \
+            -v internal_ip='"${DIRECTOR_IP}"' \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
             -v libvirt_host=192.168.122.1 \
             -v libvirt_username=root \
             --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
@@ -345,10 +390,16 @@ jobs:
       if: inputs.backend == 'qemu'
       shell: bash
       run: |
-        timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-qemu.yml \
-          --client admin --client-secret admin-password \
-          -v "kernel_path=${KERNEL_PATH}" \
-          -n
+        if [ "${{ inputs.arch }}" = "arm64" ]; then
+          timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-qemu-arm64.yml \
+            --client admin --client-secret admin-password \
+            -n
+        else
+          timeout 120 bosh -e "${BOSH_ENV_ALIAS}" update-cloud-config manifests/cloud-config-qemu.yml \
+            --client admin --client-secret admin-password \
+            -v "kernel_path=${KERNEL_PATH}" \
+            -n
+        fi
         timeout 600 bosh -e "${BOSH_ENV_ALIAS}" upload-stemcell /tmp/bosh-stemcell.tgz \
           --client admin --client-secret admin-password || {
             bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
@@ -500,23 +551,42 @@ jobs:
     - name: Clean up Director (QEMU)
       if: always() && inputs.backend == 'qemu'
       run: |
-        sudo bosh delete-env manifests/qemu-cpi.yml \
-          -o manifests/ops/qemu-local.yml \
-          -o manifests/local-release.yml \
-          -o manifests/ops/local-store-dir.yml \
-          -o manifests/ops/qemu-mac.yml \
-          -o manifests/ops/qemu-kernel-boot.yml \
-          -o manifests/ops/qemu-director-ssh.yml \
-          --state /tmp/bosh-state.json \
-          --vars-store /tmp/bosh-vars.yml \
-          -v director_name="${DIRECTOR_NAME}" \
-          -v internal_ip="${DIRECTOR_IP}" \
-          -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
-          -v "kernel_path=${KERNEL_PATH}" \
-          -v libvirt_host=192.168.122.1 \
-          -v libvirt_username=root \
-          --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
-          -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+        if [ "${{ inputs.arch }}" = "arm64" ]; then
+          sudo bosh delete-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-arm64.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            -v director_name="${DIRECTOR_NAME}" \
+            -v internal_ip="${DIRECTOR_IP}" \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+        else
+          sudo bosh delete-env manifests/qemu-cpi.yml \
+            -o manifests/ops/qemu-local.yml \
+            -o manifests/local-release.yml \
+            -o manifests/ops/local-store-dir.yml \
+            -o manifests/ops/qemu-mac.yml \
+            -o manifests/ops/qemu-kernel-boot.yml \
+            -o manifests/ops/qemu-director-ssh.yml \
+            --state /tmp/bosh-state.json \
+            --vars-store /tmp/bosh-vars.yml \
+            -v director_name="${DIRECTOR_NAME}" \
+            -v internal_ip="${DIRECTOR_IP}" \
+            -v stemcell_url=file:///tmp/bosh-stemcell.tgz \
+            -v "kernel_path=${KERNEL_PATH}" \
+            -v libvirt_host=192.168.122.1 \
+            -v libvirt_username=root \
+            --var-file libvirt_private_key=/tmp/bosh-libvirt-ssh-key \
+            -v "libvirt_host_key=${LIBVIRT_HOST_KEY}" || true
+        fi
 
     - name: Clean up Director (LXC)
       if: always() && inputs.backend == 'lxc'

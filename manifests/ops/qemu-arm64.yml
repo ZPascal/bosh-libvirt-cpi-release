@@ -1,0 +1,10 @@
+---
+# Sets the QEMU machine type to virt (the standard arm64 machine) and disables
+# kernel direct boot, which is x86-specific.  Use this together with qemu-cpi.yml
+# when the CI host is arm64.
+- type: replace
+  path: /instance_groups/name=bosh/properties/libvirt_cpi/backend_uri
+  value: qemu:///system
+- type: replace
+  path: /cloud_provider/properties/backend_uri
+  value: qemu:///system
