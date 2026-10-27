@@ -60,14 +60,14 @@ func sshLibvirtURI(
 	_ = os.Remove(tmpSock) // remove stale socket from previous run
 	ln, err := net.Listen("unix", tmpSock)
 	if err != nil {
-		sshClient.Close() //nolint:errcheck
+		_ = sshClient.Close()
 		return "", cleanup, fmt.Errorf("listen unix %s: %w", tmpSock, err)
 	}
 
 	cleanup = func() {
-		ln.Close()         //nolint:errcheck
-		sshClient.Close()  //nolint:errcheck
-		os.Remove(tmpSock) //nolint:errcheck
+		_ = ln.Close()
+		_ = sshClient.Close()
+		_ = os.Remove(tmpSock)
 	}
 
 	go serveTunnel(ln, sshClient, logger)
@@ -91,7 +91,7 @@ func serveTunnel(ln net.Listener, sshClient *ssh.Client, logger boshlog.Logger) 
 		remote, err := sshClient.Dial("unix", libvirtSockPath)
 		if err != nil {
 			logger.Error("libvirt-ssh-tunnel", "Dial remote socket: %s", err)
-			local.Close() //nolint:errcheck
+			_ = local.Close()
 			continue
 		}
 		go bridge(local, remote)
@@ -104,17 +104,17 @@ func bridge(a, b net.Conn) {
 	wg.Add(2)
 	copyHalf := func(dst, src net.Conn) {
 		defer wg.Done()
-		io.Copy(dst, src) //nolint:errcheck
+		_, _ = io.Copy(dst, src)
 		// Signal EOF to the other side by closing the write half if possible.
 		if hc, ok := dst.(interface{ CloseWrite() error }); ok {
-			hc.CloseWrite() //nolint:errcheck
+			_ = hc.CloseWrite()
 		} else {
-			dst.Close() //nolint:errcheck
+			_ = dst.Close()
 		}
 	}
 	go copyHalf(a, b)
 	go copyHalf(b, a)
 	wg.Wait()
-	a.Close() //nolint:errcheck
-	b.Close() //nolint:errcheck
+	_ = a.Close()
+	_ = b.Close()
 }

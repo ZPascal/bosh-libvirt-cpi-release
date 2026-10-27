@@ -1,6 +1,12 @@
 name: E2E Host Setup
 description: Common setup steps shared by e2e-qemu and e2e-lxc jobs
 
+inputs:
+  arch:
+    description: 'Runner architecture: amd64 or arm64'
+    required: false
+    default: amd64
+
 runs:
   using: composite
   steps:
@@ -27,12 +33,13 @@ runs:
     shell: bash
     run: |
       GO_VERSION=$(go env GOVERSION | sed 's/go//')
+      GOARCH=${{ inputs.arch == 'arm64' && 'arm64' || 'amd64' }}
       # Install Go to BOSH_INSTALL_TARGET (/var/vcap/packages/golang-1-linux, persistent disk).
       # /usr/local is on the small root ext4 inside the QEMU VM; installing 600MB of Go there
       # fills it up, causing all subsequent package compilations to fail with ENOSPC.
       printf '#!/bin/bash\nset -e -x\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh" "${BOSH_INSTALL_TARGET}/go"\n' > packages/golang-1-linux/packaging
       printf 'if [ ! -f "${BOSH_INSTALL_TARGET}/go/bin/go" ]; then\n' >> packages/golang-1-linux/packaging
-      printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-amd64.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
+      printf '  curl -fsSL "https://dl.google.com/go/go'"${GO_VERSION}"'.linux-'"${GOARCH}"'.tar.gz" -o /tmp/golang.tar.gz\n' >> packages/golang-1-linux/packaging
       printf '  tar -C "${BOSH_INSTALL_TARGET}" -xzf /tmp/golang.tar.gz\n  rm -f /tmp/golang.tar.gz\nfi\n' >> packages/golang-1-linux/packaging
       printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOPATH=\$PWD\\nexport GOCACHE=/tmp/go-cache\\nexport GOTOOLCHAIN=local\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n' >> packages/golang-1-linux/packaging
       printf 'printf "export GOROOT=${BOSH_INSTALL_TARGET}/go\\nexport GOCACHE=/tmp/go-cache\\nexport GOPATH=\$PWD\\nexport PATH=${BOSH_INSTALL_TARGET}/go/bin:\$GOPATH/bin:\$PATH\\n" > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' >> packages/golang-1-linux/packaging

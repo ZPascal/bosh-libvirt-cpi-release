@@ -115,15 +115,22 @@ jobs:
         flags: integration-qemu
 
   e2e:
-    name: E2E bosh-lite (${{ matrix.backend }})
+    name: E2E bosh-lite (${{ matrix.backend }}/${{ matrix.arch }})
     needs: build
     strategy:
       fail-fast: false
       matrix:
-        backend: [qemu, lxc]
+        include:
+          - backend: qemu
+            arch: amd64
+          - backend: qemu
+            arch: arm64
+          - backend: lxc
+            arch: amd64
     uses: ./.github/workflows/e2e.yml
     with:
       backend: ${{ matrix.backend }}
+      arch: ${{ matrix.arch }}
 
   integration-tests-lxc:
     name: Integration Tests (LXC)

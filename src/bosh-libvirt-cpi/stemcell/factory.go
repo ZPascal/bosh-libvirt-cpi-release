@@ -268,15 +268,18 @@ func (f Factory) cleanUpPartialImport(stemcell StemcellImpl) {
 	}
 }
 
+// maxStemcellBytes caps decompressed stemcell size to 10 GiB to prevent decompression bombs.
+const maxStemcellBytes = 10 << 30
+
 // decompressOrCopy writes src to dst, decompressing gzip if detected.
 func decompressOrCopy(src, dst string) error {
-	in, err := os.Open(src)
+	in, err := os.Open(filepath.Clean(src)) // #nosec G304 — src is operator-supplied stemcell path
 	if err != nil {
 		return err
 	}
 	defer in.Close() //nolint:errcheck
 
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	out, err := os.OpenFile(filepath.Clean(dst), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600) // #nosec G302 — upload() chmod 0644 sets final perms
 	if err != nil {
 		return err
 	}
@@ -293,11 +296,11 @@ func decompressOrCopy(src, dst string) error {
 		if _, err = in.Seek(0, io.SeekStart); err != nil {
 			return err
 		}
-		_, err = io.Copy(out, in)
+		_, err = io.Copy(out, io.LimitReader(in, maxStemcellBytes))
 		return err
 	}
 	defer gr.Close() //nolint:errcheck
-	_, err = io.Copy(out, gr)
+	_, err = io.Copy(out, io.LimitReader(gr, maxStemcellBytes)) // #nosec G110 — limited to maxStemcellBytes
 	return err
 }
 
