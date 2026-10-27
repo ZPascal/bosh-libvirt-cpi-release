@@ -117,18 +117,43 @@ cloud_provider:
   template:
     name: libvirt_cpi
     release: bosh-libvirt-cpi
+  mbus: https://mbus:mbus-password@((internal_ip)):6868
+  cert: ((mbus_bootstrap_ssl))
   properties:
-    libvirt_cpi:
-      backend_uri: vbox:///session
-      host: ((libvirt_host))
-      username: ((libvirt_username))
-      private_key: ((libvirt_private_key))
-      host_key: ((libvirt_host_key))
-      store_dir: ~/.bosh_libvirt_cpi
-      agent:
-        mbus: https://mbus:mbus-password@0.0.0.0:6868
-        ntp: [0.pool.ntp.org, 1.pool.ntp.org]
-        blobstore:
-          provider: local
-          options:
-            blobstore_path: /var/vcap/micro_bosh/data/cache
+    backend_uri: vbox:///session
+    host: ((libvirt_host))
+    username: ((libvirt_username))
+    private_key: ((libvirt_private_key))
+    host_key: ((libvirt_host_key))
+    store_dir: ~/.bosh_libvirt_cpi
+    mbus_bootstrap_ssl: ((mbus_bootstrap_ssl))
+    agent:
+      mbus: https://mbus:mbus-password@0.0.0.0:6868
+      blobstore:
+        provider: local
+        options:
+          blobstore_path: /var/vcap/micro_bosh/data/cache
+      env:
+        bosh:
+          mbus:
+            cert: ((mbus_bootstrap_ssl))
+    ntp: [0.pool.ntp.org, 1.pool.ntp.org]
+
+variables:
+- name: default_ca
+  type: certificate
+  options:
+    is_ca: true
+    common_name: ca
+- name: mbus_bootstrap_ssl
+  type: certificate
+  options:
+    ca: default_ca
+    common_name: ((internal_ip))
+    alternative_names: [((internal_ip))]
+- name: director_ssl
+  type: certificate
+  options:
+    ca: default_ca
+    common_name: ((internal_ip))
+    alternative_names: [((internal_ip)), "127.0.0.1"]
