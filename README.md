@@ -1,6 +1,6 @@
 # BOSH Libvirt CPI Release
 
-A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple virtualization technologies including **QEMU/KVM**, **VirtualBox**, **LXC**, and more.
+A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple virtualization technologies including **QEMU/KVM**, **LXC**
 
 ## Features
 
