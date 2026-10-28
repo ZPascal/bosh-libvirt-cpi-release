@@ -4,8 +4,8 @@ github.com/bmatcuk/doublestar v1.3.4 h1:gPypJ5xD31uhX6Tf54sDPUOBXTqKH4c9aPY66CyQ
 github.com/bmatcuk/doublestar v1.3.4/go.mod h1:wiQtGV+rzVYxB7WIlirSN++5HPtPlXEo9MEoZQC/PmE=
 github.com/cloudfoundry/bosh-cpi-go v0.0.0-20261017100100-5481e9266ff3 h1:Wcd4qiG2ulg+mroxddF7ma0UudNNqKCLIiJJI6/eaZI=
 github.com/cloudfoundry/bosh-cpi-go v0.0.0-20261017100100-5481e9266ff3/go.mod h1:bU+s7rGT17rg4MhRAQr3QMMi26aPTTgF9FQMxMah+Lk=
-github.com/cloudfoundry/bosh-utils v0.0.661 h1:OKjWFejO5VokvopIBSggTkWRQZUn7jkwIIafmb4j7uQ=
-github.com/cloudfoundry/bosh-utils v0.0.661/go.mod h1:LUxQVMTTRCAvgChbJjkey3DqimhQqf8/zrSkbtr19Go=
+github.com/cloudfoundry/bosh-utils v0.0.667 h1:Li6ETRGxj/lvReELhKqlsR021+Un7ewOUengVJeSzQI=
+github.com/cloudfoundry/bosh-utils v0.0.667/go.mod h1:LUxQVMTTRCAvgChbJjkey3DqimhQqf8/zrSkbtr19Go=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
