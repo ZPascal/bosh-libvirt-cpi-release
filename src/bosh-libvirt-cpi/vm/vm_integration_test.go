@@ -17,7 +17,9 @@ import (
 
 	bdisk "bosh-libvirt-cpi/disk"
 	"bosh-libvirt-cpi/driver"
+	"bosh-libvirt-cpi/driver/domains"
 	"bosh-libvirt-cpi/stemcell"
+	stemcellfakes "bosh-libvirt-cpi/stemcell/fakes"
 	bvm "bosh-libvirt-cpi/vm"
 )
 
@@ -122,5 +124,61 @@ var _ = Describe("VM (integration)", func() {
 		ids, err = v.DiskIDs()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ids).To(BeEmpty())
+	})
+
+	Context("vbox backend", func() {
+		var (
+			vboxVMFactory bvm.Factory
+			vboxTmpDir    string
+		)
+
+		BeforeEach(func() {
+			if os.Getenv("LIBVIRT_URI") != "vbox:///session" {
+				Skip("LIBVIRT_URI != vbox:///session")
+			}
+			if os.Getenv("VBOX_STEMCELL_VMDK") == "" {
+				Skip("VBOX_STEMCELL_VMDK not set")
+			}
+
+			var err error
+			vboxTmpDir, err = os.MkdirTemp("", "vm-integration-vbox-test")
+			Expect(err).ToNot(HaveOccurred())
+
+			vboxDomBuilder := domains.VBoxDomainBuilder{}
+			vboxLibvirtConn := driver.NewLibvirtConnImpl(conn)
+			vboxDriver := driver.NewLibvirtDriver(vboxLibvirtConn, vboxDomBuilder, logger)
+			uuidGen := boshuuid.NewGenerator()
+			fs := boshsys.NewOsFileSystem(logger)
+			localRunner := driver.NewLocalRunner(fs, boshsys.NewExecCmdRunner(logger), logger)
+			runner := driver.NewExpandingPathRunner(localRunner)
+			vboxDiskFactory := bdisk.NewFactory(vboxTmpDir+"/disks", uuidGen, vboxDriver, runner, logger)
+
+			vboxVMFactory = bvm.NewFactory(
+				bvm.FactoryOpts{DirPath: vboxTmpDir + "/vms"},
+				uuidGen, vboxDriver, runner, vboxDomBuilder, vboxDiskFactory,
+				apiv1.AgentOptions{Mbus: "https://mbus:password@0.0.0.0:6868"},
+				apiv1.NewStemcellAPIVersion(&stubCallContext{version: 2}),
+				logger)
+		})
+
+		AfterEach(func() {
+			if vboxTmpDir != "" {
+				_ = os.RemoveAll(vboxTmpDir)
+			}
+		})
+
+		It("creates a VM from a VMDK stemcell and deletes it", func() {
+			sc := stemcellfakes.NewFakeStemcell("sc-vbox-integration")
+			sc.ImagePathResult = os.Getenv("VBOX_STEMCELL_VMDK")
+
+			cloudProps := apiv1.NewVMCloudPropsFromMap(map[string]interface{}{
+				"memory": 256, "cpus": 1, "ephemeral_disk": 1000,
+			})
+
+			v, err := vboxVMFactory.Create(apiv1.NewAgentID("agent-vbox-integration-1"), sc, cloudProps, apiv1.Networks{}, apiv1.VMEnv{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(v.ID().AsString()).To(HavePrefix("vm-"))
+			defer v.Delete()
+		})
 	})
 })
