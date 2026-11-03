@@ -289,7 +289,7 @@ func decompressOrCopy(src, dst string) error {
 
 	gr, gzErr := gzip.NewReader(in)
 	if gzErr != nil {
-		// Not gzip — rewind and copy as-is.
+		// Not gzip - rewind and copy as-is.
 		if _, err = in.Seek(0, io.SeekStart); err != nil {
 			return err
 		}

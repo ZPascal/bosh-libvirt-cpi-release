@@ -31,13 +31,13 @@ Everything runs in a single job on one runner. The BOSH director is a VM inside 
 6. Upload the stemcell and a BOSH release to the director
 7. Deploy a smoke test deployment
 8. Verify the deployment is reachable
-9. Delete the director (`bosh delete-env`) — runs even if earlier steps failed
+9. Delete the director (`bosh delete-env`) - runs even if earlier steps failed
 
 **Inputs:**
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `backend` | yes | — | `qemu` or `lxc` |
+| `backend` | yes | - | `qemu` or `lxc` |
 | `bosh_cli_version` | no | `v7.10.8` | BOSH CLI version to install |
 
 **Calling it from another workflow:**
@@ -74,7 +74,7 @@ Director runs as an LXC container. Requires a few host tweaks the workflow appli
 
 A separate reusable workflow that only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
 
-**Important:** this workflow does not work with `e2e.yml` — they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
+**Important:** this workflow does not work with `e2e.yml` - they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
 
 **Outputs:**
 

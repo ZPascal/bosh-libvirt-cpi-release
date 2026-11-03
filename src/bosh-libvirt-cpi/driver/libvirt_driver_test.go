@@ -106,12 +106,12 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 
 		It("returns error when lookup returns nil domain with no error", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.StartDomain("vm-1")).To(HaveOccurred())
 		})
 
 		It("returns error when lookup returns nil domain with no error for Shutdown", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.ShutdownDomain("vm-1")).To(HaveOccurred())
 		})
 	})

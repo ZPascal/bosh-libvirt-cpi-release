@@ -84,7 +84,7 @@ var _ = Describe("SSHRunner", func() {
 			logger := boshlog.NewLogger(boshlog.LevelNone)
 			runner := NewSSHRunner(opts, nil, logger)
 			_, err := runner.HomeDir()
-			// Fails at private key parsing — proves execution reached past
+			// Fails at private key parsing - proves execution reached past
 			// ParseAuthorizedKey, i.e. host-key setup succeeded.
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Parsing private key"))

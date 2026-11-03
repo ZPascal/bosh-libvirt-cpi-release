@@ -28,9 +28,6 @@ See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per
 # Install libvirt
 sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients virtinst
 
-# For VirtualBox support (optional)
-sudo apt-get install virtualbox libvirt-daemon-driver-vbox
-
 # For LXC support (optional)
 sudo apt-get install lxc libvirt-daemon-driver-lxc
 
@@ -64,24 +61,6 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 }
 ```
 
-**For VirtualBox (via libvirt):**
-```json
-{
-  "BackendURI": "vbox:///session",
-  "StoreDir": "~/.bosh_libvirt_cpi",
-  "Agent": {
-    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
-    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
-    "blobstore": {
-      "provider": "local",
-      "options": {
-        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
-      }
-    }
-  }
-}
-```
-
 **For LXC:**
 ```json
 {
@@ -100,14 +79,14 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 }
 ```
 
-For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields — see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
+For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields - see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
 
 
 ## CI
 
 Tests run on every push and PR to `main`. The pipeline is defined in `.github/workflows/tests.yml` and calls two reusable workflows:
 
-**E2E (`e2e.yml`)** — spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
+**E2E (`e2e.yml`)** - spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
 
 ```yaml
 jobs:
@@ -117,7 +96,7 @@ jobs:
       backend: qemu   # or lxc
 ```
 
-**Setup BOSH Director (`setup-bosh-director.yml`)** — bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` — both require the same runner for libvirt networking to work.
+**Setup BOSH Director (`setup-bosh-director.yml`)** - bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` - both require the same runner for libvirt networking to work.
 
 Full workflow documentation (inputs, outputs, step-by-step breakdown) is in [docs/e2e-backends.md](docs/e2e-backends.md).
 
@@ -128,7 +107,6 @@ Full workflow documentation (inputs, outputs, step-by-step breakdown) is in [doc
 - **Configuration Examples**:
   - [QEMU/KVM Local](config/cpi-qemu.json)
   - [QEMU/KVM Remote](config/cpi-qemu-remote.json)
-  - [VirtualBox](config/cpi-vbox.json)
   - [LXC](config/cpi-lxc.json)
 
 ## Architecture
