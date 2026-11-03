@@ -82,27 +82,33 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields - see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
 
 
-## CI
+## Getting started as a user
 
-Tests run on every push and PR to `main`. The pipeline is defined in `.github/workflows/tests.yml` and calls two reusable workflows:
+To run a BOSH Director with this CPI on your own machine, follow [docs/INSTALL.md](docs/INSTALL.md). It covers host prerequisites, CPI configuration, and `bosh create-env` with the ops files in `manifests/`.
 
-**E2E (`e2e.yml`)** - spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
+## Set up a BOSH Director in GitHub Actions
+
+The reusable workflow `setup-bosh-director.yml` bootstraps a BOSH Director backed by this CPI (QEMU/KVM or LXC) on a GitHub Actions runner and returns its credentials as job outputs. Call it from your own repository:
 
 ```yaml
 jobs:
-  e2e:
-    uses: ./.github/workflows/e2e.yml
+  director:
+    uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml@main
     with:
       backend: qemu   # or lxc
+      # cpi_ref: v1.2.3   # pin a CPI tag/branch/SHA (default: main)
 ```
 
-**Setup BOSH Director (`setup-bosh-director.yml`)** - bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` - both require the same runner for libvirt networking to work.
+If you need the Director in the same job as your own steps, use the composite action `.github/actions/setup-bosh-director` instead (see the docs). Outputs include `director-url`, `director-ca-cert`, `bosh-client`, `bosh-client-secret` and `bosh-env-alias`. The director's libvirt bridge (`192.168.122.x`) is only reachable from the machine that created it, so run your BOSH steps on that same runner. Inputs, outputs and a full example: [docs/e2e-backends.md](docs/e2e-backends.md#setup-bosh-director-workflow-setup-bosh-directoryml).
 
-Full workflow documentation (inputs, outputs, step-by-step breakdown) is in [docs/e2e-backends.md](docs/e2e-backends.md).
+## CI (contributors)
+
+The project's own pipeline (`.github/workflows/tests.yml` and `e2e.yml`) runs a throwaway director plus smoke test for QEMU and LXC on every push and PR. You do not need it to use the CPI; see [docs/e2e-backends.md](docs/e2e-backends.md).
 
 ## Documentation
 
-- **[CI/CD Workflows](docs/e2e-backends.md)** - E2E workflow inputs, backend comparison, diagnostics
+- **[Installation Guide](docs/INSTALL.md)** - Installation and Director deployment
+- **[CI/CD Workflows](docs/e2e-backends.md)** - E2E pipeline and the reusable `setup-bosh-director` workflow
 - **[Hypervisor Configuration Guide](docs/HYPERVISOR_CONFIGURATION.md)** - Per-backend installation prerequisites and known limitations
 - **Configuration Examples**:
   - [QEMU/KVM Local](config/cpi-qemu.json)

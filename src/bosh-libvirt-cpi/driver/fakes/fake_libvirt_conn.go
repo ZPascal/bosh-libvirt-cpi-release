@@ -12,6 +12,23 @@ type FakeLibvirtConn struct {
 	LookupDomainByNameErr error
 
 	LookupStoragePoolByNameErr error
+
+	// ReconnectCalls counts Reconnect invocations; ReconnectErr is returned
+	// from Reconnect; OnReconnect (if set) runs on each successful Reconnect.
+	ReconnectCalls int
+	ReconnectErr   error
+	OnReconnect    func()
+}
+
+func (c *FakeLibvirtConn) Reconnect() error {
+	c.ReconnectCalls++
+	if c.ReconnectErr != nil {
+		return c.ReconnectErr
+	}
+	if c.OnReconnect != nil {
+		c.OnReconnect()
+	}
+	return nil
 }
 
 var _ driver.LibvirtConn = &FakeLibvirtConn{}

@@ -110,7 +110,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 		if err != nil {
 			return nil, err
 		}
-		libvirtConn = driver.NewLibvirtConnImpl(conn)
+		libvirtConn = driver.NewReconnectableLibvirtConn(conn, f.opts.BackendURI)
 	}
 	d := driver.NewLibvirtDriver(libvirtConn, domBuilder, f.logger)
 
