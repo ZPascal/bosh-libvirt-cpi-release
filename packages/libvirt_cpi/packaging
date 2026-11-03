@@ -57,7 +57,7 @@ for libname in libvirt.so.0 libvirt-qemu.so.0 libvirt-lxc.so.0; do
   fi
 done
 
-# Remove libc/libm/libpthread/ld-linux from the bundle — these must come from
+# Remove libc/libm/libpthread/ld-linux from the bundle - these must come from
 # the host OS to avoid ABI mismatches.
 for skip in libc.so libm.so libpthread.so ld-linux ld-musl; do
   find "${BOSH_INSTALL_TARGET}/lib" -maxdepth 1 -name "${skip}*" -delete 2>/dev/null || true

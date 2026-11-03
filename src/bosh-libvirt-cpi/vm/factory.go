@@ -342,7 +342,7 @@ func (f Factory) provisionLXCRootfs(
 
 	// Pre-create /var/vcap/store and /var/vcap/data so BOSH jobs can write their
 	// data. With SkipDiskSetup:true bosh-agent never mounts/formats an ephemeral or
-	// persistent disk — it expects these dirs to already exist on the rootfs.
+	// persistent disk - it expects these dirs to already exist on the rootfs.
 	// /var/vcap/data is where job templates are unpacked (symlinked from /var/vcap/jobs);
 	// if it's missing, all job symlinks are dangling and pre-start scripts can't run.
 	// uid/gid 1000 = vcap user in the warden-boshlite stemcell.
@@ -380,7 +380,7 @@ func (f Factory) provisionLXCRootfs(
 	}
 	// Pre-bake CPI connection config so the deployed director's libvirt_cpi
 	// job uses the correct credentials. The BOSH agent renders cpi.json from
-	// job spec defaults — a background watcher in the init script merges this
+	// job spec defaults - a background watcher in the init script merges this
 	// file into the rendered cpi.json. Also install a wrapper around the CPI
 	// binary that merges cpi-inject.json at invocation time, making the fix
 	// immune to bosh-agent re-renders overwriting the patched cpi.json.
@@ -451,7 +451,7 @@ func (f Factory) provisionLXCRootfs(
 	// systemd-resolved and monit calls exit 0; everything else fails with exit 1
 	// so actual systemd errors remain visible rather than silently succeeding.
 	// The monit stub HTTP server is already launched by bosh-lxc-init before
-	// bosh-agent runs, so exit 0 here is correct — monit is already "up".
+	// bosh-agent runs, so exit 0 here is correct - monit is already "up".
 	systemctlWrapper := mustAsset("assets/wrappers/systemctl.sh")
 	_ = f.runner.Put(vmRootfs+"/usr/sbin/systemctl", systemctlWrapper)
 	_, _, _ = f.runner.Execute("chmod", "0755", vmRootfs+"/usr/sbin/systemctl")
@@ -488,7 +488,7 @@ func (f Factory) provisionLXCRootfs(
 	// compilation scripts can download from the internet (e.g. dl.google.com).
 	_ = f.runner.Put(vmRootfs+"/etc/resolv.conf", []byte("nameserver 8.8.8.8\nnameserver 8.8.4.4\n"))
 
-	// Write LXC init wrapper — configure networking then exec bosh-agent.
+	// Write LXC init wrapper - configure networking then exec bosh-agent.
 	// sv stub handles "sv start monit" without needing runsv.
 	// Extract static IP/gateway from the agent env and bake them in so the
 	// container has network connectivity before bosh-agent starts.
@@ -607,7 +607,7 @@ func (f Factory) provisionExt4Rootfs(
 		} else {
 			// Run e2fsck before resize2fs: the stemcell image may have a bitmap
 			// checksum mismatch that resize2fs refuses to proceed past. e2fsck
-			// here is safe — it sees the original 2GB filesystem on the loop
+			// here is safe - it sees the original 2GB filesystem on the loop
 			// device (truncate only extends the file, the ext4 superblock still
 			// records 2GB at this point), so it cannot corrupt or truncate data.
 			if e2Out, _, e2Err := f.runner.Execute("e2fsck", "-fy", loopDev); e2Err != nil {
@@ -707,7 +707,7 @@ func (f Factory) provisionExt4Rootfs(
 		}
 	}
 	// Pre-create /var/vcap/data so job symlinks resolve and pre-start can run.
-	// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk — it
+	// With SkipDiskSetup:true bosh-agent never mounts an ephemeral disk - it
 	// expects this tree to already exist on the root filesystem.
 	for _, dd := range []string{
 		mntDir + "/var/vcap/data",
@@ -743,7 +743,7 @@ func (f Factory) provisionExt4Rootfs(
 	// systemd-resolved and monit calls exit 0; everything else fails with exit 1
 	// so actual systemd errors remain visible rather than silently succeeding.
 	// The monit stub HTTP server is already launched by bosh-init before
-	// bosh-agent runs, so exit 0 here is correct — monit is already "up".
+	// bosh-agent runs, so exit 0 here is correct - monit is already "up".
 	systemctlWrapper := mustAsset("assets/wrappers/systemctl.sh")
 	_ = f.runner.Put(mntDir+"/usr/sbin/systemctl", systemctlWrapper)
 	_, _, _ = f.runner.Execute("chmod", "0755", mntDir+"/usr/sbin/systemctl")

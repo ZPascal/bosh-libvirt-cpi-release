@@ -85,7 +85,7 @@ func serveTunnel(ln net.Listener, sshClient *ssh.Client, logger boshlog.Logger) 
 	for {
 		local, err := ln.Accept()
 		if err != nil {
-			// listener closed — normal shutdown
+			// listener closed - normal shutdown
 			return
 		}
 		remote, err := sshClient.Dial("unix", libvirtSockPath)

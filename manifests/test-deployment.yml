@@ -4,8 +4,8 @@
 # VM create, disk attach, network, agent bootstrap.
 #
 # Required variables:
-#   deployment_name   — e.g. qemu-test-deployment or lxc-test-deployment
-#   director_address  — IP of the BOSH director (e.g. 192.168.122.10)
+#   deployment_name   - e.g. qemu-test-deployment or lxc-test-deployment
+#   director_address  - IP of the BOSH director (e.g. 192.168.122.10)
 name: ((deployment_name))
 
 releases:
