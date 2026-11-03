@@ -1,5 +1,7 @@
 # CI/CD Workflows
 
+> The E2E sections below describe the repository's own test pipeline (contributors). The [Setup BOSH Director workflow](#setup-bosh-director-workflow-setup-bosh-directoryml) is meant for reuse from other repositories. To install the CPI on your own host, see [INSTALL.md](INSTALL.md).
+
 ## Overview
 
 Tests run on every push and PR to `main`. The E2E suite spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Two backends are tested in parallel: QEMU/KVM and LXC.
@@ -70,9 +72,44 @@ Director runs as an LXC container. Requires a few host tweaks the workflow appli
 
 ---
 
+## Setup BOSH Director composite action (`.github/actions/setup-bosh-director`)
+
+Steps 1-5 of the E2E workflow (host setup, libvirt install, SSH key, release build, `bosh create-env`, wait for API and worker) live in a composite action. `e2e.yml` and `setup-bosh-director.yml` both use it, so they cannot drift apart. Because a composite action runs as steps inside the caller's job, the Director stays reachable by later steps on the same runner.
+
+It expects the CPI repository to be checked out at the workspace root and exports `DIRECTOR_IP`, `BOSH_ENV_ALIAS`, `DIRECTOR_NAME`, `KERNEL_PATH` (QEMU) and `LIBVIRT_HOST_KEY` to later steps via `GITHUB_ENV`. Use it directly from another repository to run your own steps against the Director in the same job:
+
+```yaml
+steps:
+  - uses: actions/checkout@v7
+    with:
+      repository: ZPascal/bosh-libvirt-cpi-release
+      ref: main
+  - uses: ./.github/actions/setup-bosh-director
+    with:
+      backend: qemu
+  - run: bosh -e "$BOSH_ENV_ALIAS" deployments --client admin --client-secret admin-password
+```
+
+---
+
 ## Setup BOSH Director workflow (`setup-bosh-director.yml`)
 
-A separate reusable workflow that only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
+A thin reusable-workflow wrapper around the composite action above. It only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
+
+It can be called from any repository: it checks out the CPI repository itself rather than the caller's.
+
+```yaml
+uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml@main
+```
+
+**Inputs:**
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `backend` | yes | - | `qemu` or `lxc` |
+| `bosh_cli_version` | no | `v7.10.8` | BOSH CLI version to install |
+| `cpi_repository` | no | `ZPascal/bosh-libvirt-cpi-release` | Repo providing the release, manifests, scripts |
+| `cpi_ref` | no | `main` | Branch, tag or SHA to build the CPI from |
 
 **Important:** this workflow does not work with `e2e.yml` - they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
 
