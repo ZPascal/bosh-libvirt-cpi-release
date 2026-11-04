@@ -14,6 +14,21 @@ inputs:
     description: 'BOSH CLI version to install'
     required: false
     default: v7.10.8
+  cpi_binary_version:
+    description: >
+      Release tag (e.g. v1.2.3) or `latest` to use the release CPI binary from
+      GitHub Releases instead of compiling from source. Empty = compile from
+      source. Ignored on pull_request runs, which always compile the PR code.
+    required: false
+    default: ''
+  cpi_repository:
+    description: 'Repository whose GitHub Releases provide the CPI binary'
+    required: false
+    default: ZPascal/bosh-libvirt-cpi-release
+  github_token:
+    description: 'Token used to download the release binary'
+    required: false
+    default: ${{ github.token }}
 
 runs:
   using: composite
@@ -26,7 +41,44 @@ runs:
         *) echo "ERROR: unsupported backend '${{ inputs.backend }}' (expected qemu or lxc)"; exit 1;;
       esac
 
+  - name: Use CPI binary from GitHub release
+    id: cpi_binary
+    if: inputs.cpi_binary_version != '' && github.event_name != 'pull_request'
+    shell: bash
+    env:
+      GH_TOKEN: ${{ inputs.github_token }}
+      VERSION: ${{ inputs.cpi_binary_version }}
+      REPO: ${{ inputs.cpi_repository }}
+    run: |
+      case "$(uname -m)" in x86_64) ARCH=amd64;; aarch64|arm64) ARCH=arm64;; *) ARCH=unknown;; esac
+      TAG_ARG=(); [ "$VERSION" != "latest" ] && TAG_ARG=("$VERSION")
+      DL=$(mktemp -d)
+      if gh release download "${TAG_ARG[@]}" --repo "$REPO" --dir "$DL" \
+           --pattern "*_linux_${ARCH}.tar.gz" --pattern checksums.txt \
+         && (cd "$DL" && grep "_linux_${ARCH}.tar.gz" checksums.txt | sha256sum -c -) \
+         && tar -xzf "$DL"/*_linux_${ARCH}.tar.gz -C "$DL" cpi; then
+        # Swap the package's `go build` for the release binary. Only the CI
+        # workspace is edited; nothing is committed.
+        install -m 0755 "$DL/cpi" src/bosh-libvirt-cpi/cpi-release-binary
+        [ -n "$(tail -c1 packages/libvirt_cpi/spec)" ] && echo >> packages/libvirt_cpi/spec
+        echo '- "bosh-libvirt-cpi/cpi-release-binary"' >> packages/libvirt_cpi/spec
+        sed -i 's|^go build -mod=vendor .*|install -m 0755 cpi-release-binary "${BOSH_INSTALL_TARGET}/bin/cpi"|' packages/libvirt_cpi/packaging
+        grep -q cpi-release-binary packages/libvirt_cpi/packaging
+        # No Go needed on the runner or in the compile VM: stub the golang package
+        # (the cpi packaging still sources its compile.env).
+        printf '#!/bin/bash\nset -e\nmkdir -p "${BOSH_INSTALL_TARGET}/bosh"\n: > "${BOSH_INSTALL_TARGET}/bosh/compile.env"\n: > "${BOSH_INSTALL_TARGET}/bosh/runtime.env"\n' > packages/golang-1-linux/packaging
+        printf -- '---\nname: golang-1-linux\n\nfiles: []\n' > packages/golang-1-linux/spec
+        echo "used=true" >> "$GITHUB_OUTPUT"
+        echo "Using release CPI binary ($VERSION, linux/${ARCH})"
+      else
+        # Undo any partial edit so the source build path stays intact.
+        git checkout -- packages 2>/dev/null || true
+        rm -f src/bosh-libvirt-cpi/cpi-release-binary
+        echo "::warning::Could not use release binary '$VERSION'; compiling the CPI from source"
+      fi
+
   - name: Set up Go
+    if: steps.cpi_binary.outputs.used != 'true'
     uses: actions/setup-go@v7
     with:
       go-version-file: src/bosh-libvirt-cpi/go.mod
@@ -34,6 +86,8 @@ runs:
 
   - name: E2E host setup (disk, swap, golang packaging)
     uses: ./.github/actions/e2e-host-setup
+    with:
+      patch_golang: ${{ steps.cpi_binary.outputs.used != 'true' }}
 
   - name: Export backend-specific environment
     shell: bash

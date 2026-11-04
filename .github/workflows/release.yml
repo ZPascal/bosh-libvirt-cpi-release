@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os_name }}/${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04,     os_name: linux,  arch: amd64 }
+          - { runner: ubuntu-24.04-arm, os_name: linux,  arch: arm64 }
+          - { runner: macos-15,         os_name: darwin, arch: arm64 }
+          - { runner: macos-15-intel,   os_name: darwin, arch: amd64 }
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ env.TAG }}
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    # The CPI links libvirt through cgo, so each target is built natively
+    # (no cross-compiling) against that platform's libvirt headers.
+    - name: Install libvirt (Linux)
+      if: matrix.os_name == 'linux'
+      run: sudo apt-get update && sudo apt-get install -y libvirt-dev pkg-config
+
+    - name: Install libvirt (macOS)
+      if: matrix.os_name == 'darwin'
+      run: brew install libvirt pkg-config
+
+    - name: Build
+      working-directory: src/bosh-libvirt-cpi
+      env:
+        CGO_ENABLED: '1'
+      run: go build -mod=vendor -trimpath -ldflags "-s -w" -o "$RUNNER_TEMP/cpi" ./main/
+
+    - name: Package
+      run: |
+        NAME="bosh-libvirt-cpi_${TAG}_${{ matrix.os_name }}_${{ matrix.arch }}"
+        mkdir -p dist
+        tar -czf "dist/${NAME}.tar.gz" -C "$RUNNER_TEMP" cpi -C "$GITHUB_WORKSPACE" LICENSE config
+        (cd dist && { sha256sum "${NAME}.tar.gz" 2>/dev/null || shasum -a 256 "${NAME}.tar.gz"; } > "${NAME}.sha256")
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: dist-${{ matrix.os_name }}-${{ matrix.arch }}
+        path: dist/*
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/download-artifact@v7
+      with:
+        path: dist
+        pattern: dist-*
+        merge-multiple: true
+
+    - name: Combine checksums
+      run: cd dist && cat *.sha256 > checksums.txt && rm *.sha256 && cat checksums.txt
+
+    - name: Create or update release
+      run: |
+        if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+        else
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes
+        fi
