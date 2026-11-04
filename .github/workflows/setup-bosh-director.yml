@@ -22,6 +22,11 @@ on:
         required: false
         type: string
         default: main
+      cpi_version:
+        description: 'CPI release tag (e.g. v1.2.3) or latest. The release binary is used unless the caller runs on pull_request, where the code is compiled from source. Empty = always compile.'
+        required: false
+        type: string
+        default: latest
     outputs:
       director-url:
         description: 'BOSH Director API URL'
@@ -76,6 +81,8 @@ jobs:
       with:
         backend: ${{ inputs.backend }}
         bosh_cli_version: ${{ inputs.bosh_cli_version }}
+        cpi_binary_version: ${{ inputs.cpi_version }}
+        cpi_repository: ${{ inputs.cpi_repository }}
 
     - name: Emit director outputs
       id: emit

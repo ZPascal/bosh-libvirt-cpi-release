@@ -1,6 +1,12 @@
 name: E2E Host Setup
 description: Common setup steps shared by e2e-qemu and e2e-lxc jobs
 
+inputs:
+  patch_golang:
+    description: "Patch the golang-1-linux package to install the runner's Go version (needs Go on the runner)"
+    required: false
+    default: "true"
+
 runs:
   using: composite
   steps:
@@ -24,6 +30,7 @@ runs:
       free -h
 
   - name: Patch golang-1-linux packaging with actual GOROOT
+    if: inputs.patch_golang == 'true'
     shell: bash
     run: |
       GO_VERSION=$(go env GOVERSION | sed 's/go//')
