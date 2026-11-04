@@ -1,5 +1,11 @@
 # CI/CD Workflows
 
+> The E2E sections below describe the repository's own test pipeline (contributors). The [Setup BOSH Director workflow](#setup-bosh-director-workflow-setup-bosh-directoryml) is meant for reuse from other repositories. To install the CPI on your own host, see [INSTALL.md](INSTALL.md).
+
+## Releases (`release.yml`)
+
+Pushing a tag builds `cpi` natively for linux/amd64, linux/arm64, darwin/amd64 and darwin/arm64 (cgo + libvirt means no cross-compiling), then publishes the archives and `checksums.txt` as a GitHub release. Windows is not built because libvirt has no Windows build. It can also be run manually for an existing tag via `workflow_dispatch`.
+
 ## Overview
 
 Tests run on every push and PR to `main`. The E2E suite spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Two backends are tested in parallel: QEMU/KVM and LXC.
@@ -31,13 +37,13 @@ Everything runs in a single job on one runner. The BOSH director is a VM inside 
 6. Upload the stemcell and a BOSH release to the director
 7. Deploy a smoke test deployment
 8. Verify the deployment is reachable
-9. Delete the director (`bosh delete-env`) — runs even if earlier steps failed
+9. Delete the director (`bosh delete-env`) - runs even if earlier steps failed
 
 **Inputs:**
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `backend` | yes | — | `qemu` or `lxc` |
+| `backend` | yes | - | `qemu` or `lxc` |
 | `bosh_cli_version` | no | `v7.10.8` | BOSH CLI version to install |
 
 **Calling it from another workflow:**
@@ -70,11 +76,49 @@ Director runs as an LXC container. Requires a few host tweaks the workflow appli
 
 ---
 
+## Setup BOSH Director composite action (`.github/actions/setup-bosh-director`)
+
+Steps 1-5 of the E2E workflow (host setup, libvirt install, SSH key, release build, `bosh create-env`, wait for API and worker) live in a composite action. `e2e.yml` and `setup-bosh-director.yml` both use it, so they cannot drift apart. Because a composite action runs as steps inside the caller's job, the Director stays reachable by later steps on the same runner.
+
+The action also has `cpi_binary_version`. When set and the caller is not a `pull_request` run, it downloads the matching Linux binary from GitHub Releases, verifies the SHA-256 and copies it into `src/bosh-libvirt-cpi/` and patches the CI workspace's copy of the `libvirt_cpi` spec and packaging so the package installs it instead of running `go build` (nothing is committed). In that case Go is not installed on the runner and the `golang-1-linux` package is stubbed, so the compile VM doesn't download Go either. If the download fails it warns and compiles from source. `e2e.yml` leaves it empty, so the project's own tests always compile the code under test.
+
+It expects the CPI repository to be checked out at the workspace root and exports `DIRECTOR_IP`, `BOSH_ENV_ALIAS`, `DIRECTOR_NAME`, `KERNEL_PATH` (QEMU) and `LIBVIRT_HOST_KEY` to later steps via `GITHUB_ENV`. Use it directly from another repository to run your own steps against the Director in the same job:
+
+```yaml
+steps:
+  - uses: actions/checkout@v7
+    with:
+      repository: ZPascal/bosh-libvirt-cpi-release
+      ref: main
+  - uses: ./.github/actions/setup-bosh-director
+    with:
+      backend: qemu
+  - run: bosh -e "$BOSH_ENV_ALIAS" deployments --client admin --client-secret admin-password
+```
+
+---
+
 ## Setup BOSH Director workflow (`setup-bosh-director.yml`)
 
-A separate reusable workflow that only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
+A thin reusable-workflow wrapper around the composite action above. It only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
 
-**Important:** this workflow does not work with `e2e.yml` — they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
+It can be called from any repository: it checks out the CPI repository itself rather than the caller's.
+
+```yaml
+uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml@main
+```
+
+**Inputs:**
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `backend` | yes | - | `qemu` or `lxc` |
+| `bosh_cli_version` | no | `v7.10.8` | BOSH CLI version to install |
+| `cpi_repository` | no | `ZPascal/bosh-libvirt-cpi-release` | Repo providing the release, manifests, scripts |
+| `cpi_ref` | no | `main` | Branch, tag or SHA for the manifests, scripts and release build |
+| `cpi_version` | no | `latest` | Release tag whose release `cpi` binary is packed into the BOSH release. Ignored on `pull_request` (source is compiled). Empty = always compile |
+
+**Important:** this workflow does not work with `e2e.yml` - they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
 
 **Outputs:**
 

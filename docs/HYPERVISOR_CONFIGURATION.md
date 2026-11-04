@@ -153,10 +153,6 @@ Each hypervisor may have different default network setups:
 - NAT networking enabled by default
 - DHCP range: 192.168.122.2-254
 
-**VirtualBox:**
-- Uses VirtualBox's network adapters
-- Host-only, NAT, or bridged modes
-
 **LXC:**
 - Bridge networking (lxcbr0)
 - Direct host networking possible
@@ -200,9 +196,7 @@ Different hypervisors support different disk formats:
 | Hypervisor | Default Format | Alternatives |
 |------------|---------------|--------------|
 | QEMU/KVM | qcow2 | raw, qcow, vmdk |
-| VirtualBox | VMDK | VDI, VHD |
 | LXC | Directory | - |
-| Xen | raw/qcow2 | - |
 
 ## Performance Tuning
 
@@ -225,13 +219,6 @@ echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm.conf
 - Enable CPU host-passthrough mode
 - Use huge pages for large VMs
 - Enable disk caching (write-back mode)
-
-### VirtualBox Optimization
-
-- Enable VT-x/AMD-V in BIOS
-- Allocate sufficient RAM
-- Use paravirtualization provider
-- Enable nested paging
 
 ## Troubleshooting
 
@@ -306,7 +293,7 @@ To switch from one hypervisor to another:
 ## Best Practices
 
 1. **Production:** Use QEMU/KVM for best performance and stability
-2. **Development:** Use VirtualBox or LXC for easy setup
+2. **Development:** Use LXC for easy setup
 3. **CI/CD:** Use LXC for fast, lightweight testing
 4. **Remote Management:** Use QEMU with SSH for remote deployments
 5. **Security:** Use isolated networks and proper firewall rules

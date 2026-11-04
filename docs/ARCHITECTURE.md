@@ -137,10 +137,7 @@ Each hypervisor is supported through libvirt's driver system:
 | Hypervisor | Libvirt Driver | Domain Type | VM Format |
 |------------|---------------|-------------|-----------|
 | QEMU/KVM | qemu | kvm | qcow2 |
-| VirtualBox | vbox | vbox | VMDK/VDI |
 | LXC | lxc | lxc | Directory |
-| Xen | xen | xen | raw/qcow2 |
-| VMware | vmware | vmware | VMDK |
 
 ## Data Flow
 
@@ -250,18 +247,6 @@ The provider generates different XML templates based on hypervisor:
 </domain>
 ```
 
-### VirtualBox Template
-```xml
-<domain type='vbox'>
-  <name>vm-name</name>
-  <memory>2097152</memory>
-  <vcpu>2</vcpu>
-  <devices>
-    <graphics type='rdp' autoport='yes'/>
-  </devices>
-</domain>
-```
-
 ### LXC Template
 ```xml
 <domain type='lxc'>
@@ -338,11 +323,6 @@ The provider generates different XML templates based on hypervisor:
 - **Startup time:** 5-15 seconds
 - **Overhead:** ~5-10%
 - **Best for:** Production workloads
-
-### VirtualBox
-- **Startup time:** 10-30 seconds
-- **Overhead:** ~10-15%
-- **Best for:** Development
 
 ### LXC
 - **Startup time:** 1-3 seconds

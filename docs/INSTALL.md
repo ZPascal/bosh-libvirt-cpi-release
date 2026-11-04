@@ -1,4 +1,4 @@
-# BOSH Libvirt CPI — Installation and Configuration Guide
+# BOSH Libvirt CPI - Installation and Configuration Guide
 
 This guide covers everything needed to install the CPI binary on a host machine, configure it for QEMU/KVM or LXC, and connect it to a BOSH Director. It also covers remote-host setups where the Director runs inside a VM and controls libvirt on the host over SSH.
 
@@ -8,23 +8,22 @@ This guide covers everything needed to install the CPI binary on a host machine,
 
 1. [How the CPI fits into BOSH](#1-how-the-cpi-fits-into-bosh)
 2. [Choosing a backend](#2-choosing-a-backend)
-3. [Linux — QEMU/KVM](#3-linux--qemukvm)
-4. [Linux — LXC](#4-linux--lxc)
-5. [macOS — VirtualBox via libvirt](#5-macos--virtualbox-via-libvirt)
-6. [Windows — not supported](#6-windows--not-supported)
-7. [Remote-host mode (Director inside a VM)](#7-remote-host-mode-director-inside-a-vm)
-8. [CPI configuration reference](#8-cpi-configuration-reference)
-9. [BOSH manifest integration](#9-bosh-manifest-integration)
-10. [Storage layout](#10-storage-layout)
-11. [Networking](#11-networking)
-12. [Kernel-boot mode (QEMU only)](#12-kernel-boot-mode-qemu-only)
-13. [Troubleshooting](#13-troubleshooting)
+3. [Linux - QEMU/KVM](#3-linux--qemukvm)
+4. [Linux - LXC](#4-linux--lxc)
+5. [Windows - not supported](#6-windows--not-supported)
+6. [Remote-host mode (Director inside a VM)](#7-remote-host-mode-director-inside-a-vm)
+7. [CPI configuration reference](#8-cpi-configuration-reference)
+8. [BOSH manifest integration](#9-bosh-manifest-integration)
+9. [Storage layout](#10-storage-layout)
+10. [Networking](#11-networking)
+11. [Kernel-boot mode (QEMU only)](#12-kernel-boot-mode-qemu-only)
+12. [Troubleshooting](#13-troubleshooting)
 
 ---
 
 ## 1. How the CPI fits into BOSH
 
-The CPI is the binary that BOSH Director calls whenever it needs to create, delete, or inspect infrastructure. The Director does not talk to libvirt directly — it forks the CPI binary, writes a JSON request to its stdin, and reads the response from stdout.
+The CPI is the binary that BOSH Director calls whenever it needs to create, delete, or inspect infrastructure. The Director does not talk to libvirt directly - it forks the CPI binary, writes a JSON request to its stdin, and reads the response from stdout.
 
 ```
 BOSH Director
@@ -32,9 +31,9 @@ BOSH Director
     ▼
 bosh-libvirt-cpi  ──── libvirt API (local socket or SSH tunnel) ────▶  libvirtd
                                                                            │
-                                                        ┌──────────────────┼──────────────────┐
-                                                        ▼                  ▼                  ▼
-                                                    QEMU/KVM             LXC            VirtualBox
+                                                        ┌──────────────────┼
+                                                        ▼                  ▼
+                                                    QEMU/KVM              LXC
 ```
 
 The binary reads a single JSON config file on startup. That file's path is passed via the `-configPath` flag and is set in the CPI job template when you deploy with `bosh create-env`.
@@ -48,13 +47,12 @@ The binary reads a single JSON config file on startup. That file's path is passe
 | QEMU/KVM | `qemu:///system` | Linux with KVM | qcow2 | Production, full isolation |
 | QEMU/KVM kernel-boot | `qemu:///system?kernel=1` | Linux with KVM | ext4 raw | Package compilation VMs |
 | LXC | `lxc:///` | Linux only | directory tree | Low-overhead CI workloads |
-| VirtualBox | `vbox:///session` | macOS or Linux | vmdk | Local development |
 
-Stick to QEMU/KVM unless you have a specific reason not to. LXC shares the host kernel so it starts faster but offers less isolation. VirtualBox is the only option on macOS because KVM requires hardware virtualisation extensions that the macOS hypervisor does not expose to user-space libvirt.
+Stick to QEMU/KVM unless you have a specific reason not to. LXC shares the host kernel so it starts faster but offers less isolation.
 
 ---
 
-## 3. Linux — QEMU/KVM
+## 3. Linux - QEMU/KVM
 
 ### 3.1 Verify hardware support
 
@@ -62,7 +60,7 @@ Stick to QEMU/KVM unless you have a specific reason not to. LXC shares the host 
 egrep -c '(vmx|svm)' /proc/cpuinfo
 ```
 
-Any number above 0 means the CPU supports virtualisation. If the result is 0, KVM will not work — use QEMU in TCG (software emulation) mode or switch to LXC.
+Any number above 0 means the CPU supports virtualisation. If the result is 0, KVM will not work - use QEMU in TCG (software emulation) mode or switch to LXC.
 
 ```bash
 ls /dev/kvm
@@ -128,7 +126,7 @@ Log out and back in if `newgrp` does not take effect globally.
 virsh -c qemu:///system list --all
 ```
 
-Expected output: an empty table (no VMs yet). If virsh returns a permission error, the group membership has not been picked up — relogin.
+Expected output: an empty table (no VMs yet). If virsh returns a permission error, the group membership has not been picked up - relogin.
 
 ### 3.6 Build the CPI binary
 
@@ -182,7 +180,7 @@ You should get back a JSON response with `"stemcell_formats"` in the result.
 
 ---
 
-## 4. Linux — LXC
+## 4. Linux - LXC
 
 LXC containers share the host kernel. They start in under a second and consume far less RAM than full VMs, but every container runs the same kernel version as the host. Use LXC when you need many lightweight instances and do not require strict kernel isolation.
 
@@ -262,91 +260,7 @@ virsh -c lxc:/// list --all
 
 ---
 
-## 5. macOS — VirtualBox via libvirt
-
-KVM is not available on macOS, but VirtualBox runs fine and libvirt can drive it through the `vbox:///session` URI. This is useful for local development when you do not have a Linux host handy.
-
-### 5.1 Install VirtualBox
-
-Download the installer from [virtualbox.org](https://www.virtualbox.org/wiki/Downloads) and run it. The Extension Pack is not required.
-
-Alternatively with Homebrew:
-
-```bash
-brew install --cask virtualbox
-```
-
-macOS Ventura and later will prompt you to allow the kernel extension in System Settings → Privacy & Security. Do this before continuing.
-
-### 5.2 Install libvirt
-
-```bash
-brew install libvirt
-```
-
-This installs `virsh`, the libvirt client library, and the VirtualBox driver. The daemon runs as a user-session process, not a system service.
-
-Start it:
-
-```bash
-brew services start libvirt
-```
-
-### 5.3 Verify
-
-```bash
-virsh -c vbox:///session list --all
-```
-
-If VirtualBox is not running yet, libvirt will start it in headless mode automatically on the first connection.
-
-### 5.4 Install the BOSH CLI
-
-```bash
-brew install cloudfoundry/tap/bosh-cli
-```
-
-### 5.5 Build the CPI binary
-
-The Go build requires the libvirt C headers. On macOS these come with the Homebrew libvirt package:
-
-```bash
-export PKG_CONFIG_PATH="$(brew --prefix libvirt)/lib/pkgconfig"
-export CGO_LDFLAGS="-L$(brew --prefix libvirt)/lib"
-
-cd bosh-libvirt-cpi-release/src/bosh-libvirt-cpi
-go build -mod=vendor -o ../../bin/cpi ./main
-```
-
-### 5.6 Write the config file
-
-```json
-{
-  "BackendURI": "vbox:///session",
-  "StoreDir": "/Users/yourname/.bosh-libvirt-cpi",
-  "Agent": {
-    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
-    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
-    "blobstore": {
-      "provider": "local",
-      "options": {
-        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
-      }
-    }
-  }
-}
-```
-
-### 5.7 macOS-specific notes
-
-- **Disk format**: VirtualBox uses VMDK. The CPI handles the conversion automatically.
-- **Networking**: VirtualBox's default NAT network is `192.168.56.0/24`. The BOSH manifest's `internal_ip` must be in that range.
-- **Performance**: Without KVM, every VM runs in software emulation. Package compilation is noticeably slower than on a Linux KVM host.
-- **Screen sharing**: VirtualBox VMs started by libvirt run headless. To attach a console, use `virsh -c vbox:///session console <vm-name>`.
-
----
-
-## 6. Windows — not supported
+## 5. Windows - not supported
 
 The CPI is a Linux/macOS binary. It links against libvirt's C library (`libvirt.so`) which has no native Windows build. There is no workaround for this.
 
@@ -359,7 +273,7 @@ Note that KVM is available inside WSL2 on Windows 11 with the right Hyper-V sett
 
 ---
 
-## 7. Remote-host mode (Director inside a VM)
+## 6. Remote-host mode (Director inside a VM)
 
 In a typical BOSH deployment the Director is itself a VM. That VM needs to be able to call `virsh` and manage libvirt on the physical host. Because the Director VM does not have direct access to the host's libvirt socket, the CPI opens an SSH connection back to the host and runs every command through it.
 
@@ -373,7 +287,7 @@ Director VM (192.168.122.10)
 libvirtd on host  ──────────────────▶  QEMU/KVM or LXC
 ```
 
-### 7.1 Prepare the host for SSH access from the Director
+### 6.1 Prepare the host for SSH access from the Director
 
 Generate a dedicated key pair. Do not reuse your personal key.
 
@@ -398,9 +312,9 @@ Retrieve the host's SSH public key in authorized_keys format:
 ssh-keyscan -t ed25519 192.168.122.1 | awk '{print $2, $3}'
 ```
 
-Keep this output — you will need it as the `libvirt_host_key` variable in your manifest.
+Keep this output - you will need it as the `libvirt_host_key` variable in your manifest.
 
-### 7.2 Inject credentials via the manifest ops file
+### 6.2 Inject credentials via the manifest ops file
 
 The repo ships with ops files that wire the SSH credentials into the deployed Director's CPI config. When the Director's CPI binary runs inside the Director VM it reads `inject_*` fields that override the connection for child deployments:
 
@@ -444,7 +358,7 @@ bosh create-env manifests/lxc-cpi.yml \
   -v "libvirt_host_key=ssh-ed25519 AAAA..."
 ```
 
-### 7.3 What the ops files do
+### 6.3 What the ops files do
 
 | Ops file | Effect |
 |----------|--------|
@@ -455,16 +369,16 @@ bosh create-env manifests/lxc-cpi.yml \
 | `lxc-mac.yml` | Same as above for LXC |
 | `qemu-director-ssh.yml` | Injects `Host`, `Username`, `PrivateKey`, `HostKey` into the Director's CPI config so the deployed Director can SSH back to the host |
 | `lxc-director-ssh.yml` | Same as above for LXC |
-| `local-store-dir.yml` | Overrides `StoreDir` to `/tmp/bosh_libvirt_cpi` — useful for CI |
+| `local-store-dir.yml` | Overrides `StoreDir` to `/tmp/bosh_libvirt_cpi` - useful for CI |
 | `local-release.yml` | Points the CPI release to a local file path instead of fetching from the internet |
 
 ---
 
-## 8. CPI configuration reference
+## 7. CPI configuration reference
 
 The CPI reads a single JSON file. All fields are case-sensitive.
 
-### 8.1 Top-level fields
+### 7.1 Top-level fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -478,7 +392,7 @@ The CPI reads a single JSON file. All fields are case-sensitive.
 | `HostKey` | string | if Host set | SSH host public key in authorized_keys format, e.g. `"ssh-ed25519 AAAA..."`. |
 | `Agent` | object | yes | BOSH agent configuration passed to every VM at creation time. |
 
-### 8.2 Inject fields (deployed Director only)
+### 7.2 Inject fields (deployed Director only)
 
 When the Director is itself a VM it needs a separate set of credentials to SSH back to the host for any subsequent deployments. The `Inject*` fields provide those overrides.
 
@@ -493,7 +407,7 @@ When the Director is itself a VM it needs a separate set of credentials to SSH b
 
 If these fields are absent the deployed Director's CPI inherits the same values as the bootstrap CPI.
 
-### 8.3 MbusBootstrapSSL fields
+### 7.3 MbusBootstrapSSL fields
 
 These are optional. When present they configure TLS for the BOSH agent's mbus bootstrap listener.
 
@@ -503,7 +417,7 @@ These are optional. When present they configure TLS for the BOSH agent's mbus bo
 | `MbusBootstrapSSL.Certificate` | PEM-encoded server certificate signed by the CA. |
 | `MbusBootstrapSSL.PrivateKey` | PEM-encoded private key for the server certificate. |
 
-### 8.4 Agent block
+### 7.4 Agent block
 
 The `Agent` block is passed verbatim to the BOSH agent running inside every VM. Refer to the [BOSH agent documentation](https://bosh.io/docs/agent/) for all available options. The fields you always need are:
 
@@ -524,7 +438,7 @@ The `Agent` block is passed verbatim to the BOSH agent running inside every VM. 
 
 When using `bosh create-env` these values come from the manifest and are substituted by the CPI job template. You do not write them by hand.
 
-### 8.5 Complete local example (QEMU/KVM)
+### 7.5 Complete local example (QEMU/KVM)
 
 ```json
 {
@@ -543,7 +457,7 @@ When using `bosh create-env` these values come from the manifest and are substit
 }
 ```
 
-### 8.6 Complete remote example (QEMU/KVM via SSH)
+### 7.6 Complete remote example (QEMU/KVM via SSH)
 
 ```json
 {
@@ -574,7 +488,7 @@ When using `bosh create-env` these values come from the manifest and are substit
 
 ---
 
-## 9. BOSH manifest integration
+## 8. BOSH manifest integration
 
 When you deploy the Director with `bosh create-env` you do not write the JSON config by hand. The CPI release ships a job template that generates it from manifest variables. The variables you set on the command line map to config fields as follows:
 
@@ -589,7 +503,7 @@ When you deploy the Director with `bosh create-env` you do not write the JSON co
 
 The `qemu-director-ssh.yml` and `lxc-director-ssh.yml` ops files set these variables automatically from what you passed to `create-env`, so the deployed Director's CPI config is consistent with the bootstrap config.
 
-### 9.1 Cloud config
+### 8.1 Cloud config
 
 After `create-env` succeeds, upload a cloud config before running `bosh deploy`:
 
@@ -601,7 +515,7 @@ bosh -e your-director update-cloud-config manifests/cloud-config-qemu.yml \
 
 The cloud config defines the VM types and networks available to deployments. The `kernel_path` variable is required for QEMU kernel-boot mode (see section 12) and should point to a kernel image on the host that matches the stemcell's userspace.
 
-### 9.2 Stemcell
+### 8.2 Stemcell
 
 Download the warden-boshlite stemcell and upload it:
 
@@ -619,7 +533,7 @@ The CPI will convert the stemcell to the correct disk format for your backend au
 
 ---
 
-## 10. Storage layout
+## 9. Storage layout
 
 Everything the CPI creates on disk lives under `StoreDir`. The directory tree looks like this:
 
@@ -630,7 +544,7 @@ StoreDir/
 │       └── image.qcow2        (or image.ext4, or a directory)
 ├── vms/
 │   └── vm-<uuid>/
-│       ├── rootfs.img         (root disk — copy of stemcell image, resized to 65G)
+│       ├── rootfs.img         (root disk - copy of stemcell image, resized to 65G)
 │       └── ephemeral.qcow2    (ephemeral disk)
 └── disks/
     └── disk-<uuid>.qcow2      (persistent disks)
@@ -642,9 +556,9 @@ You can place `StoreDir` on any filesystem that supports sparse files (ext4, xfs
 
 ---
 
-## 11. Networking
+## 10. Networking
 
-### 11.1 Default libvirt NAT network
+### 10.1 Default libvirt NAT network
 
 libvirt creates a NAT bridge called `virbr0` on first use. Its default address space is `192.168.122.0/24`. The host is reachable from VMs at `192.168.122.1`.
 
@@ -660,7 +574,7 @@ virsh net-autostart default
 virsh net-start default
 ```
 
-### 11.2 Static IP assignment via MAC address
+### 10.2 Static IP assignment via MAC address
 
 BOSH Directors need a stable IP so the manifest can reference them. The CPI supports pinning a MAC address in the cloud properties. libvirt's DHCP server then always gives the same IP to the same MAC. The provided ops files set:
 
@@ -675,17 +589,17 @@ virsh net-update default add ip-dhcp-host \
   --live --config
 ```
 
-### 11.3 Firewall rules
+### 10.3 Firewall rules
 
 The CI host needs to allow inbound connections from VMs on the following ports:
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 22 | TCP | SSH — the Director VM's CPI SSHes back to the host |
-| 4222 | TCP | NATS — BOSH agents connect to the Director's NATS server |
-| 25250 | TCP | Blobstore — agents download packages |
+| 22 | TCP | SSH - the Director VM's CPI SSHes back to the host |
+| 4222 | TCP | NATS - BOSH agents connect to the Director's NATS server |
+| 25250 | TCP | Blobstore - agents download packages |
 | 6868 | TCP | BOSH agent mbus bootstrap |
-| 5432 | TCP | postgres — Director database (localhost only by default) |
+| 5432 | TCP | postgres - Director database (localhost only by default) |
 
 On systems using `ufw`:
 
@@ -702,7 +616,7 @@ sudo firewall-cmd --reload
 
 ---
 
-## 12. Kernel-boot mode (QEMU only)
+## 11. Kernel-boot mode (QEMU only)
 
 Standard QEMU mode boots VMs from a qcow2 disk image, which means the guest kernel comes from inside the stemcell. Kernel-boot mode skips that and tells QEMU to load a kernel from the host directly. This avoids grub and speeds up the boot sequence for compilation VMs.
 
@@ -724,7 +638,7 @@ The kernel must be compatible with the Ubuntu Noble userspace in the stemcell. T
 
 ---
 
-## 13. Troubleshooting
+## 12. Troubleshooting
 
 ### libvirt connection refused
 
