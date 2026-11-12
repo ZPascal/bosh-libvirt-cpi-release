@@ -19,6 +19,9 @@ type VMDomainProps struct {
 type DomainDiskPaths struct {
 	RootDisk      string
 	EphemeralDisk string
+	// ConfigDisk is an optional path to a read-only ISO image attached as a
+	// config drive. When empty, builders omit the config drive disk entirely.
+	ConfigDisk string
 }
 
 // DomainBuilder produces libvirt XML domain definitions for a specific backend.

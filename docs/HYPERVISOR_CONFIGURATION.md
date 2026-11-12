@@ -10,8 +10,9 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 
 | Hypervisor | Type | Status | Best For |
 |------------|------|--------|----------|
-| **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers, fast setup |
-| **qemu** (KVM) | `qemu:///system` | ✅ Stable | ARM support, good performance |
+| **qemu** (KVM) | Full virtualization | ✅ Stable | Production deployments, best performance |
+| **vbox** (VirtualBox) | Desktop virtualization | ✅ Stable | Development, desktop environments |
+| **lxc** (Containers) | Linux Containers | ✅ Stable | Lightweight workloads, fast startup |
 
 ## Configuration Parameters
 
@@ -19,7 +20,7 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `hypervisor` | string | No | `qemu` | Hypervisor type: qemu, vbox, lxc, xen, vmware |
+| `hypervisor` | string | No | `qemu` | Hypervisor type: `qemu`, `vbox`, `lxc` |
 | `uri` | string | No | Auto-generated | Libvirt connection URI |
 | `bin_path` | string | No | `virsh` | Path to virsh binary |
 | `store_dir` | string | Yes | - | Directory for VM and disk storage |
@@ -40,6 +41,7 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 If you don't specify a `uri`, it will be automatically generated based on the `hypervisor`:
 
 - `qemu` → `qemu:///system`
+- `vbox` → `vbox:///session`
 - `lxc` → `lxc:///`
 
 ## Hypervisor-Specific Configuration
@@ -104,6 +106,38 @@ sudo usermod -aG kvm $USER
 - Support for live migration
 - Advanced CPU and memory management
 - qcow2 disk format with compression and snapshots
+
+### VirtualBox (Development)
+
+**Prerequisites:**
+```bash
+# Install VirtualBox and libvirt-vbox driver
+sudo apt-get install virtualbox libvirt-daemon-driver-vbox
+
+# Restart libvirt
+sudo systemctl restart libvirtd
+```
+
+**Configuration:**
+```json
+{
+  "hypervisor": "vbox",
+  "uri": "vbox:///session",
+  "bin_path": "virsh",
+  "store_dir": "/var/vcap/store/libvirt-vbox",
+  "storage_controller": "IDE",
+  "auto_enable_networks": true,
+  "agent": { ... }
+}
+```
+
+**Features:**
+- Desktop-friendly virtualization (macOS, Windows, Linux)
+- No KVM required — runs on any x86 host
+- Agent env delivered via ISO config drive (third IDE disk)
+- vmdk disk format
+
+**Note:** VirtualBox via libvirt uses `vbox:///session` and runs VMs in user session mode. Root-level `vbox:///system` is not supported.
 
 ### LXC (Containers)
 
@@ -200,9 +234,8 @@ Different hypervisors support different disk formats:
 | Hypervisor | Default Format | Alternatives |
 |------------|---------------|--------------|
 | QEMU/KVM | qcow2 | raw, qcow, vmdk |
-| VirtualBox | VMDK | VDI, VHD |
+| VirtualBox | vmdk | - |
 | LXC | Directory | - |
-| Xen | raw/qcow2 | - |
 
 ## Performance Tuning
 

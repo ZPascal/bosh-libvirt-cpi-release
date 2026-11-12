@@ -10,11 +10,14 @@ type FakeDomainBuilder struct {
 	BuildStemcellDomainErr error
 
 	DiskImageFormatResult string
+
+	LastBuildDomainDisks driver.DomainDiskPaths
 }
 
 var _ driver.DomainBuilder = &FakeDomainBuilder{}
 
 func (b *FakeDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
+	b.LastBuildDomainDisks = disks
 	return b.BuildDomainXML, b.BuildDomainErr
 }
 

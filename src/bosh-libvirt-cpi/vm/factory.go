@@ -238,6 +238,12 @@ func (f Factory) Create(
 			f.cleanUpPartialCreate(vm)
 			return nil, err
 		}
+	case "vmdk":
+		disks, err = f.provisionVBoxConfigDrive(vm, stemcell, ephemeralDisk, initialAgentEnv)
+		if err != nil {
+			f.cleanUpPartialCreate(vm)
+			return nil, err
+		}
 	}
 
 	// LXC VMs require a MAC address so the domain XML includes a network interface.
@@ -889,6 +895,34 @@ func (f Factory) provisionExt4Rootfs(
 	return driver.DomainDiskPaths{
 		RootDisk:      vmExt4,
 		EphemeralDisk: ephemeralDisk.ImagePath(),
+	}, nil
+}
+
+// provisionVBoxConfigDrive prepares a VBox (vmdk) config drive ISO for the VM.
+// It marshals the agent env into an ISO 9660 image, stores it as env.iso in the
+// VM store, and returns DomainDiskPaths with ConfigDisk set to the ISO path.
+func (f Factory) provisionVBoxConfigDrive(
+	vm VMImpl,
+	stemcell bstem.Stemcell,
+	ephemeralDisk bdisk.Disk,
+	initialAgentEnv apiv1.AgentEnv,
+) (driver.DomainDiskPaths, error) {
+	envBytes, err := initialAgentEnv.AsBytes()
+	if err != nil {
+		return driver.DomainDiskPaths{}, bosherr.WrapError(err, "Marshalling agent env for VBox config drive")
+	}
+	agentEnvBytes := f.injectMbusCert(addBlobstoreToEnv(envBytes))
+	isoBytes, err := ISO9660{FileName: "ENV", Contents: agentEnvBytes}.Bytes()
+	if err != nil {
+		return driver.DomainDiskPaths{}, bosherr.WrapError(err, "Building ISO9660 config drive")
+	}
+	if err := vm.store.Put("env.iso", isoBytes); err != nil {
+		return driver.DomainDiskPaths{}, bosherr.WrapError(err, "Writing env.iso to VM store")
+	}
+	return driver.DomainDiskPaths{
+		RootDisk:      stemcell.ImagePath(),
+		EphemeralDisk: ephemeralDisk.ImagePath(),
+		ConfigDisk:    vm.store.Path("env.iso"),
 	}, nil
 }
 

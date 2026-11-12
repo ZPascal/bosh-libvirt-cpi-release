@@ -6,6 +6,7 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 
 - **Multi-Hypervisor Support**: Support for different virtualization backends through libvirt
   - QEMU/KVM - Full virtualization with KVM acceleration
+  - VirtualBox - Desktop virtualization via libvirt-vbox
   - LXC - Linux Containers
 - **Unified Interface**: Single libvirt-based implementation for all hypervisors
 - **Flexible Architecture**: Easy switching between hypervisors via configuration
@@ -16,6 +17,7 @@ A BOSH Cloud Provider Interface (CPI) that uses **libvirt** to support multiple 
 | Backend | URI | Use case | Disk format |
 |---------|-----|----------|-------------|
 | QEMU/KVM | `qemu:///system` | Production workloads on KVM-capable Linux hosts | qcow2 |
+| VirtualBox | `vbox:///session` | Desktop development on macOS or Windows (no KVM available) | vmdk |
 | LXC | `lxc:///` | Container workloads, low overhead, shared kernel | raw |
 
 See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per-backend installation prerequisites and known limitations.
@@ -107,14 +109,14 @@ For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fie
 
 Tests run on every push and PR to `main`. The pipeline is defined in `.github/workflows/tests.yml` and calls two reusable workflows:
 
-**E2E (`e2e.yml`)** — spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
+**E2E (`e2e.yml`)** — spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for QEMU, LXC, and VBox backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
 
 ```yaml
 jobs:
   e2e:
     uses: ./.github/workflows/e2e.yml
     with:
-      backend: qemu   # or lxc
+      backend: qemu   # or lxc, vbox
 ```
 
 **Setup BOSH Director (`setup-bosh-director.yml`)** — bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` — both require the same runner for libvirt networking to work.
@@ -145,10 +147,10 @@ Libvirt Provider
 ┌────────────────────────────────────┐
 │         Libvirt API                │
 └────────────────────────────────────┘
-    ↓           ↓           
-┌─────────┐ ┌─────────┐ 
-│QEMU/KVM │ │LXC      │
-└─────────┘ └─────────┘
+    ↓           ↓           ↓
+┌─────────┐ ┌─────────┐ ┌─────────┐
+│QEMU/KVM │ │VBox     │ │ LXC     │
+└─────────┘ └─────────┘ └─────────┘
 ```
 
 The `BackendURI` configuration field determines which virtualization backend libvirt uses.
@@ -157,8 +159,9 @@ The `BackendURI` configuration field determines which virtualization backend lib
 
 | Hypervisor | URI Format | Status | Use Case |
 |------------|-----------|--------|----------|
+| **qemu** (KVM) | `qemu:///system` | ✅ Stable | Production, best performance |
+| **vbox** (VirtualBox) | `vbox:///session` | ✅ Stable | Development, desktop (macOS/Windows) |
 | **lxc** (Containers) | `lxc:///` | ✅ Stable | Lightweight containers, fast setup |
-| **qemu** (KVM) | `qemu:///system` | ✅ Stable | ARM support, good performance |
 
 ## Building
 

@@ -73,6 +73,35 @@ var _ = Describe("VBoxDomainBuilder", func() {
 			var v interface{}
 			Expect(xml.NewDecoder(strings.NewReader(result)).Decode(&v)).To(Succeed())
 		})
+
+		It("omits cdrom disk when ConfigDisk is empty", func() {
+			result, err := builder.BuildDomain("vm-vbox-nocd", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk"})
+			Expect(err).To(BeNil())
+			Expect(result).ToNot(ContainSubstring("cdrom"))
+			Expect(result).ToNot(ContainSubstring("sdc"))
+		})
+
+		It("includes cdrom disk when ConfigDisk is set", func() {
+			xmlStr, err := builder.BuildDomain("vm-vbox-cd", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk", ConfigDisk: "/vms/vm-1/env.iso"})
+			Expect(err).To(BeNil())
+			Expect(xmlStr).To(ContainSubstring("device='cdrom'"))
+			Expect(xmlStr).To(ContainSubstring("/vms/vm-1/env.iso"))
+			Expect(xmlStr).To(ContainSubstring("dev='sdc'"))
+			Expect(xmlStr).To(ContainSubstring("<readonly/>"))
+			var v interface{}
+			Expect(xml.NewDecoder(strings.NewReader(xmlStr)).Decode(&v)).To(Succeed())
+		})
+
+		It("escapes XML special characters in ConfigDisk path", func() {
+			result, err := builder.BuildDomain("vm-vbox-esc", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+				driver.DomainDiskPaths{RootDisk: "/r.vmdk", EphemeralDisk: "/e.vmdk", ConfigDisk: "/path&env.iso"})
+			Expect(err).To(BeNil())
+			Expect(result).To(ContainSubstring("/path&amp;env.iso"))
+			var v interface{}
+			Expect(xml.NewDecoder(strings.NewReader(result)).Decode(&v)).To(Succeed())
+		})
 	})
 
 	Describe("BuildStemcellDomain", func() {

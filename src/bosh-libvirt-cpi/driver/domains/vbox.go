@@ -17,6 +17,15 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
 	if network == "" {
 		network = "default"
 	}
+	configDiskXML := ""
+	if disks.ConfigDisk != "" {
+		configDiskXML = fmt.Sprintf(`
+    <disk type='file' device='cdrom'>
+      <source file='%s'/>
+      <target dev='sdc' bus='ide'/>
+      <readonly/>
+    </disk>`, xmlEscape(disks.ConfigDisk))
+	}
 	xml := fmt.Sprintf(`<domain type='vbox'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
@@ -30,12 +39,12 @@ func (b VBoxDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
     <disk type='file' device='disk'>
       <source file='%s'/>
       <target dev='sdb' bus='ide'/>
-    </disk>
+    </disk>%s
     <interface type='network'>
       <source network='%s'/>
     </interface>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), xmlEscape(network))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), configDiskXML, xmlEscape(network))
 	return xml, nil
 }
 
