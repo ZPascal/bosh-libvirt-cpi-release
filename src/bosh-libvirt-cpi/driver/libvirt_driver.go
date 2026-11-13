@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"time"
 
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 	libvirt "libvirt.org/go/libvirt"
@@ -56,7 +57,39 @@ func (d LibvirtDriver) ShutdownDomain(id string) error {
 	return d.withDomain(id, func(dom *libvirt.Domain) error { return dom.Shutdown() })
 }
 
+// isConnectionLost reports whether err means the RPC connection to libvirtd
+// was dropped (e.g. "End of file while reading data: Input/output error").
+func isConnectionLost(err error) bool {
+	var lverr libvirt.Error
+	return errors.As(err, &lverr) &&
+		lverr.Code == libvirt.ERR_SYSTEM_ERROR && lverr.Domain == libvirt.FROM_RPC
+}
+
+// DestroyDomain stops and undefines the domain. If libvirtd drops the
+// connection mid-call (seen with the LXC driver while tearing down a
+// container), it reconnects and retries; the operation is idempotent.
 func (d LibvirtDriver) DestroyDomain(id string) error {
+	err := d.destroyDomain(id)
+	for attempt := 0; attempt < 3 && err != nil && isConnectionLost(err); attempt++ {
+		rc, ok := d.conn.(interface{ Reconnect() error })
+		if !ok {
+			break
+		}
+		d.logger.Warn(d.logTag, "Connection lost destroying domain '%s', reconnecting: %s", id, err)
+		time.Sleep(time.Second)
+		if rerr := rc.Reconnect(); rerr != nil {
+			d.logger.Warn(d.logTag, "Reconnect failed: %s", rerr)
+			continue
+		}
+		err = d.destroyDomain(id)
+		if err != nil && errors.Is(err, libvirt.ERR_NO_DOMAIN) {
+			return nil
+		}
+	}
+	return err
+}
+
+func (d LibvirtDriver) destroyDomain(id string) error {
 	d.logger.Debug(d.logTag, "Destroying domain '%s'", id)
 	return d.withDomain(id, func(dom *libvirt.Domain) error {
 		if err := dom.Destroy(); err != nil {

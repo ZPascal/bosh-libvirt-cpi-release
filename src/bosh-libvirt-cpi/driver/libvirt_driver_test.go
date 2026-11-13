@@ -75,6 +75,32 @@ var _ = Describe("LibvirtDriver", func() {
 			// FakeLibvirtConn returns (nil, nil) by default
 			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
 		})
+
+		Context("when libvirtd drops the connection", func() {
+			connLost := libvirt.Error{Code: libvirt.ERR_SYSTEM_ERROR, Domain: libvirt.FROM_RPC}
+
+			It("reconnects and treats a now-missing domain as success", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.OnReconnect = func() {
+					conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_NO_DOMAIN}
+				}
+				Expect(d.DestroyDomain("vm-1")).To(Succeed())
+				Expect(conn.ReconnectCalls).To(Equal(1))
+			})
+
+			It("gives up after 3 failed reconnects", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.ReconnectErr = errors.New("still down")
+				Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(3))
+			})
+
+			It("does not reconnect for other libvirt errors", func() {
+				conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_INTERNAL_ERROR, Domain: libvirt.FROM_RPC}
+				Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(0))
+			})
+		})
 	})
 
 	Describe("DeleteStorageVol", func() {
@@ -106,12 +132,12 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 
 		It("returns error when lookup returns nil domain with no error", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.StartDomain("vm-1")).To(HaveOccurred())
 		})
 
 		It("returns error when lookup returns nil domain with no error for Shutdown", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.ShutdownDomain("vm-1")).To(HaveOccurred())
 		})
 	})

@@ -356,7 +356,7 @@ done ) &
 done ) &
 # Background watcher: once bosh-agent installs the libvirt_cpi package, install
 # the CPI binary wrapper so cpi-inject.json is merged at every invocation.
-# Wait for cpi.json to exist first — that file is rendered only after ALL packages
+# Wait for cpi.json to exist first - that file is rendered only after ALL packages
 # are compiled AND uploaded to the blobstore, so the package tarball is frozen by
 # then and we won't race with tar reading bin/cpi during compression.
 ( INJ=/var/vcap/bosh/cpi-inject.json

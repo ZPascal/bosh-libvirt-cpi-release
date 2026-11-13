@@ -52,7 +52,7 @@ var _ = Describe("VMImpl disk operations", func() {
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		runner = &driverfakes.FakeRunner{}
 		drv = &driverfakes.FakeDriver{}
-		// GetResult is used when reconfigureAgent reads env.json — provide
+		// GetResult is used when reconfigureAgent reads env.json - provide
 		// minimal valid JSON so FromBytes succeeds.
 		runner.GetResult = []byte("{}")
 		store := vm.NewStore(tmpDir, runner)
