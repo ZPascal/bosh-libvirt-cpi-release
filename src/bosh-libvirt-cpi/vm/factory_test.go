@@ -262,6 +262,62 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Mounting ext4 for VM injection"))
 		})
 
+		Describe("guest config for hot-plugged persistent disks", func() {
+			var agentJSONPath string
+
+			// The warden-boshlite stemcell's agent.json (stemcell builder base_warden stage).
+			const wardenAgentJSON = `{
+  "Platform": {"Linux": {
+    "UseDefaultTmpDir": true,
+    "UsePreformattedPersistentDisk": true,
+    "BindMountPersistentDisk": true,
+    "SkipDiskSetup": true,
+    "UseMonitIptablesFirewall": true
+  }},
+  "Infrastructure": {"Settings": {"Sources": [{"Type": "File", "SettingsPath": "/var/vcap/bosh/warden-cpi-agent-env.json"}]}}
+}`
+
+			createVM := func() error {
+				stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+				_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+				stemcell.ImagePathResult = stemcellImg
+				_, err := factory.Create(apiv1.NewAgentID("agent-1"), stemcell, cloudProps, apiv1.Networks{}, apiv1.NewVMEnv(nil))
+				return err
+			}
+
+			BeforeEach(func() {
+				agentJSONPath = filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/var/vcap/bosh/agent.json")
+			})
+
+			It("switches the agent from warden bind mounts to virtio block devices", func() {
+				runner.PutContents = map[string][]byte{agentJSONPath: []byte(wardenAgentJSON)}
+				Expect(createVM()).To(Succeed())
+
+				var cfg map[string]interface{}
+				Expect(json.Unmarshal(runner.PutContents[agentJSONPath], &cfg)).To(Succeed())
+				linux := cfg["Platform"].(map[string]interface{})["Linux"].(map[string]interface{})
+				Expect(linux["BindMountPersistentDisk"]).To(Equal(false))
+				Expect(linux["UsePreformattedPersistentDisk"]).To(Equal(false))
+				Expect(linux["DevicePathResolutionType"]).To(Equal("virtio"))
+				Expect(linux["SkipDiskSetup"]).To(Equal(true))
+				Expect(linux["UseMonitIptablesFirewall"]).To(Equal(true))
+				Expect(cfg["Infrastructure"]).ToNot(BeNil())
+			})
+
+			It("still creates the VM when agent.json is unreadable", func() {
+				runner.PutContents = map[string][]byte{agentJSONPath: []byte("not json")}
+				Expect(createVM()).To(Succeed())
+				Expect(runner.PutContents[agentJSONPath]).To(Equal([]byte("not json")))
+			})
+
+			It("does not mount a tmpfs over /var/vcap/store in /bosh-init", func() {
+				Expect(createVM()).To(Succeed())
+				initScript := string(runner.PutContents[filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/bosh-init")])
+				Expect(initScript).To(ContainSubstring("mkdir -p /var/vcap/store"))
+				Expect(initScript).ToNot(MatchRegexp(`tmpfs\s+/var/vcap/store`))
+			})
+		})
+
 		It("runs through ext4 injection without error when all commands succeed", func() {
 			stemcellImg := filepath.Join(tmpDir, "stemcell.img")
 			_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)

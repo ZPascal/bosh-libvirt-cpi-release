@@ -717,6 +717,9 @@ func (f Factory) provisionExt4Rootfs(
 	} {
 		_, _, _ = f.runner.Execute("mkdir", "-p", dd)
 	}
+	// The warden stemcell's agent bind-mounts persistent disks from a path the
+	// CPI provides; QEMU hot-plugs them as virtio block devices instead.
+	f.configureAgentForVirtioDisks(mntDir + "/var/vcap/bosh/agent.json")
 	// Inject a 'su' wrapper that runs the command directly as root.
 	// The BOSH postgres pre-start runs 'su - vcap -c "initdb ..."' which
 	// fails in our kernel-boot environment (PAM not configured). By running
@@ -1111,4 +1114,46 @@ func cpiWrapperScript() string {
 // by replacing each ' with '\”.
 func shellEscape(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
+}
+
+// configureAgentForVirtioDisks rewrites the stemcell's agent.json so the agent
+// partitions, formats and mounts hot-plugged persistent disks itself (found via
+// /dev/disk/by-id/*<serial> or the hint's /dev/vdX path) instead of
+// bind-mounting a pre-formatted path. Other settings are kept. A missing or
+// unparsable file is logged and left alone so VM creation still succeeds.
+func (f Factory) configureAgentForVirtioDisks(path string) {
+	data, err := f.runner.Get(path)
+	if err != nil {
+		f.logger.Error(f.logTag, "Reading %s: %s", path, err)
+		return
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		f.logger.Error(f.logTag, "Parsing %s: %s", path, err)
+		return
+	}
+
+	platform, _ := cfg["Platform"].(map[string]interface{})
+	if platform == nil {
+		platform = map[string]interface{}{}
+		cfg["Platform"] = platform
+	}
+	linux, _ := platform["Linux"].(map[string]interface{})
+	if linux == nil {
+		linux = map[string]interface{}{}
+		platform["Linux"] = linux
+	}
+	linux["BindMountPersistentDisk"] = false
+	linux["UsePreformattedPersistentDisk"] = false
+	linux["DevicePathResolutionType"] = "virtio"
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		f.logger.Error(f.logTag, "Marshalling %s: %s", path, err)
+		return
+	}
+	if err := f.runner.Put(path, out); err != nil {
+		f.logger.Error(f.logTag, "Writing %s: %s", path, err)
+	}
 }

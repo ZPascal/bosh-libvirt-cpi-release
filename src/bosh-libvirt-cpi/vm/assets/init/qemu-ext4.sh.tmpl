@@ -9,9 +9,10 @@ ip link set lo up 2>/dev/null || true
 # Set shared memory limits required by postgres pre-start
 sysctl -w kernel.shmmax=67108864 2>/dev/null || true
 sysctl -w kernel.shmall=4194304 2>/dev/null || true
-# Mount tmpfs at /var/vcap/store so postgres can write its data directory.
+# /var/vcap/store lives on the root filesystem until the agent mounts a
+# hot-plugged persistent disk over it (a tmpfs here would make the agent treat
+# the disk as a migration target).
 mkdir -p /var/vcap/store
-mount -t tmpfs -o size=4G tmpfs /var/vcap/store 2>/dev/null || true
 {{.QemuNetScript}}python3 -c "
 import http.server, socketserver, sys, time, subprocess, os
 socketserver.TCPServer.allow_reuse_address = True
