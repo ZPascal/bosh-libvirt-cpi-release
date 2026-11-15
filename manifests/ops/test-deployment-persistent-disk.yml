@@ -1,0 +1,6 @@
+# Gives the smoke-test instance a persistent disk so e2e exercises
+# create_disk / attach_disk (hot-plug) / the agent's mount_disk.
+# QEMU only: the LXC backend does not support persistent disks yet.
+- type: replace
+  path: /instance_groups/name=nats/persistent_disk_type?
+  value: default

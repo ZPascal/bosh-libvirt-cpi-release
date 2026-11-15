@@ -115,7 +115,13 @@ jobs:
           SB_WATCH_PID=$!
         fi
         DEPLOY_RC=0
+        # QEMU hot-plugs persistent disks; LXC doesn't support them yet.
+        DISK_OPS=()
+        if [ "${{ inputs.backend }}" = "qemu" ]; then
+          DISK_OPS=(-o manifests/ops/test-deployment-persistent-disk.yml)
+        fi
         timeout 3600 bosh -e "${BOSH_ENV_ALIAS}" -d "${DEPLOYMENT_NAME}" deploy manifests/test-deployment.yml \
+          "${DISK_OPS[@]}" \
           --client admin --client-secret admin-password \
           --vars-store /tmp/bosh-deploy-vars.yml \
           -v deployment_name="${DEPLOYMENT_NAME}" \
@@ -153,6 +159,20 @@ jobs:
         echo "=== DB network connectivity: director postgres self-check (via SSH) ==="
         ssh -i "${SSH_KEY}" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
           root@"${DIRECTOR_IP}" 'nc -zv 127.0.0.1 5432 2>&1 && echo "DB local ok" || echo "DB not listening locally"' 2>/dev/null || echo "(SSH unavailable)"
+        if [ "${{ inputs.backend }}" = "qemu" ]; then
+          echo "=== Persistent disk: director has a disk CID and the domain has it hot-plugged ==="
+          disk_cid=$(bosh -e "${BOSH_ENV_ALIAS}" -d "${DEPLOYMENT_NAME}" instances --details --json \
+            --client admin --client-secret admin-password \
+            | python3 -c "import sys,json; rows=json.load(sys.stdin)['Tables'][0]['Rows']; print(rows[0].get('disk_cids',''))")
+          echo "disk CID: ${disk_cid}"
+          [ -n "${disk_cid}" ] || { echo "no persistent disk attached to the instance"; exit 1; }
+          vm_cid=$(bosh -e "${BOSH_ENV_ALIAS}" -d "${DEPLOYMENT_NAME}" vms --json \
+            --client admin --client-secret admin-password \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['Tables'][0]['Rows'][0]['vm_cid'])")
+          sudo virsh domblklist "${vm_cid}"
+          sudo virsh domblklist "${vm_cid}" | grep -E "^ *vdc +.*${disk_cid}/disk.img" \
+            || { echo "disk ${disk_cid} is not hot-plugged as vdc into ${vm_cid}"; exit 1; }
+        fi
         echo "=== All ${{ inputs.backend }} e2e checks passed ==="
 
     - name: Clean up Director (QEMU)
