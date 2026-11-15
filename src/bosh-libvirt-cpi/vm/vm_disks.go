@@ -2,12 +2,14 @@ package vm
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 
 	bdisk "bosh-libvirt-cpi/disk"
+	"bosh-libvirt-cpi/driver"
 )
 
 func (vm VMImpl) DiskIDs() ([]apiv1.DiskCID, error) {
@@ -39,7 +41,35 @@ func (vm VMImpl) AttachEphemeralDisk(disk bdisk.Disk) error {
 	return err
 }
 
+// persistentDiskTargets are the guest device names for hot-plugged persistent
+// disks; vda (root) and vdb (ephemeral) are defined with the domain.
+var persistentDiskTargets = func() []string {
+	var targets []string
+	for c := 'c'; c <= 'z'; c++ {
+		targets = append(targets, "vd"+string(c))
+	}
+	return targets
+}()
+
+// virtioSerialMaxLen is the longest serial virtio-blk exposes to the guest.
+const virtioSerialMaxLen = 20
+
+func diskSerial(cid apiv1.DiskCID) string {
+	id := cid.AsString()
+	if len(id) > virtioSerialMaxLen {
+		return id[:virtioSerialMaxLen]
+	}
+	return id
+}
+
 func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, error) {
+	if !ephemeral {
+		hint, handled, err := vm.hotplugPersistentDisk(disk)
+		if handled || err != nil {
+			return hint, err
+		}
+	}
+
 	hint := apiv1.NewDiskHintFromString(disk.ImagePath())
 
 	rec := diskAttachmentRecord{
@@ -81,8 +111,90 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 	return hint, nil
 }
 
+// hotplugPersistentDisk attaches the disk image to the domain as a virtio disk
+// and returns a hint the agent resolves via /dev/disk/by-id/*<serial>, falling
+// back to /dev/<target>. handled is false when the backend cannot hot-plug, in
+// which case the caller keeps the legacy image-path hint.
+func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, error) {
+	records := diskAttachmentRecords{vm.store}
+
+	target, err := vm.freePersistentDiskTarget()
+	if err != nil {
+		return apiv1.DiskHint{}, true, err
+	}
+	serial := diskSerial(disk.ID())
+
+	xml, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), target, serial)
+	if errors.Is(err, driver.ErrPersistentDiskUnsupported) {
+		return apiv1.DiskHint{}, false, nil
+	}
+	if err != nil {
+		return apiv1.DiskHint{}, true, bosherr.WrapError(err, "Building persistent disk device")
+	}
+
+	// Save first so the target is reserved; drop the record if the attach fails.
+	rec := diskAttachmentRecord{
+		ID:     disk.ID().AsString(),
+		Path:   disk.ImagePath(),
+		Target: target,
+		Serial: serial,
+	}
+	if err := records.Save(disk.ID(), rec); err != nil {
+		return apiv1.DiskHint{}, true, err
+	}
+
+	if err := vm.driver.AttachDevice(vm.cid.AsString(), xml); err != nil {
+		_ = records.Delete(disk.ID())
+		return apiv1.DiskHint{}, true, bosherr.WrapErrorf(err, "Attaching persistent disk '%s' as %s", disk.ID().AsString(), target)
+	}
+
+	return apiv1.NewDiskHintFromMap(map[string]interface{}{
+		"id":        serial,
+		"volume_id": serial,
+		"path":      "/dev/" + target,
+	}), true, nil
+}
+
+func (vm VMImpl) freePersistentDiskTarget() (string, error) {
+	records := diskAttachmentRecords{vm.store}
+	ids, err := records.List()
+	if err != nil {
+		return "", err
+	}
+
+	used := map[string]bool{}
+	for _, id := range ids {
+		rec, err := records.Get(id)
+		if err != nil {
+			return "", err
+		}
+		used[rec.Target] = true
+	}
+
+	for _, t := range persistentDiskTargets {
+		if !used[t] {
+			return t, nil
+		}
+	}
+	return "", bosherr.Errorf("No free device target for another persistent disk (all of vdc-vdz in use)")
+}
+
 func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
-	err := diskAttachmentRecords{vm.store}.Delete(disk.ID())
+	records := diskAttachmentRecords{vm.store}
+
+	// Hot-plugged disks have a Target in their record; unplug them first. A
+	// domain that is already gone has nothing left to unplug.
+	if rec, err := records.Get(disk.ID()); err == nil && rec.Target != "" {
+		xml, err := vm.domBuilder.BuildPersistentDiskXML(rec.Path, rec.Target, rec.Serial)
+		if err != nil {
+			return bosherr.WrapError(err, "Building persistent disk device")
+		}
+		if err := vm.driver.DetachDevice(vm.cid.AsString(), xml); err != nil && !vm.driver.IsMissingDomainErr(err) {
+			return bosherr.WrapErrorf(err, "Detaching persistent disk '%s'", disk.ID().AsString())
+		}
+	}
+
+	err := records.Delete(disk.ID())
 	if err != nil {
 		return err
 	}
@@ -103,6 +215,9 @@ type diskAttachmentRecord struct {
 	ID        string
 	Ephemeral bool
 	Path      string
+	// Target and Serial are set for hot-plugged (QEMU) persistent disks.
+	Target string `json:",omitempty"`
+	Serial string `json:",omitempty"`
 }
 
 type diskAttachmentRecords struct {

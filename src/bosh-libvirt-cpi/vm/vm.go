@@ -17,8 +17,9 @@ type VMImpl struct {
 
 	stemcellAPIVersion apiv1.StemcellAPIVersion
 
-	driver driver.Driver
-	logger boshlog.Logger
+	driver     driver.Driver
+	domBuilder driver.DomainBuilder
+	logger     boshlog.Logger
 }
 
 // NewVMImpl returns a VMImpl for the given CID.
@@ -27,6 +28,7 @@ func NewVMImpl(
 	store Store,
 	stemcellAPIVersion apiv1.StemcellAPIVersion,
 	driver driver.Driver,
+	domBuilder driver.DomainBuilder,
 	logger boshlog.Logger,
 ) VMImpl {
 	return VMImpl{
@@ -34,6 +36,7 @@ func NewVMImpl(
 		store:              store,
 		stemcellAPIVersion: stemcellAPIVersion,
 		driver:             driver,
+		domBuilder:         domBuilder,
 		logger:             logger,
 	}
 }

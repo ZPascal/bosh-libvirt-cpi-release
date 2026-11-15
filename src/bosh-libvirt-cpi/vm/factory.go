@@ -901,7 +901,7 @@ func (f Factory) cleanUpPartialCreate(vm VM) {
 
 func (f Factory) newVM(cid apiv1.VMCID) VMImpl {
 	store := NewStore(filepath.Join(f.opts.DirPath, cid.AsString()), f.runner)
-	return NewVMImpl(cid, store, f.stemcellAPIVersion, f.driver, f.logger)
+	return NewVMImpl(cid, store, f.stemcellAPIVersion, f.driver, f.domBuilder, f.logger)
 }
 
 // DefaultExecCommand is the real exec implementation. Tests may override ExecCommand.

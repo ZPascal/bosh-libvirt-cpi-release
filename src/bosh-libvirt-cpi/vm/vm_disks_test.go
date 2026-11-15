@@ -11,6 +11,7 @@ import (
 	boshlog "github.com/cloudfoundry/bosh-utils/logger"
 
 	diskfakes "bosh-libvirt-cpi/disk/fakes"
+	"bosh-libvirt-cpi/driver"
 	driverfakes "bosh-libvirt-cpi/driver/fakes"
 	"bosh-libvirt-cpi/vm"
 )
@@ -64,6 +65,9 @@ var _ = Describe("VMImpl disk operations", func() {
 			store,
 			stemVer,
 			drv,
+			// Backend without hot-plug: these tests cover the legacy
+			// image-path hint (LXC/VBox); hot-plug is in vm_persistent_disks_test.go.
+			&driverfakes.FakeDomainBuilder{PersistentDiskXMLErr: driver.ErrPersistentDiskUnsupported},
 			logger,
 		)
 	})
