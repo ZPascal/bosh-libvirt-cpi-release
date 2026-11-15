@@ -1,5 +1,11 @@
 package driver
 
+import "errors"
+
+// ErrPersistentDiskUnsupported is returned by domain builders whose backend
+// cannot hot-plug a persistent disk into a running domain.
+var ErrPersistentDiskUnsupported = errors.New("persistent disks are not supported by this backend")
+
 // VMDomainProps holds backend-agnostic VM parameters for domain building.
 type VMDomainProps struct {
 	CPUs     int
@@ -26,4 +32,8 @@ type DomainBuilder interface {
 	BuildDomain(id string, props VMDomainProps, disks DomainDiskPaths) (string, error)
 	BuildStemcellDomain(id string, imagePath string) (string, error)
 	DiskImageFormat() string // "vmdk", "raw", "qcow2"
+	// BuildPersistentDiskXML returns the <disk> device XML that attaches the
+	// persistent disk image at target (e.g. "vdc") with the given serial, or
+	// ErrPersistentDiskUnsupported.
+	BuildPersistentDiskXML(imagePath, target, serial string) (string, error)
 }

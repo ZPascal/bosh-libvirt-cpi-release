@@ -10,6 +10,10 @@ type FakeDomainBuilder struct {
 	BuildStemcellDomainErr error
 
 	DiskImageFormatResult string
+
+	PersistentDiskXMLResult string
+	PersistentDiskXMLErr    error
+	PersistentDiskXMLArgs   []string // imagePath, target, serial of the last call
 }
 
 var _ driver.DomainBuilder = &FakeDomainBuilder{}
@@ -23,3 +27,8 @@ func (b *FakeDomainBuilder) BuildStemcellDomain(id string, imagePath string) (st
 }
 
 func (b *FakeDomainBuilder) DiskImageFormat() string { return b.DiskImageFormatResult }
+
+func (b *FakeDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
+	b.PersistentDiskXMLArgs = []string{imagePath, target, serial}
+	return b.PersistentDiskXMLResult, b.PersistentDiskXMLErr
+}

@@ -79,3 +79,7 @@ func (b LXCDomainBuilder) BuildStemcellDomain(id string, imagePath string) (stri
 </domain>`, xmlEscape(id), xmlEscape(imagePath))
 	return xml, nil
 }
+
+func (b LXCDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
+	return "", driver.ErrPersistentDiskUnsupported
+}

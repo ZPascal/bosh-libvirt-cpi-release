@@ -138,3 +138,23 @@ func (b QEMUKernelDomainBuilder) BuildDomain(id string, props driver.VMDomainPro
 func (b QEMUKernelDomainBuilder) BuildStemcellDomain(id string, imagePath string) (string, error) {
 	return QEMUDomainBuilder{}.BuildStemcellDomain(id, imagePath)
 }
+
+// qemuPersistentDiskXML is the hot-pluggable virtio disk for a persistent disk
+// image (qcow2, like every image disk.Factory creates on QEMU hosts). The
+// serial shows up in the guest as /dev/disk/by-id/virtio-<serial>.
+func qemuPersistentDiskXML(imagePath, target, serial string) string {
+	return fmt.Sprintf(`<disk type='file' device='disk'>
+  <driver name='qemu' type='qcow2'/>
+  <source file='%s'/>
+  <target dev='%s' bus='virtio'/>
+  <serial>%s</serial>
+</disk>`, xmlEscape(imagePath), xmlEscape(target), xmlEscape(serial))
+}
+
+func (b QEMUDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
+	return qemuPersistentDiskXML(imagePath, target, serial), nil
+}
+
+func (b QEMUKernelDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
+	return qemuPersistentDiskXML(imagePath, target, serial), nil
+}
