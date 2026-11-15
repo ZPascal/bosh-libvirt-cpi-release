@@ -40,11 +40,33 @@ type FakeDriver struct {
 	DeleteStorageVolName string
 	DeleteStorageVolErr  error
 
+	AttachDeviceCalls []DeviceCall
+	AttachDeviceErr   error
+
+	DetachDeviceCalls []DeviceCall
+	DetachDeviceErr   error
+
 	IsMissingDomainErrInput  error
 	IsMissingDomainErrResult bool
 }
 
+// DeviceCall records one AttachDevice/DetachDevice invocation.
+type DeviceCall struct {
+	ID  string
+	XML string
+}
+
 var _ driver.Driver = &FakeDriver{}
+
+func (d *FakeDriver) AttachDevice(id, xml string) error {
+	d.AttachDeviceCalls = append(d.AttachDeviceCalls, DeviceCall{ID: id, XML: xml})
+	return d.AttachDeviceErr
+}
+
+func (d *FakeDriver) DetachDevice(id, xml string) error {
+	d.DetachDeviceCalls = append(d.DetachDeviceCalls, DeviceCall{ID: id, XML: xml})
+	return d.DetachDeviceErr
+}
 
 func (d *FakeDriver) DefineDomain(xml string) error {
 	d.DefineDomainXML = xml

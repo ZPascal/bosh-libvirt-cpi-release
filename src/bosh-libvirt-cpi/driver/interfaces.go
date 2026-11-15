@@ -14,6 +14,11 @@ type Driver interface {
 	UpdateDomainMemory(id string, memoryMB int) error
 	UpdateDomainCPUs(id string, cpus int) error
 
+	// Devices: attach/detach a device (e.g. a persistent <disk>) to the
+	// domain's persistent config and, when it is running, to the live domain.
+	AttachDevice(id, xml string) error
+	DetachDevice(id, xml string) error
+
 	// Storage
 	CreateStorageVol(poolName, volName string, sizeMB int) (string, error)
 	DeleteStorageVol(poolName, volName string) error

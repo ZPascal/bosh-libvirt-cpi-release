@@ -162,6 +162,25 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 	})
 
+	Describe("AttachDevice / DetachDevice", func() {
+		It("returns the lookup error from AttachDevice", func() {
+			conn.LookupDomainByNameErr = errors.New("not found")
+			Expect(d.AttachDevice("vm-1", "<disk/>")).To(MatchError("not found"))
+		})
+
+		It("returns the lookup error from DetachDevice so callers can detect a missing domain", func() {
+			conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_NO_DOMAIN}
+			err := d.DetachDevice("vm-1", "<disk/>")
+			Expect(err).To(HaveOccurred())
+			Expect(d.IsMissingDomainErr(err)).To(BeTrue())
+		})
+
+		It("returns error when lookup returns nil domain with no error", func() {
+			Expect(d.AttachDevice("vm-1", "<disk/>")).To(HaveOccurred())
+			Expect(d.DetachDevice("vm-1", "<disk/>")).To(HaveOccurred())
+		})
+	})
+
 	Describe("CreateStorageVol", func() {
 		It("returns error when pool not found", func() {
 			conn.LookupStoragePoolByNameErr = errors.New("pool not found")

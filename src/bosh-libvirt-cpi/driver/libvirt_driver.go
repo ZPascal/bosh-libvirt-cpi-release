@@ -140,6 +140,42 @@ func (d LibvirtDriver) UpdateDomainCPUs(id string, cpus int) error {
 	})
 }
 
+// deviceModifyFlags always updates the persistent config and, for a running
+// domain, the live one too, so a hot-plugged disk survives a restart.
+func deviceModifyFlags(dom *libvirt.Domain) (libvirt.DomainDeviceModifyFlags, error) {
+	flags := libvirt.DOMAIN_DEVICE_MODIFY_CONFIG
+	active, err := dom.IsActive()
+	if err != nil {
+		return 0, err
+	}
+	if active {
+		flags |= libvirt.DOMAIN_DEVICE_MODIFY_LIVE
+	}
+	return flags, nil
+}
+
+func (d LibvirtDriver) AttachDevice(id, xml string) error {
+	d.logger.Debug(d.logTag, "Attaching device to domain '%s'", id)
+	return d.withDomain(id, func(dom *libvirt.Domain) error {
+		flags, err := deviceModifyFlags(dom)
+		if err != nil {
+			return err
+		}
+		return dom.AttachDeviceFlags(xml, flags)
+	})
+}
+
+func (d LibvirtDriver) DetachDevice(id, xml string) error {
+	d.logger.Debug(d.logTag, "Detaching device from domain '%s'", id)
+	return d.withDomain(id, func(dom *libvirt.Domain) error {
+		flags, err := deviceModifyFlags(dom)
+		if err != nil {
+			return err
+		}
+		return dom.DetachDeviceFlags(xml, flags)
+	})
+}
+
 func (d LibvirtDriver) CreateStorageVol(poolName, volName string, sizeMB int) (string, error) {
 	d.logger.Debug(d.logTag, "Creating storage vol '%s' in pool '%s'", volName, poolName)
 	pool, err := d.conn.LookupStoragePoolByName(poolName)
