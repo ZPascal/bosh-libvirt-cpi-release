@@ -160,6 +160,21 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		Expect(ids).To(HaveLen(1))
 	})
 
+	It("fails detach without unplugging or forgetting the disk when its record can't be read", func() {
+		d := newDisk(diskCID)
+		_, err := vmImpl.AttachDisk(d)
+		Expect(err).ToNot(HaveOccurred())
+
+		record := filepath.Join(tmpDir, "vm-1", diskCID+"-disk-attachment.json")
+		Expect(os.Chmod(record, 0)).To(Succeed())
+		defer func() { _ = os.Chmod(record, 0644) }()
+
+		Expect(vmImpl.DetachDisk(d)).To(MatchError(ContainSubstring("disk attachment")))
+		Expect(drv.DetachDeviceCalls).To(BeEmpty())
+		_, statErr := os.Stat(record)
+		Expect(statErr).ToNot(HaveOccurred())
+	})
+
 	It("leaves no record when attaching the device fails", func() {
 		drv.AttachDeviceErr = errors.New("hotplug failed")
 		_, err := vmImpl.AttachDisk(newDisk(diskCID))

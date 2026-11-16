@@ -117,6 +117,13 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 // which case the caller keeps the legacy image-path hint.
 func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, error) {
 	records := diskAttachmentRecords{vm.store}
+	serial := diskSerial(disk.ID())
+
+	// Backends that can't hot-plug keep the legacy path; check before touching
+	// any attachment records.
+	if _, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), persistentDiskTargets[0], serial); errors.Is(err, driver.ErrPersistentDiskUnsupported) {
+		return apiv1.DiskHint{}, false, nil
+	}
 
 	// Already hot-plugged (e.g. bosh cck "reattach disk"): attaching the same
 	// image again would fail on QEMU's image lock, so return the same hint.
@@ -128,12 +135,8 @@ func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, e
 	if err != nil {
 		return apiv1.DiskHint{}, true, err
 	}
-	serial := diskSerial(disk.ID())
 
 	xml, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), target, serial)
-	if errors.Is(err, driver.ErrPersistentDiskUnsupported) {
-		return apiv1.DiskHint{}, false, nil
-	}
 	if err != nil {
 		return apiv1.DiskHint{}, true, bosherr.WrapError(err, "Building persistent disk device")
 	}
@@ -193,8 +196,23 @@ func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
 	records := diskAttachmentRecords{vm.store}
 
 	// Hot-plugged disks have a Target in their record; unplug them first. A
-	// domain that is already gone has nothing left to unplug.
-	if rec, err := records.Get(disk.ID()); err == nil && rec.Target != "" {
+	// domain that is already gone has nothing left to unplug. A record that
+	// exists but can't be read must not be dropped: the device would stay
+	// attached with nothing left pointing at it.
+	attached, err := records.List()
+	if err != nil {
+		return err
+	}
+	var rec diskAttachmentRecord
+	for _, id := range attached {
+		if id == disk.ID() {
+			if rec, err = records.Get(disk.ID()); err != nil {
+				return err
+			}
+			break
+		}
+	}
+	if rec.Target != "" {
 		xml, err := vm.domBuilder.BuildPersistentDiskXML(rec.Path, rec.Target, rec.Serial)
 		if err != nil {
 			return bosherr.WrapError(err, "Building persistent disk device")
@@ -204,8 +222,7 @@ func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
 		}
 	}
 
-	err := records.Delete(disk.ID())
-	if err != nil {
+	if err := records.Delete(disk.ID()); err != nil {
 		return err
 	}
 

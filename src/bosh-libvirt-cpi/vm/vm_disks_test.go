@@ -77,6 +77,20 @@ var _ = Describe("VMImpl disk operations", func() {
 	})
 
 	Describe("AttachDisk", func() {
+		It("does not list or read attachment records when the backend cannot hot-plug", func() {
+			var cmds []string
+			runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+				cmds = append(cmds, name)
+				return "", 0, nil
+			}
+			disk := diskfakes.NewFakeDisk("disk-1")
+			disk.ImagePathResult = "/disks/disk-1/disk.img"
+
+			_, err := vmImpl.AttachDisk(disk)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cmds).ToNot(ContainElement("ls"))
+		})
+
 		It("saves attachment and returns hint with image path", func() {
 			disk := diskfakes.NewFakeDisk("disk-1")
 			disk.ImagePathResult = "/disks/disk-1/disk.img"
