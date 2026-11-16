@@ -165,6 +165,10 @@ func (d LibvirtDriver) AttachDevice(id, xml string) error {
 	})
 }
 
+// detachWaitTimeout bounds how long DetachDevice waits for the guest to
+// release a live device; libvirt returns before the guest has acknowledged.
+const detachWaitTimeout = 30 * time.Second
+
 func (d LibvirtDriver) DetachDevice(id, xml string) error {
 	d.logger.Debug(d.logTag, "Detaching device from domain '%s'", id)
 	return d.withDomain(id, func(dom *libvirt.Domain) error {
@@ -172,8 +176,41 @@ func (d LibvirtDriver) DetachDevice(id, xml string) error {
 		if err != nil {
 			return err
 		}
-		return dom.DetachDeviceFlags(xml, flags)
+		if err := dom.DetachDeviceFlags(xml, flags); err != nil {
+			if isDeviceMissing(err) {
+				d.logger.Debug(d.logTag, "Device already detached from domain '%s'", id)
+				return nil
+			}
+			return err
+		}
+		if flags&libvirt.DOMAIN_DEVICE_MODIFY_LIVE == 0 {
+			return nil
+		}
+		return d.waitForDiskRemoval(dom, diskTargetFromXML(xml))
 	})
+}
+
+// waitForDiskRemoval polls the live domain until the guest has released the
+// disk at target, so the image can be attached elsewhere right away (QEMU
+// holds a write lock on it until then).
+func (d LibvirtDriver) waitForDiskRemoval(dom *libvirt.Domain, target string) error {
+	if target == "" {
+		return nil
+	}
+	deadline := time.Now().Add(detachWaitTimeout)
+	for {
+		liveXML, err := dom.GetXMLDesc(0)
+		if err != nil {
+			return err
+		}
+		if !domainHasTarget(liveXML, target) {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("guest did not release disk %s within %s", target, detachWaitTimeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (d LibvirtDriver) CreateStorageVol(poolName, volName string, sizeMB int) (string, error) {
