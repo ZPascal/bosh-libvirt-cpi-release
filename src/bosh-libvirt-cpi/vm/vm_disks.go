@@ -118,6 +118,12 @@ func (vm VMImpl) attachDisk(disk bdisk.Disk, ephemeral bool) (apiv1.DiskHint, er
 func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, error) {
 	records := diskAttachmentRecords{vm.store}
 
+	// Already hot-plugged (e.g. bosh cck "reattach disk"): attaching the same
+	// image again would fail on QEMU's image lock, so return the same hint.
+	if rec, err := records.Get(disk.ID()); err == nil && rec.Target != "" {
+		return persistentDiskHint(rec.Serial, rec.Target), true, nil
+	}
+
 	target, err := vm.freePersistentDiskTarget()
 	if err != nil {
 		return apiv1.DiskHint{}, true, err
@@ -148,11 +154,15 @@ func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, e
 		return apiv1.DiskHint{}, true, bosherr.WrapErrorf(err, "Attaching persistent disk '%s' as %s", disk.ID().AsString(), target)
 	}
 
+	return persistentDiskHint(serial, target), true, nil
+}
+
+func persistentDiskHint(serial, target string) apiv1.DiskHint {
 	return apiv1.NewDiskHintFromMap(map[string]interface{}{
 		"id":        serial,
 		"volume_id": serial,
 		"path":      "/dev/" + target,
-	}), true, nil
+	})
 }
 
 func (vm VMImpl) freePersistentDiskTarget() (string, error) {

@@ -299,6 +299,10 @@ var _ = Describe("vm.Factory", func() {
 				Expect(linux["BindMountPersistentDisk"]).To(Equal(false))
 				Expect(linux["UsePreformattedPersistentDisk"]).To(Equal(false))
 				Expect(linux["DevicePathResolutionType"]).To(Equal("virtio"))
+				// The agent globs /dev/disk/by-id/<transformed disk CID>; virtio
+				// exposes only the first 20 chars as virtio-<serial>.
+				Expect(linux["DiskIDTransformPattern"]).To(Equal("^(.{20}).*$"))
+				Expect(linux["DiskIDTransformReplacement"]).To(Equal("virtio-${1}"))
 				Expect(linux["SkipDiskSetup"]).To(Equal(true))
 				Expect(linux["UseMonitIptablesFirewall"]).To(Equal(true))
 				Expect(cfg["Infrastructure"]).ToNot(BeNil())
@@ -308,6 +312,26 @@ var _ = Describe("vm.Factory", func() {
 				runner.PutContents = map[string][]byte{agentJSONPath: []byte("not json")}
 				Expect(createVM()).To(Succeed())
 				Expect(runner.PutContents[agentJSONPath]).To(Equal([]byte("not json")))
+			})
+
+			It("hints the ephemeral disk as the guest device /dev/vdb, not the host image path", func() {
+				// With virtio resolution the agent must find the ephemeral disk in
+				// the guest at bootstrap, or it aborts (GetEphemeralDiskPath).
+				// The guest reads the settings file injected into its rootfs (the
+				// host-side store env.json is not visible to it).
+				Expect(createVM()).To(Succeed())
+				env := string(runner.PutContents[filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/var/vcap/bosh/warden-cpi-agent-env.json")])
+				Expect(env).To(ContainSubstring(`"ephemeral":"/dev/vdb"`))
+				Expect(env).ToNot(ContainSubstring(filepath.Join(tmpDir, "disks")))
+			})
+
+			It("creates the /dev/fd and std stream links that bash process substitution needs", func() {
+				Expect(createVM()).To(Succeed())
+				initScript := string(runner.PutContents[filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/bosh-init")])
+				Expect(initScript).To(ContainSubstring("ln -sfn /proc/self/fd /dev/fd"))
+				Expect(initScript).To(ContainSubstring("ln -sfn /proc/self/fd/0 /dev/stdin"))
+				Expect(initScript).To(ContainSubstring("ln -sfn /proc/self/fd/1 /dev/stdout"))
+				Expect(initScript).To(ContainSubstring("ln -sfn /proc/self/fd/2 /dev/stderr"))
 			})
 
 			It("does not mount a tmpfs over /var/vcap/store in /bosh-init", func() {

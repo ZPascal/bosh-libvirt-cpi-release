@@ -82,6 +82,22 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		Expect(ids).To(Equal([]apiv1.DiskCID{apiv1.NewDiskCID(diskCID)}))
 	})
 
+	It("is idempotent when the disk is already attached (e.g. bosh cck reattach)", func() {
+		d := newDisk(diskCID)
+		first, err := vmImpl.AttachDisk(d)
+		Expect(err).ToNot(HaveOccurred())
+
+		drv.AttachDeviceErr = errors.New("Failed to get write lock") // what QEMU says on a 2nd open
+		second, err := vmImpl.AttachDisk(d)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(second).To(Equal(first))
+		Expect(drv.AttachDeviceCalls).To(HaveLen(1))
+
+		ids, err := vmImpl.DiskIDs()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ids).To(Equal([]apiv1.DiskCID{apiv1.NewDiskCID(diskCID)}))
+	})
+
 	It("uses vdd for a second disk", func() {
 		_, err := vmImpl.AttachDisk(newDisk(diskCID))
 		Expect(err).ToNot(HaveOccurred())

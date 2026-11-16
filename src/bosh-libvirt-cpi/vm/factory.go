@@ -190,12 +190,20 @@ func (f Factory) Create(
 		return nil, bosherr.WrapError(err, "Creating ephemeral disk")
 	}
 
+	// The agent resolves the ephemeral disk at bootstrap. Kernel-boot guests use
+	// virtio device resolution (see configureAgentForVirtioDisks), so they need
+	// the guest device (vdb in the domain XML), not the image path on the host.
+	ephemeralHint := apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath())
+	if f.domBuilder.DiskImageFormat() == "ext4" {
+		ephemeralHint = apiv1.NewDiskHintFromString("/dev/vdb")
+	}
+
 	// Build initial agent env, persist for later use by the agent.
 	initialAgentEnv := apiv1.NewAgentEnvFactory().ForVM(
 		agentID, vm.ID(), networks, env, f.agentOptions)
 
 	initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
-	initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
+	initialAgentEnv.AttachEphemeralDisk(ephemeralHint)
 
 	// For container/direct-kernel backends, mark networks as preconfigured so
 	// the agent skips interface-name validation (interface is set up by init script).
@@ -206,7 +214,7 @@ func (f Factory) Create(
 		initialAgentEnv = apiv1.NewAgentEnvFactory().ForVM(
 			agentID, vm.ID(), networks, env, f.agentOptions)
 		initialAgentEnv.AttachSystemDisk(apiv1.NewDiskHintFromString("0"))
-		initialAgentEnv.AttachEphemeralDisk(apiv1.NewDiskHintFromString(ephemeralDisk.ImagePath()))
+		initialAgentEnv.AttachEphemeralDisk(ephemeralHint)
 	}
 
 	err = vm.ConfigureAgent(initialAgentEnv)
@@ -1147,6 +1155,10 @@ func (f Factory) configureAgentForVirtioDisks(path string) {
 	linux["BindMountPersistentDisk"] = false
 	linux["UsePreformattedPersistentDisk"] = false
 	linux["DevicePathResolutionType"] = "virtio"
+	// The agent globs /dev/disk/by-id/<transformed disk CID>; virtio-blk
+	// exposes only the first 20 chars of the serial, as virtio-<serial>.
+	linux["DiskIDTransformPattern"] = "^(.{20}).*$"
+	linux["DiskIDTransformReplacement"] = "virtio-${1}"
 
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
