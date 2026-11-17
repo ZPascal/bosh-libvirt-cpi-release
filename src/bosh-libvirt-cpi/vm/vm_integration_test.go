@@ -86,7 +86,7 @@ var _ = Describe("VM (integration)", func() {
 	})
 
 	It("creates a VM, attaches a disk, reports it, detaches, and deletes", func() {
-		sc, err := stemcellFac.ImportFromPath(os.Getenv("STEMCELL_PATH"))
+		sc, err := stemcellFac.ImportFromPath(os.Getenv("STEMCELL_PATH"), "x86_64")
 		Expect(err).ToNot(HaveOccurred())
 		defer sc.Delete()
 

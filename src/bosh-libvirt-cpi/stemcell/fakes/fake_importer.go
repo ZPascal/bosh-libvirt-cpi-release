@@ -5,14 +5,16 @@ import (
 )
 
 type FakeImporter struct {
-	ImportFromPathArg string
-	ImportResult      bstem.Stemcell
-	ImportErr         error
+	ImportFromPathArg  string
+	ImportFromPathArch string
+	ImportResult       bstem.Stemcell
+	ImportErr          error
 }
 
 var _ bstem.Importer = &FakeImporter{}
 
-func (i *FakeImporter) ImportFromPath(path string) (bstem.Stemcell, error) {
+func (i *FakeImporter) ImportFromPath(path, arch string) (bstem.Stemcell, error) {
 	i.ImportFromPathArg = path
+	i.ImportFromPathArch = arch
 	return i.ImportResult, i.ImportErr
 }

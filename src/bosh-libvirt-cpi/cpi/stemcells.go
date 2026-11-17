@@ -19,9 +19,18 @@ func NewStemcells(importer bstem.Importer, finder bstem.Finder) Stemcells {
 }
 
 func (a Stemcells) CreateStemcell(
-	imagePath string, _ apiv1.StemcellCloudProps) (apiv1.StemcellCID, error) {
+	imagePath string, props apiv1.StemcellCloudProps) (apiv1.StemcellCID, error) {
 
-	stemcell, err := a.importer.ImportFromPath(imagePath)
+	// stemcell.MF cloud_properties carry the stemcell's architecture; stemcells
+	// without it (or unparsable props) are x86_64.
+	var cloudProps struct {
+		Architecture string `json:"architecture"`
+	}
+	if props != nil {
+		_ = props.As(&cloudProps)
+	}
+
+	stemcell, err := a.importer.ImportFromPath(imagePath, bstem.NormalizeArch(cloudProps.Architecture))
 	if err != nil {
 		return apiv1.StemcellCID{}, bosherr.WrapErrorf(err, "Importing stemcell from '%s'", imagePath)
 	}

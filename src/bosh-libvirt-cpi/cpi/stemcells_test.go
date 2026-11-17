@@ -1,6 +1,7 @@
 package cpi_test
 
 import (
+	"encoding/json"
 	"errors"
 
 	. "github.com/onsi/ginkgo"
@@ -34,6 +35,21 @@ var _ = Describe("Stemcells", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cid.AsString()).To(Equal("sc-123"))
 			Expect(importer.ImportFromPathArg).To(Equal("/path/to/image"))
+		})
+
+		It("passes the stemcell's architecture from its cloud properties", func() {
+			importer.ImportResult = stemcellfakes.NewFakeStemcell("sc-arm")
+			for props, want := range map[string]string{
+				`{"architecture":"arm64"}`:   "aarch64",
+				`{"architecture":"aarch64"}`: "aarch64",
+				`{"architecture":"x86_64"}`:  "x86_64",
+				`{}`:                         "x86_64",
+				`not json`:                   "x86_64",
+			} {
+				_, err := stemcells.CreateStemcell("/path/to/image", apiv1.CloudPropsImpl{RawMessage: json.RawMessage(props)})
+				Expect(err).ToNot(HaveOccurred(), props)
+				Expect(importer.ImportFromPathArch).To(Equal(want), props)
+			}
 		})
 
 		It("returns error when import fails", func() {

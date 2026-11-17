@@ -42,6 +42,19 @@ func (s StemcellImpl) ImagePath() string {
 	return filepath.Join(s.path, "image."+s.domBuilder.DiskImageFormat())
 }
 
+// architectureFile holds the guest architecture recorded at import.
+const architectureFile = "architecture"
+
+// Architecture returns the recorded guest architecture; stemcells imported
+// before it was recorded are x86_64.
+func (s StemcellImpl) Architecture() string {
+	b, err := s.runner.Get(filepath.Join(s.path, architectureFile))
+	if err != nil {
+		return ArchX86_64
+	}
+	return NormalizeArch(string(b))
+}
+
 func (s StemcellImpl) Prepare() error {
 	xml, err := s.domBuilder.BuildStemcellDomain(s.cid.AsString(), s.ImagePath())
 	if err != nil {
