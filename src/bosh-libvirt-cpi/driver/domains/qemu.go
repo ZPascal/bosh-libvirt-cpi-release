@@ -193,7 +193,9 @@ func aarch64Domain(id string, props driver.VMDomainProps, disks driver.DomainDis
 		domType, cpu = "kvm", "<cpu mode='host-passthrough'/>"
 	}
 
-	rootPorts := strings.Repeat("\n    <controller type='pci' model='pcie-root-port'/>", aarch64RootPorts)
+	// index 0 must be the pcie-root on virt; the root ports hang off it.
+	rootPorts := "\n    <controller type='pci' index='0' model='pcie-root'/>" +
+		strings.Repeat("\n    <controller type='pci' model='pcie-root-port'/>", aarch64RootPorts)
 
 	return fmt.Sprintf(`<domain type='%s'>
   <name>%s</name>

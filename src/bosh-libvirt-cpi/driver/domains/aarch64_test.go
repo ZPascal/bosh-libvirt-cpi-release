@@ -40,6 +40,7 @@ type aarch64DomainXML struct {
 	} `xml:"devices>disk"`
 	Controllers []struct {
 		Type  string `xml:"type,attr"`
+		Index string `xml:"index,attr"`
 		Model string `xml:"model,attr"`
 	} `xml:"devices>controller"`
 	Interfaces []struct{} `xml:"devices>interface"`
@@ -92,6 +93,14 @@ var _ = Describe("aarch64 guests", func() {
 			Expect(d.Interfaces).To(HaveLen(1))
 			Expect(d.Consoles).To(HaveLen(1))
 			Expect(d.Consoles[0].Source.Path).To(Equal("/tmp/bosh-vm-vm-1-console.log"))
+
+			// libvirt numbers PCI controllers in order; on virt, index 0 must be
+			// the pcie-root (seen in CI: "The PCI controller with index='0' must
+			// be model='pcie-root' for this machine type").
+			Expect(d.Controllers).ToNot(BeEmpty())
+			Expect(d.Controllers[0].Type).To(Equal("pci"))
+			Expect(d.Controllers[0].Index).To(Equal("0"))
+			Expect(d.Controllers[0].Model).To(Equal("pcie-root"))
 
 			rootPorts := 0
 			for _, c := range d.Controllers {
