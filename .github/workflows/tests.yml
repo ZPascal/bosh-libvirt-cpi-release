@@ -160,11 +160,7 @@ jobs:
       run: |
         sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
           REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
-          "$(which go)" test -tags integration -mod=vendor ./...
-
-    - name: Generate coverage
-      working-directory: src/bosh-libvirt-cpi
-      run: sudo "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+          "$(which go)" test -tags integration -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7
@@ -234,11 +230,7 @@ jobs:
       run: |
         sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
           REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
-          "$(which go)" test -tags integration -mod=vendor ./...
-
-    - name: Generate coverage
-      working-directory: src/bosh-libvirt-cpi
-      run: sudo "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+          "$(which go)" test -tags integration -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7
