@@ -262,6 +262,36 @@ var _ = Describe("vm.Factory", func() {
 			Expect(err.Error()).To(ContainSubstring("Mounting ext4 for VM injection"))
 		})
 
+		Describe("guest architecture", func() {
+			createVM := func() error {
+				stemcellImg := filepath.Join(tmpDir, "stemcell.img")
+				_ = os.WriteFile(stemcellImg, []byte("fake"), 0644)
+				stemcell.ImagePathResult = stemcellImg
+				_, err := factory.Create(apiv1.NewAgentID("agent-1"), stemcell, cloudProps, apiv1.Networks{}, apiv1.NewVMEnv(nil))
+				return err
+			}
+
+			It("builds the domain for the stemcell's architecture on the libvirt host's architecture", func() {
+				stemcell.ArchitectureResult = "aarch64"
+				drv.HostArchResult = "x86_64"
+				Expect(createVM()).To(Succeed())
+				Expect(ext4Builder.BuildDomainProps.Arch).To(Equal("aarch64"))
+				Expect(ext4Builder.BuildDomainProps.HostArch).To(Equal("x86_64"))
+			})
+
+			It("keeps x86_64 stemcells on x86_64", func() {
+				Expect(createVM()).To(Succeed())
+				Expect(ext4Builder.BuildDomainProps.Arch).To(Equal("x86_64"))
+			})
+
+			It("fails and cleans up when the host architecture can't be read", func() {
+				drv.HostArchErr = errors.New("connection lost")
+				err := createVM()
+				Expect(err).To(MatchError(ContainSubstring("host architecture")))
+				Expect(drv.DefineDomainXML).To(BeEmpty())
+			})
+		})
+
 		Describe("guest config for hot-plugged persistent disks", func() {
 			var agentJSONPath string
 
