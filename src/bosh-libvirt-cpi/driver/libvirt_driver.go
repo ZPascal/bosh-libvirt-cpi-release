@@ -169,6 +169,9 @@ func (d LibvirtDriver) AttachDevice(id, xml string) error {
 // release a live device; libvirt returns before the guest has acknowledged.
 const detachWaitTimeout = 30 * time.Second
 
+// errDetachPending means the guest hasn't released a live device in time.
+var errDetachPending = errors.New("guest has not released the disk yet")
+
 func (d LibvirtDriver) DetachDevice(id, xml string) error {
 	d.logger.Debug(d.logTag, "Detaching device from domain '%s'", id)
 	return d.withDomain(id, func(dom *libvirt.Domain) error {
@@ -186,7 +189,17 @@ func (d LibvirtDriver) DetachDevice(id, xml string) error {
 		if flags&libvirt.DOMAIN_DEVICE_MODIFY_LIVE == 0 {
 			return nil
 		}
-		return d.waitForDiskRemoval(dom, diskTargetFromXML(xml))
+		err = d.waitForDiskRemoval(dom, diskTargetFromXML(xml))
+		if errors.Is(err, errDetachPending) {
+			// The device is already gone from the domain's config; only the live
+			// unplug waits for the guest. A hung or not-yet-booted guest never
+			// acknowledges it, and failing here would block BOSH from detaching
+			// (and then recreating) an unresponsive VM. QEMU releases the image
+			// when the guest acks or the domain is destroyed.
+			d.logger.Warn(d.logTag, "Domain '%s': %s; continuing", id, err)
+			return nil
+		}
+		return err
 	})
 }
 
@@ -207,7 +220,7 @@ func (d LibvirtDriver) waitForDiskRemoval(dom *libvirt.Domain, target string) er
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("guest did not release disk %s within %s", target, detachWaitTimeout)
+			return fmt.Errorf("%w: disk %s still attached after %s", errDetachPending, target, detachWaitTimeout)
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
