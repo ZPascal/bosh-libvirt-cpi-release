@@ -2,6 +2,7 @@ package domains
 
 import (
 	"fmt"
+	"strings"
 
 	"bosh-libvirt-cpi/driver"
 )
@@ -20,6 +21,10 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
 	macElem := ""
 	if props.MAC != "" {
 		macElem = fmt.Sprintf("\n      <mac address='%s'/>", xmlEscape(props.MAC))
+	}
+
+	if props.Arch == "aarch64" {
+		return aarch64Domain(id, props, disks, macElem, network)
 	}
 
 	// Direct kernel boot: boot the given kernel with the ext4 rootfs image on
@@ -168,4 +173,64 @@ func ephemeralFormat(disks driver.DomainDiskPaths) string {
 		return "qcow2"
 	}
 	return disks.EphemeralFormat
+}
+
+// aarch64RootPorts is the number of extra PCIe root ports on aarch64 (virt)
+// domains: virt has no conventional PCI bus, so every hot-plugged persistent
+// disk needs a free root port.
+const aarch64RootPorts = 8
+
+// aarch64Domain is an aarch64 "virt" machine with direct kernel boot. On an
+// aarch64 host it runs under KVM with the host CPU, elsewhere it is emulated
+// (TCG). There is no <acpi/>: direct kernel boot on virt uses a device tree.
+func aarch64Domain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths, macElem, network string) (string, error) {
+	if props.Kernel == "" {
+		return "", fmt.Errorf("aarch64 guests need direct kernel boot (cloud_properties.kernel); disk boot on the virt machine would need UEFI firmware")
+	}
+
+	domType, cpu := "qemu", "<cpu mode='maximum'/>"
+	if props.HostArch == "aarch64" {
+		domType, cpu = "kvm", "<cpu mode='host-passthrough'/>"
+	}
+
+	rootPorts := strings.Repeat("\n    <controller type='pci' model='pcie-root-port'/>", aarch64RootPorts)
+
+	return fmt.Sprintf(`<domain type='%s'>
+  <name>%s</name>
+  <memory unit='KiB'>%d</memory>
+  <vcpu>%d</vcpu>
+  <os>
+    <type arch='aarch64' machine='virt'>hvm</type>
+    <kernel>%s</kernel>
+    <cmdline>root=/dev/vda rw console=ttyAMA0 init=/bosh-init</cmdline>
+  </os>
+  %s
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='raw'/>
+      <source file='%s'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='%s'/>
+      <source file='%s'/>
+      <target dev='vdb' bus='virtio'/>
+    </disk>
+    <interface type='network'>%s
+      <source network='%s'/>
+      <model type='virtio'/>
+    </interface>
+    <serial type='file'>
+      <source path='/tmp/bosh-vm-%s-console.log'/>
+      <target port='0'/>
+    </serial>
+    <console type='file'>
+      <source path='/tmp/bosh-vm-%s-console.log'/>
+      <target type='serial' port='0'/>
+    </console>%s
+  </devices>
+</domain>`, domType, xmlEscape(id), props.MemoryMB*1024, props.CPUs,
+		xmlEscape(props.Kernel), cpu,
+		xmlEscape(disks.RootDisk), xmlEscape(ephemeralFormat(disks)), xmlEscape(disks.EphemeralDisk),
+		macElem, xmlEscape(network), xmlEscape(id), xmlEscape(id), rootPorts), nil
 }
