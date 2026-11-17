@@ -4,8 +4,11 @@ package vm_test
 
 import (
 	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 
 	"bosh-libvirt-cpi/driver"
 	"bosh-libvirt-cpi/driver/domains"
@@ -44,4 +47,25 @@ func skipUnlessStemcellRequired(reason string) {
 		Fail(reason + " (REQUIRE_STEMCELL is set)")
 	}
 	Skip(reason)
+}
+
+// stemcellForImport returns a path to STEMCELL_PATH that the spec may hand to
+// ImportFromPath. Importing moves (renames) the tarball into the store, so each
+// spec gets its own hard link (or copy) and STEMCELL_PATH stays usable for the
+// next spec.
+func stemcellForImport(dir string) string {
+	src := os.Getenv("STEMCELL_PATH")
+	dst := filepath.Join(dir, "stemcell-import.tgz")
+	if err := os.Link(src, dst); err == nil {
+		return dst
+	}
+	in, err := os.Open(src)
+	Expect(err).ToNot(HaveOccurred())
+	defer in.Close()
+	out, err := os.Create(dst)
+	Expect(err).ToNot(HaveOccurred())
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	Expect(err).ToNot(HaveOccurred())
+	return dst
 }

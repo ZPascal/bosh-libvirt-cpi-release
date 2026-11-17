@@ -73,9 +73,7 @@ var _ = Describe("Stemcell (integration)", func() {
 	})
 
 	It("imports a stemcell tarball and creates a domain, then deletes it", func() {
-		stemcellPath := os.Getenv("STEMCELL_PATH")
-
-		sc, err := factory.ImportFromPath(stemcellPath, stemcell.ArchX86_64)
+		sc, err := factory.ImportFromPath(stemcellForImport(tmpDir), stemcell.ArchX86_64)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(sc).ToNot(BeNil())
 		Expect(sc.ID().AsString()).To(HavePrefix("sc-"))

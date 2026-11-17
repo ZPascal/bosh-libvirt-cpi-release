@@ -3,6 +3,7 @@
 package vm_test
 
 import (
+	"encoding/json"
 	"os"
 
 	. "github.com/onsi/ginkgo"
@@ -86,14 +87,12 @@ var _ = Describe("VM (integration)", func() {
 	})
 
 	It("creates a VM, attaches a disk, reports it, detaches, and deletes", func() {
-		sc, err := stemcellFac.ImportFromPath(os.Getenv("STEMCELL_PATH"), "x86_64")
+		sc, err := stemcellFac.ImportFromPath(stemcellForImport(tmpDir), "x86_64")
 		Expect(err).ToNot(HaveOccurred())
 		defer sc.Delete()
 
 		agentID := apiv1.NewAgentID("agent-integration-1")
-		cloudProps := apiv1.NewVMCloudPropsFromMap(map[string]interface{}{
-			"memory": 256, "cpus": 1, "ephemeral_disk": 1000,
-		})
+		cloudProps := apiv1.CloudPropsImpl{RawMessage: json.RawMessage(`{"memory": 256, "cpus": 1, "ephemeral_disk": 1000}`)}
 
 		v, err := vmFactory.Create(agentID, sc, cloudProps, apiv1.Networks{}, apiv1.VMEnv{})
 		Expect(err).ToNot(HaveOccurred())
