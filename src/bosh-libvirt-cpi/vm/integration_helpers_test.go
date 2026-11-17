@@ -3,6 +3,8 @@
 package vm_test
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/url"
@@ -55,25 +57,31 @@ func skipUnlessStemcellRequired(reason string) {
 	Skip(reason)
 }
 
-// stemcellForImport returns a path to STEMCELL_PATH that the spec may hand to
-// ImportFromPath. Importing moves (renames) the tarball into the store, so each
-// spec gets its own hard link (or copy) and STEMCELL_PATH stays usable for the
-// next spec.
+// stemcellForImport returns what the director would hand the CPI's
+// create_stemcell for STEMCELL_PATH: the stemcell tarball's `image` member
+// (for warden-tar stemcells, the rootfs tarball), extracted into dir. Each spec
+// gets its own copy because importing moves (renames) it into the store.
 func stemcellForImport(dir string) string {
-	src := os.Getenv("STEMCELL_PATH")
-	dst := filepath.Join(dir, "stemcell-import.tgz")
-	if err := os.Link(src, dst); err == nil {
-		return dst
-	}
-	in, err := os.Open(src)
+	in, err := os.Open(os.Getenv("STEMCELL_PATH"))
 	Expect(err).ToNot(HaveOccurred())
 	defer in.Close()
-	out, err := os.Create(dst)
+	gz, err := gzip.NewReader(in)
 	Expect(err).ToNot(HaveOccurred())
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	Expect(err).ToNot(HaveOccurred())
-	return dst
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		Expect(err).ToNot(HaveOccurred(), "no image in STEMCELL_PATH")
+		if strings.TrimPrefix(hdr.Name, "./") != "image" {
+			continue
+		}
+		dst := filepath.Join(dir, "stemcell-image.tgz")
+		out, err := os.Create(dst)
+		Expect(err).ToNot(HaveOccurred())
+		defer out.Close()
+		_, err = io.Copy(out, tr) // #nosec G110 -- trusted test input
+		Expect(err).ToNot(HaveOccurred())
+		return dst
+	}
 }
 
 // stemcellArchFromEnv is the architecture to import STEMCELL_PATH with:

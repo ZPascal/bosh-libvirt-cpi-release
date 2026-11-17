@@ -32,7 +32,7 @@ var _ = Describe("LXC init scripts", func() {
 
 			root, err := os.MkdirTemp("", "lxc-init-test")
 			Expect(err).ToNot(HaveOccurred())
-			defer os.RemoveAll(root)
+			defer func() { _ = os.RemoveAll(root) }()
 
 			body := strings.ReplaceAll(strings.Join(preamble, "\n"), "/var/vcap", root+"/var/vcap")
 			body += "\necho INIT_CONTINUES\n"
