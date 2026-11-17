@@ -13,6 +13,9 @@ type FakeLibvirtConn struct {
 
 	LookupStoragePoolByNameErr error
 
+	GetCapabilitiesResult string
+	GetCapabilitiesErr    error
+
 	// ReconnectCalls counts Reconnect invocations; ReconnectErr is returned
 	// from Reconnect; OnReconnect (if set) runs on each successful Reconnect.
 	ReconnectCalls int
@@ -57,4 +60,8 @@ func (c *FakeLibvirtConn) LookupStoragePoolByName(name string) (*libvirt.Storage
 
 func (c *FakeLibvirtConn) Close() (int, error) {
 	return 0, nil
+}
+
+func (c *FakeLibvirtConn) GetCapabilities() (string, error) {
+	return c.GetCapabilitiesResult, c.GetCapabilitiesErr
 }

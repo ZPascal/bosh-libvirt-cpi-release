@@ -181,6 +181,32 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 	})
 
+	Describe("HostArch", func() {
+		caps := func(arch string) string {
+			return "<capabilities><host><uuid>x</uuid><cpu><arch>" + arch + "</arch><model>m</model></cpu></host>" +
+				"<guest><arch name='aarch64'/></guest></capabilities>"
+		}
+
+		It("reports the libvirt host's CPU architecture", func() {
+			for raw, want := range map[string]string{"x86_64": "x86_64", "aarch64": "aarch64", "ppc64le": "ppc64le"} {
+				conn.GetCapabilitiesResult = caps(raw)
+				Expect(d.HostArch()).To(Equal(want))
+			}
+		})
+
+		It("returns the capabilities error", func() {
+			conn.GetCapabilitiesErr = errors.New("connection lost")
+			_, err := d.HostArch()
+			Expect(err).To(MatchError(ContainSubstring("connection lost")))
+		})
+
+		It("fails when the capabilities have no host arch", func() {
+			conn.GetCapabilitiesResult = "<capabilities><host/></capabilities>"
+			_, err := d.HostArch()
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
 	Describe("CreateStorageVol", func() {
 		It("returns error when pool not found", func() {
 			conn.LookupStoragePoolByNameErr = errors.New("pool not found")

@@ -46,6 +46,9 @@ type FakeDriver struct {
 	DetachDeviceCalls []DeviceCall
 	DetachDeviceErr   error
 
+	HostArchResult string // defaults to "x86_64"
+	HostArchErr    error
+
 	IsMissingDomainErrInput  error
 	IsMissingDomainErrResult bool
 }
@@ -126,4 +129,11 @@ func (d *FakeDriver) DeleteStorageVol(poolName, volName string) error {
 func (d *FakeDriver) IsMissingDomainErr(err error) bool {
 	d.IsMissingDomainErrInput = err
 	return d.IsMissingDomainErrResult
+}
+
+func (d *FakeDriver) HostArch() (string, error) {
+	if d.HostArchResult == "" {
+		return "x86_64", d.HostArchErr
+	}
+	return d.HostArchResult, d.HostArchErr
 }

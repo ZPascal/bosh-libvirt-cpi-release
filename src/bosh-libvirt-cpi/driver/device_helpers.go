@@ -3,6 +3,7 @@ package driver
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"strings"
 
 	libvirt "libvirt.org/go/libvirt"
@@ -55,4 +56,25 @@ func domainHasTarget(domainXML, target string) bool {
 		}
 	}
 	return false
+}
+
+// hostArchFromCapabilities returns <capabilities><host><cpu><arch>, with
+// arm64 spelled aarch64 and amd64 spelled x86_64 (the guest arch names).
+func hostArchFromCapabilities(capsXML string) (string, error) {
+	var caps struct {
+		Arch string `xml:"host>cpu>arch"`
+	}
+	if err := xml.Unmarshal([]byte(capsXML), &caps); err != nil {
+		return "", fmt.Errorf("parsing libvirt capabilities: %w", err)
+	}
+	switch arch := strings.TrimSpace(caps.Arch); arch {
+	case "":
+		return "", errors.New("libvirt capabilities report no host CPU architecture")
+	case "arm64":
+		return "aarch64", nil
+	case "amd64":
+		return "x86_64", nil
+	default:
+		return arch, nil
+	}
 }
