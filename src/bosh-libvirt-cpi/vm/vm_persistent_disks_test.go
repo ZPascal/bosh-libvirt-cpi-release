@@ -185,9 +185,11 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		_, err := vmImpl.AttachDisk(d)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Replace the record with a directory: still listed, but unreadable even
+		// for root (the integration jobs run the suite with sudo).
 		record := filepath.Join(tmpDir, "vm-1", diskCID+"-disk-attachment.json")
-		Expect(os.Chmod(record, 0)).To(Succeed())
-		defer func() { _ = os.Chmod(record, 0644) }()
+		Expect(os.Remove(record)).To(Succeed())
+		Expect(os.Mkdir(record, 0755)).To(Succeed())
 
 		Expect(vmImpl.DetachDisk(d)).To(MatchError(ContainSubstring("disk attachment")))
 		Expect(drv.DetachDeviceCalls).To(BeEmpty())
