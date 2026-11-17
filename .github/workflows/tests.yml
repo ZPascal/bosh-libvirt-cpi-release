@@ -100,7 +100,9 @@ jobs:
         LIBVIRT_URI: qemu:///system
         AARCH64_DIR: /tmp/aarch64
       run: |
-        sudo -E "$(which go)" test -tags integration_aarch64 -mod=vendor ./driver/ \
+        # Pass the test's inputs explicitly: sudo -E did not keep AARCH64_DIR.
+        sudo -E env LIBVIRT_URI="${LIBVIRT_URI}" AARCH64_DIR="${AARCH64_DIR}" \
+          "$(which go)" test -tags integration_aarch64 -mod=vendor ./driver/ \
           -timeout 40m -v -ginkgo.v -ginkgo.focus 'aarch64 guest boot'
 
     - name: Guest console log
