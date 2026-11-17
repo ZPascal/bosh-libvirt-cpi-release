@@ -100,8 +100,8 @@ jobs:
         LIBVIRT_URI: qemu:///system
         AARCH64_DIR: /tmp/aarch64
       run: |
-        # Pass the test's inputs explicitly: sudo -E did not keep AARCH64_DIR.
-        sudo -E env LIBVIRT_URI="${LIBVIRT_URI}" AARCH64_DIR="${AARCH64_DIR}" \
+        # Pass the test's inputs explicitly: sudo-rs (Ubuntu 26.04) ignores -E.
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" AARCH64_DIR="${AARCH64_DIR}" \
           "$(which go)" test -tags integration_aarch64 -mod=vendor ./driver/ \
           -timeout 40m -v -ginkgo.v -ginkgo.focus 'aarch64 guest boot'
 
@@ -142,11 +142,13 @@ jobs:
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
-      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI explicitly, and
+      # REQUIRE_LIBVIRT so a missing/unreachable libvirt fails instead of skipping.
+      run: sudo env LIBVIRT_URI="${LIBVIRT_URI}" REQUIRE_LIBVIRT=1 "$(which go)" test -tags integration -mod=vendor ./...
 
     - name: Generate coverage
       working-directory: src/bosh-libvirt-cpi
-      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+      run: sudo "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7
@@ -198,11 +200,13 @@ jobs:
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: lxc:///
-      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI explicitly, and
+      # REQUIRE_LIBVIRT so a missing/unreachable libvirt fails instead of skipping.
+      run: sudo env LIBVIRT_URI="${LIBVIRT_URI}" REQUIRE_LIBVIRT=1 "$(which go)" test -tags integration -mod=vendor ./...
 
     - name: Generate coverage
       working-directory: src/bosh-libvirt-cpi
-      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+      run: sudo "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7

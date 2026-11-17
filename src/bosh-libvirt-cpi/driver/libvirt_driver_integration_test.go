@@ -25,13 +25,13 @@ var _ = Describe("LibvirtDriver (integration)", func() {
 	BeforeEach(func() {
 		uri = os.Getenv("LIBVIRT_URI")
 		if uri == "" {
-			Skip("LIBVIRT_URI not set")
+			skipUnlessLibvirtRequired("LIBVIRT_URI not set")
 		}
 
 		var err error
 		conn, err = libvirt.NewConnect(uri)
 		if err != nil {
-			Skip("libvirt connection unavailable: " + err.Error())
+			skipUnlessLibvirtRequired("libvirt connection unavailable: " + err.Error())
 		}
 
 		logger := boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)

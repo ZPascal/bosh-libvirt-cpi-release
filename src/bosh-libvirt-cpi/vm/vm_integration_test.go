@@ -34,7 +34,7 @@ var _ = Describe("VM (integration)", func() {
 	BeforeEach(func() {
 		uri := os.Getenv("LIBVIRT_URI")
 		if uri == "" {
-			Skip("LIBVIRT_URI not set")
+			skipUnlessLibvirtRequired("LIBVIRT_URI not set")
 		}
 		if os.Getenv("STEMCELL_PATH") == "" {
 			Skip("STEMCELL_PATH not set")
@@ -43,7 +43,7 @@ var _ = Describe("VM (integration)", func() {
 		var err error
 		conn, err = libvirt.NewConnect(uri)
 		if err != nil {
-			Skip("libvirt connection unavailable: " + err.Error())
+			skipUnlessLibvirtRequired("libvirt connection unavailable: " + err.Error())
 		}
 
 		logger = boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
