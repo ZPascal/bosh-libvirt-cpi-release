@@ -1,7 +1,7 @@
 vms/vm-uuid-vm-1/disk-disk-uuid-1-disk-attachment.json <nondeterministic>
 vms/vm-uuid-vm-1/env.iso <nondeterministic>
 vms/vm-uuid-vm-1/env.json <nondeterministic>
-bosh-init 5b9ee88334029dd89333219081be0d74ae1a5d292bf29593527ca0f279a893fe
+bosh-init 7a8a045079750d78856b76ba49c91381085474d19f11f3a6e9fa88bba015270e
 etc/pam.d/runuser a07b7269408ae5467ccb94c92f0967a9fb4a87d32b9dee4ae54aee55ff3bd798
 etc/pam.d/su a07b7269408ae5467ccb94c92f0967a9fb4a87d32b9dee4ae54aee55ff3bd798
 etc/resolv.conf 7e8ad76e0d200e93918ca2e93c99ff8ecd02071953bf1479819db3ac0dbb6d07

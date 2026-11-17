@@ -89,6 +89,10 @@ def _pid_alive(pidfile):
 MONIT_GLOB = '/var/vcap/monit/job/*.monitrc'
 JOBS_DIR = '/var/vcap/jobs'
 STARTED = set()
+STARTED_AT = {}
+RESTARTS = {}
+MAX_RESTARTS = 5
+START_GRACE = 60
 def monit_services():
   import glob, re
   q = chr(34)
@@ -98,13 +102,15 @@ def monit_services():
     for block in re.split(r'(?m)^(?=check process )', open(f).read()):
       m = re.match(r'check process (\S+)', block)
       if not m: continue
-      d = {'job': job, 'start': None, 'stop': None, 'uid': None, 'gid': None, 'pidfile': None}
+      d = {'job': job, 'start': None, 'stop': None, 'uid': None, 'gid': None, 'pidfile': None, 'depends': []}
       pm = re.search(r'with pidfile (\S+)', block)
       if pm: d['pidfile'] = pm.group(1)
       sm = re.search(r'start program '+q+'([^'+q+']+)'+q+r'(?:\s+as uid (\S+) and gid (\S+))?', block)
       if sm: d['start'], d['uid'], d['gid'] = sm.group(1), sm.group(2), sm.group(3)
       tm = re.search(r'stop program '+q+'([^'+q+']+)'+q, block)
       if tm: d['stop'] = tm.group(1)
+      for dm in re.findall(r'depends on ([^\n]+)', block):
+        d['depends'] += [x for x in re.split(r'[\s,]+', dm) if x]
       out[m.group(1)] = d
   return out
 def is_monitrc_managed(svc):
@@ -130,6 +136,53 @@ def run_program(cmd, uid, gid, log):
     setpriv = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), 'setpriv')
     args = [setpriv, '--reuid='+str(u), '--regid='+str(g), '--clear-groups', '--'] + args
   return subprocess.Popen(args, stdout=log, stderr=log, start_new_session=True)
+def deps_running(svc):
+  return all(monit_status(dep) == (0, 1) for dep in monit_services().get(svc, {}).get('depends', []))
+def wait_for_deps(svc, timeout=300, interval=2):
+  # monit only starts a service once everything it depends on is running.
+  import time
+  deadline = time.time() + timeout
+  while not deps_running(svc):
+    if time.time() >= deadline: return False
+    time.sleep(interval)
+  return True
+def start_monitrc_svc(svc, log):
+  import threading, time
+  d = monit_services()[svc]
+  STARTED.add(svc); STARTED_AT[svc] = time.time(); RESTARTS[svc] = 0
+  def _run():
+    if not wait_for_deps(svc):
+      log.write('dependencies of '+svc+' not running: '+str(d['depends'])+'\n'); log.flush()
+    STARTED_AT[svc] = time.time()
+    run_program(d['start'], d['uid'], d['gid'], log)
+    log.write('started '+svc+' via monitrc start program as '+str(d['uid'])+'\n'); log.flush()
+    console_log('started '+svc+' via monitrc start program')
+  t = threading.Thread(target=_run, daemon=True); t.start()
+  return t
+def check_restarts(log):
+  # One monit cycle: re-run the start program of started services whose
+  # process died, after their start grace period, while their dependencies
+  # run, at most MAX_RESTARTS times.
+  import time
+  procs = []
+  for svc in sorted(STARTED):
+    if not is_monitrc_managed(svc) or monit_status(svc) != (512, 1): continue
+    if time.time() - STARTED_AT.get(svc, 0) < START_GRACE: continue
+    if RESTARTS.get(svc, 0) >= MAX_RESTARTS or not deps_running(svc): continue
+    d = monit_services()[svc]
+    RESTARTS[svc] = RESTARTS.get(svc, 0) + 1; STARTED_AT[svc] = time.time()
+    log.write('restarting '+svc+' (attempt '+str(RESTARTS[svc])+')\n'); log.flush()
+    console_log('restarting '+svc+' (attempt '+str(RESTARTS[svc])+')')
+    procs.append(run_program(d['start'], d['uid'], d['gid'], log))
+  return procs
+def watchdog_loop(interval=10):
+  import time
+  os.makedirs('/var/vcap/bosh/log', exist_ok=True)
+  log = open('/var/vcap/bosh/log/monit-watchdog.log', 'a')
+  while True:
+    try: check_restarts(log)
+    except Exception as e: log.write('watchdog: '+str(e)+'\n'); log.flush()
+    time.sleep(interval)
 def stop_svc(svc):
   if not is_monitrc_managed(svc): return
   STARTED.discard(svc)
@@ -287,11 +340,7 @@ def start_svc(svc):
         try: os.chown(os.path.join(dirpath, f), 1000, 1000)
         except: pass
   if is_monitrc_managed(svc):
-    d = monit_services()[svc]
-    STARTED.add(svc)
-    run_program(d['start'], d['uid'], d['gid'], log)
-    log.write('started '+svc+' via monitrc start program as '+str(d['uid'])+'\n'); log.flush()
-    console_log('started '+svc+' via monitrc start program')
+    start_monitrc_svc(svc, log)
     return
   bpmyml = '/var/vcap/jobs/' + job + '/config/bpm.yml'
   if os.path.exists(bpmyml):
@@ -393,6 +442,7 @@ class H(http.server.BaseHTTPRequestHandler):
   def log_message(self, fmt, *a):
     open('/var/vcap/bosh/log/monit-req.log','a').write('[%s] %s %s\n' % (self.log_date_time_string(), self.command, self.path))
 try:
+  import threading as _wd; _wd.Thread(target=watchdog_loop, daemon=True).start()
   srv = socketserver.TCPServer(('127.0.0.1',2822),H)
   sys.stderr.write('monit stub: ready\\n')
   sys.stderr.flush()

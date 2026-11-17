@@ -157,10 +157,103 @@ run_program(s['stop'], None, None, log).wait()
 		}, 5*time.Second).Should(Equal("start\nstop\n"))
 	})
 
+	It("parses depends on", func() {
+		Expect(runPy(`
+s = monit_services()
+print(s['pg_janitor']['depends'], s['postgres']['depends'])
+`)).To(Equal("['postgres'] []"))
+	})
+
+	It("waits for dependencies to run before starting a service", func() {
+		out := runPy(`
+import os
+print(wait_for_deps('pg_janitor', timeout=0.5, interval=0.1))   # postgres not started
+STARTED.add('postgres')
+open('` + pgPid + `','w').write(str(os.getpid()))
+print(wait_for_deps('pg_janitor', timeout=0.5, interval=0.1))   # postgres running
+print(wait_for_deps('postgres', timeout=0.5, interval=0.1))     # no dependencies
+`)
+		Expect(strings.Split(out, "\n")).To(Equal([]string{"False", "True", "True"}))
+	})
+
+	Describe("restarting monitrc services that died (monit cycle)", func() {
+		var marker string
+
+		BeforeEach(func() {
+			marker = filepath.Join(tmp, "janitor-starts.log")
+			ctl := filepath.Join(jobsDir, "postgres", "bin", "pg_janitor_ctl")
+			Expect(os.WriteFile(ctl, []byte("#!/bin/sh\necho \"$1\" >> "+marker+"\n"), 0755)).To(Succeed())
+		})
+
+		starts := func() int {
+			b, _ := os.ReadFile(marker)
+			return strings.Count(string(b), "start")
+		}
+
+		// Driver prelude: postgres running, pg_janitor started long ago and dead.
+		// Programs run as the test user: the uid switch (setpriv) needs root
+		// and is not what these tests are about.
+		const setup = `
+import os, time
+_parsed = monit_services
+def monit_services():
+  s = _parsed()
+  for d in s.values(): d['uid'] = d['gid'] = None
+  return s
+LOG = open(os.devnull, 'a')
+STARTED.update(['postgres', 'pg_janitor'])
+open(monit_services()['postgres']['pidfile'],'w').write(str(os.getpid()))
+open(monit_services()['pg_janitor']['pidfile'],'w').write('999999')
+STARTED_AT['pg_janitor'] = time.time() - 600
+`
+
+		It("re-runs the start program of a dead service once its grace period is over", func() {
+			runPy(setup + `
+for p in check_restarts(LOG): p.wait()
+print(RESTARTS['pg_janitor'])
+`)
+			Expect(starts()).To(Equal(1))
+		})
+
+		It("leaves a service alone during its start grace period", func() {
+			runPy(setup + `
+STARTED_AT['pg_janitor'] = time.time()
+for p in check_restarts(LOG): p.wait()
+`)
+			Expect(starts()).To(Equal(0))
+		})
+
+		It("does not restart while a dependency is down", func() {
+			runPy(setup + `
+open(monit_services()['postgres']['pidfile'],'w').write('999999')
+STARTED_AT['postgres'] = time.time()
+for p in check_restarts(LOG): p.wait()
+`)
+			Expect(starts()).To(Equal(0))
+		})
+
+		It("stops restarting after the retry limit", func() {
+			runPy(setup + `
+RESTARTS['pg_janitor'] = MAX_RESTARTS
+for p in check_restarts(LOG): p.wait()
+`)
+			Expect(starts()).To(Equal(0))
+		})
+
+		It("does not restart services that were stopped", func() {
+			runPy(setup + `
+STARTED.discard('pg_janitor')
+for p in check_restarts(LOG): p.wait()
+`)
+			Expect(starts()).To(Equal(0))
+		})
+	})
+
 	It("is wired into start_svc, stop requests and the status XML", func() {
 		script := vm.RenderQEMUExt4InitForTest()
 		Expect(script).To(ContainSubstring("is_monitrc_managed(svc)"))
 		Expect(script).To(ContainSubstring("action=stop"))
 		Expect(script).To(ContainSubstring("monit_status(s)"))
+		Expect(script).To(ContainSubstring("target=watchdog_loop"))
 	})
 })
