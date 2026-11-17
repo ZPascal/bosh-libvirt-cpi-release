@@ -7,6 +7,21 @@ PHASE="${1:-unknown}"
 : "${STORE_DIR:=/tmp/bosh_libvirt_cpi}"
 : "${SSH_KEY:=/tmp/bosh-libvirt-ssh-key}"
 
+# Per-domain disk view: what libvirt has attached (persistent disks are
+# hot-plugged as vdc, vdd, ...) and what the guest kernel saw of virtio disks.
+dump_vm_disks() {
+  echo "=== libvirt disks per domain ==="
+  for dom in $(sudo virsh -c qemu:///system list --all --name 2>/dev/null | grep -v '^$'); do
+    echo "--- $dom ---"
+    sudo virsh -c qemu:///system domblklist "$dom" --details 2>/dev/null || true
+  done
+  echo "=== guest kernel virtio/disk messages (QEMU console logs) ==="
+  sudo find /tmp -name 'bosh-vm-*-console.log' 2>/dev/null | while read -r f; do
+    echo "--- $f ---"
+    sudo grep -aiE 'virtio_blk|vd[b-z]|pci.*hotplug|acpiphp|EXT4-fs|mkfs|parted|sfdisk|mount_disk|persistent disk' "$f" 2>/dev/null | tail -40 || true
+  done
+}
+
 case "$PHASE" in
   wait)
     echo "=== network diagnostics ==="
@@ -124,6 +139,7 @@ case "$PHASE" in
     ;;
 
   deploy)
+    dump_vm_disks
     echo "=== bosh deploy failed - dumping last task log ==="
     TASK_ID=$(bosh -e ${BOSH_ENV_ALIAS} tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
     [ -n "$TASK_ID" ] && bosh -e ${BOSH_ENV_ALIAS} task "$TASK_ID" --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
@@ -188,6 +204,7 @@ case "$PHASE" in
     ;;
 
   verify)
+    dump_vm_disks
     echo "=== nats port 4222 on 192.168.122.20 never opened - diagnostics ==="
     NATSVM=$(sudo find ${STORE_DIR}/vms -maxdepth 1 -mindepth 1 -type d 2>/dev/null | xargs -I{} stat -c '%W {}' {} 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
     [ -n "$NATSVM" ] && echo "=== deployed nats VM dir: $NATSVM ===" && sudo ls -la "$NATSVM/" 2>/dev/null || true
