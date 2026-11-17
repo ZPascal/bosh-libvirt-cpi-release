@@ -334,6 +334,18 @@ var _ = Describe("vm.Factory", func() {
 				Expect(initScript).To(ContainSubstring("ln -sfn /proc/self/fd/2 /dev/stderr"))
 			})
 
+			It("passes the ephemeral image's format to the domain (raw when qemu-img was missing)", func() {
+				runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+					if name == "head" {
+						return "\x00\x00\x00\x00", 0, nil // dd fallback image
+					}
+					return "", 0, nil
+				}
+				defer func() { runner.ExecuteFunc = nil }()
+				Expect(createVM()).To(Succeed())
+				Expect(ext4Builder.BuildDomainDisks.EphemeralFormat).To(Equal("raw"))
+			})
+
 			It("does not mount a tmpfs over /var/vcap/store in /bosh-init", func() {
 				Expect(createVM()).To(Succeed())
 				initScript := string(runner.PutContents[filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/bosh-init")])

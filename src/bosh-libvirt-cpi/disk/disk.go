@@ -2,6 +2,7 @@ package disk
 
 import (
 	"path/filepath"
+	"strings"
 
 	apiv1 "github.com/cloudfoundry/bosh-cpi-go/apiv1"
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
@@ -35,6 +36,20 @@ func (d DiskImpl) Path() string { return d.path }
 
 func (d DiskImpl) ImagePath() string {
 	return filepath.Join(d.path, "disk.img")
+}
+
+// qcow2Magic is the first 4 bytes of every qcow2 image.
+const qcow2Magic = "QFI\xfb"
+
+func (d DiskImpl) Format() (string, error) {
+	out, _, err := d.runner.Execute("head", "-c", "4", d.ImagePath())
+	if err != nil {
+		return "", bosherr.WrapErrorf(err, "Probing format of '%s'", d.ImagePath())
+	}
+	if strings.HasPrefix(out, qcow2Magic) {
+		return "qcow2", nil
+	}
+	return "raw", nil
 }
 
 func (d DiskImpl) Exists() (bool, error) {

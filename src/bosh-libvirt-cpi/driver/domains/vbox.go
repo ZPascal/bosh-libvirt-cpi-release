@@ -55,6 +55,6 @@ func (b VBoxDomainBuilder) BuildStemcellDomain(id string, imagePath string) (str
 	return xml, nil
 }
 
-func (b VBoxDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
+func (b VBoxDomainBuilder) BuildPersistentDiskXML(imagePath, format, target, serial string) (string, error) {
 	return "", driver.ErrPersistentDiskUnsupported
 }

@@ -14,6 +14,8 @@ type FakeDisk struct {
 	ExistsResult    bool
 	ExistsErr       error
 	DeleteErr       error
+	FormatResult    string // defaults to "qcow2"
+	FormatErr       error
 }
 
 var _ bdisk.Disk = &FakeDisk{}
@@ -27,3 +29,10 @@ func (d *FakeDisk) Path() string          { return d.PathResult }
 func (d *FakeDisk) ImagePath() string     { return d.ImagePathResult }
 func (d *FakeDisk) Exists() (bool, error) { return d.ExistsResult, d.ExistsErr }
 func (d *FakeDisk) Delete() error         { return d.DeleteErr }
+
+func (d *FakeDisk) Format() (string, error) {
+	if d.FormatResult == "" {
+		return "qcow2", d.FormatErr
+	}
+	return d.FormatResult, d.FormatErr
+}

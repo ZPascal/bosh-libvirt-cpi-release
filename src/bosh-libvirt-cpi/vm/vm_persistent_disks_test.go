@@ -69,7 +69,7 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		hint, err := vmImpl.AttachDisk(newDisk(diskCID))
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(builder.PersistentDiskXMLArgs).To(Equal([]string{"/disks/" + diskCID + "/disk.img", "vdc", serial}))
+		Expect(builder.PersistentDiskXMLArgs).To(Equal([]string{"/disks/" + diskCID + "/disk.img", "qcow2", "vdc", serial}))
 		Expect(drv.AttachDeviceCalls).To(Equal([]driverfakes.DeviceCall{{ID: "vm-1", XML: "<disk/>"}}))
 		Expect(hint).To(Equal(apiv1.NewDiskHintFromMap(map[string]interface{}{
 			"id":        serial,
@@ -98,13 +98,33 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		Expect(ids).To(Equal([]apiv1.DiskCID{apiv1.NewDiskCID(diskCID)}))
 	})
 
+	It("attaches and detaches a raw image (dd fallback) with the raw format", func() {
+		d := newDisk(diskCID)
+		d.FormatResult = "raw"
+		_, err := vmImpl.AttachDisk(d)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(builder.PersistentDiskXMLArgs[1]).To(Equal("raw"))
+
+		builder.PersistentDiskXMLArgs = nil
+		Expect(vmImpl.DetachDisk(newDisk(diskCID))).To(Succeed()) // format comes from the record
+		Expect(builder.PersistentDiskXMLArgs[1]).To(Equal("raw"))
+	})
+
+	It("fails the attach when the image format can't be determined", func() {
+		d := newDisk(diskCID)
+		d.FormatErr = errors.New("no such file")
+		_, err := vmImpl.AttachDisk(d)
+		Expect(err).To(MatchError(ContainSubstring("no such file")))
+		Expect(drv.AttachDeviceCalls).To(BeEmpty())
+	})
+
 	It("uses vdd for a second disk", func() {
 		_, err := vmImpl.AttachDisk(newDisk(diskCID))
 		Expect(err).ToNot(HaveOccurred())
 
 		_, err = vmImpl.AttachDisk(newDisk("disk-fedcba9876543210-1111"))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(builder.PersistentDiskXMLArgs[1]).To(Equal("vdd"))
+		Expect(builder.PersistentDiskXMLArgs[2]).To(Equal("vdd"))
 	})
 
 	It("reuses vdc after the first disk was detached", func() {
@@ -115,7 +135,7 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 
 		_, err = vmImpl.AttachDisk(newDisk("disk-fedcba9876543210-1111"))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(builder.PersistentDiskXMLArgs[1]).To(Equal("vdc"))
+		Expect(builder.PersistentDiskXMLArgs[2]).To(Equal("vdc"))
 	})
 
 	It("detaches with the same device XML and removes the record", func() {
@@ -125,7 +145,7 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 		builder.PersistentDiskXMLArgs = nil
 
 		Expect(vmImpl.DetachDisk(d)).To(Succeed())
-		Expect(builder.PersistentDiskXMLArgs).To(Equal([]string{"/disks/" + diskCID + "/disk.img", "vdc", serial}))
+		Expect(builder.PersistentDiskXMLArgs).To(Equal([]string{"/disks/" + diskCID + "/disk.img", "qcow2", "vdc", serial}))
 		Expect(drv.DetachDeviceCalls).To(Equal([]driverfakes.DeviceCall{{ID: "vm-1", XML: "<disk/>"}}))
 
 		ids, err := vmImpl.DiskIDs()
@@ -199,6 +219,6 @@ var _ = Describe("VMImpl persistent disks (hot-plug)", func() {
 	It("uses the whole CID as serial when it is shorter than 20 characters", func() {
 		_, err := vmImpl.AttachDisk(newDisk("disk-short"))
 		Expect(err).ToNot(HaveOccurred())
-		Expect(builder.PersistentDiskXMLArgs[2]).To(Equal("disk-short"))
+		Expect(builder.PersistentDiskXMLArgs[3]).To(Equal("disk-short"))
 	})
 })

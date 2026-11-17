@@ -35,7 +35,7 @@ var _ = Describe("BuildPersistentDiskXML", func() {
 	} {
 		builder := b
 		It("produces a hot-pluggable virtio disk for QEMU "+name, func() {
-			out, err := builder.BuildPersistentDiskXML("/store/disk-1/disk.img", "vdc", "disk-0123456789abcde")
+			out, err := builder.BuildPersistentDiskXML("/store/disk-1/disk.img", "qcow2", "vdc", "disk-0123456789abcde")
 			Expect(err).ToNot(HaveOccurred())
 
 			var d diskDeviceXML
@@ -51,8 +51,17 @@ var _ = Describe("BuildPersistentDiskXML", func() {
 		})
 	}
 
+	It("uses the raw driver for raw images (dd fallback)", func() {
+		out, err := domains.QEMUKernelDomainBuilder{}.BuildPersistentDiskXML("/p/disk.img", "raw", "vdc", "disk-0123456789abcde")
+		Expect(err).ToNot(HaveOccurred())
+
+		var d diskDeviceXML
+		Expect(xml.Unmarshal([]byte(out), &d)).To(Succeed())
+		Expect(d.Driver.Type).To(Equal("raw"))
+	})
+
 	It("escapes XML special characters in the image path", func() {
-		out, err := domains.QEMUDomainBuilder{}.BuildPersistentDiskXML("/a'b&c/disk.img", "vdd", "short-id")
+		out, err := domains.QEMUDomainBuilder{}.BuildPersistentDiskXML("/a'b&c/disk.img", "qcow2", "vdd", "short-id")
 		Expect(err).ToNot(HaveOccurred())
 
 		var d diskDeviceXML
@@ -67,8 +76,42 @@ var _ = Describe("BuildPersistentDiskXML", func() {
 	} {
 		builder := b
 		It("reports persistent disks as unsupported for "+name, func() {
-			_, err := builder.BuildPersistentDiskXML("/p/disk.img", "vdc", "disk-0123456789abcde")
+			_, err := builder.BuildPersistentDiskXML("/p/disk.img", "qcow2", "vdc", "disk-0123456789abcde")
 			Expect(err).To(MatchError(driver.ErrPersistentDiskUnsupported))
 		})
 	}
+})
+
+var _ = Describe("ephemeral disk format", func() {
+	type domainDisks struct {
+		Disks []diskDeviceXML `xml:"devices>disk"`
+	}
+
+	for name, p := range map[string]driver.VMDomainProps{
+		"qcow2 boot":  {CPUs: 1, MemoryMB: 512},
+		"kernel boot": {CPUs: 1, MemoryMB: 512, Kernel: "/boot/vmlinuz"},
+	} {
+		props := p
+		It("uses the ephemeral image's format for vdb ("+name+")", func() {
+			out, err := domains.QEMUDomainBuilder{}.BuildDomain("vm-1", props,
+				driver.DomainDiskPaths{RootDisk: "/root.img", EphemeralDisk: "/eph.img", EphemeralFormat: "raw"})
+			Expect(err).ToNot(HaveOccurred())
+
+			var dom domainDisks
+			Expect(xml.Unmarshal([]byte(out), &dom)).To(Succeed())
+			Expect(dom.Disks).To(HaveLen(2))
+			Expect(dom.Disks[1].Target.Dev).To(Equal("vdb"))
+			Expect(dom.Disks[1].Driver.Type).To(Equal("raw"))
+		})
+	}
+
+	It("defaults vdb to qcow2 when no format is given", func() {
+		out, err := domains.QEMUDomainBuilder{}.BuildDomain("vm-1", driver.VMDomainProps{CPUs: 1, MemoryMB: 512},
+			driver.DomainDiskPaths{RootDisk: "/root.img", EphemeralDisk: "/eph.img"})
+		Expect(err).ToNot(HaveOccurred())
+
+		var dom domainDisks
+		Expect(xml.Unmarshal([]byte(out), &dom)).To(Succeed())
+		Expect(dom.Disks[1].Driver.Type).To(Equal("qcow2"))
+	})
 })

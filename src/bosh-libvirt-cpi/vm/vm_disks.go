@@ -121,7 +121,7 @@ func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, e
 
 	// Backends that can't hot-plug keep the legacy path; check before touching
 	// any attachment records.
-	if _, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), persistentDiskTargets[0], serial); errors.Is(err, driver.ErrPersistentDiskUnsupported) {
+	if _, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), "qcow2", persistentDiskTargets[0], serial); errors.Is(err, driver.ErrPersistentDiskUnsupported) {
 		return apiv1.DiskHint{}, false, nil
 	}
 
@@ -131,12 +131,17 @@ func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, e
 		return persistentDiskHint(rec.Serial, rec.Target), true, nil
 	}
 
+	format, err := disk.Format()
+	if err != nil {
+		return apiv1.DiskHint{}, true, err
+	}
+
 	target, err := vm.freePersistentDiskTarget()
 	if err != nil {
 		return apiv1.DiskHint{}, true, err
 	}
 
-	xml, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), target, serial)
+	xml, err := vm.domBuilder.BuildPersistentDiskXML(disk.ImagePath(), format, target, serial)
 	if err != nil {
 		return apiv1.DiskHint{}, true, bosherr.WrapError(err, "Building persistent disk device")
 	}
@@ -145,6 +150,7 @@ func (vm VMImpl) hotplugPersistentDisk(disk bdisk.Disk) (apiv1.DiskHint, bool, e
 	rec := diskAttachmentRecord{
 		ID:     disk.ID().AsString(),
 		Path:   disk.ImagePath(),
+		Format: format,
 		Target: target,
 		Serial: serial,
 	}
@@ -213,7 +219,7 @@ func (vm VMImpl) DetachDisk(disk bdisk.Disk) error {
 		}
 	}
 	if rec.Target != "" {
-		xml, err := vm.domBuilder.BuildPersistentDiskXML(rec.Path, rec.Target, rec.Serial)
+		xml, err := vm.domBuilder.BuildPersistentDiskXML(rec.Path, rec.Format, rec.Target, rec.Serial)
 		if err != nil {
 			return bosherr.WrapError(err, "Building persistent disk device")
 		}
@@ -242,7 +248,8 @@ type diskAttachmentRecord struct {
 	ID        string
 	Ephemeral bool
 	Path      string
-	// Target and Serial are set for hot-plugged (QEMU) persistent disks.
+	// Format, Target and Serial are set for hot-plugged (QEMU) persistent disks.
+	Format string `json:",omitempty"`
 	Target string `json:",omitempty"`
 	Serial string `json:",omitempty"`
 }

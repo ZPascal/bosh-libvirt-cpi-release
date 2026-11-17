@@ -42,7 +42,7 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <target dev='vda' bus='virtio'/>
     </disk>
     <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
+      <driver name='qemu' type='%s'/>
       <source file='%s'/>
       <target dev='vdb' bus='virtio'/>
     </disk>
@@ -61,7 +61,7 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
   </devices>
 </domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs,
 			xmlEscape(props.Kernel),
-			xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk),
+			xmlEscape(disks.RootDisk), xmlEscape(ephemeralFormat(disks)), xmlEscape(disks.EphemeralDisk),
 			macElem, xmlEscape(network), xmlEscape(id), xmlEscape(id))
 		return xml, nil
 	}
@@ -79,7 +79,7 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <target dev='vda' bus='virtio'/>
     </disk>
     <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
+      <driver name='qemu' type='%s'/>
       <source file='%s'/>
       <target dev='vdb' bus='virtio'/>
     </disk>
@@ -96,7 +96,7 @@ func (b QEMUDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, di
       <target type='serial' port='0'/>
     </console>
   </devices>
-</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(disks.EphemeralDisk), macElem, xmlEscape(network), xmlEscape(id), xmlEscape(id))
+</domain>`, xmlEscape(id), props.MemoryMB*1024, props.CPUs, xmlEscape(disks.RootDisk), xmlEscape(ephemeralFormat(disks)), xmlEscape(disks.EphemeralDisk), macElem, xmlEscape(network), xmlEscape(id), xmlEscape(id))
 	return xml, nil
 }
 
@@ -140,21 +140,32 @@ func (b QEMUKernelDomainBuilder) BuildStemcellDomain(id string, imagePath string
 }
 
 // qemuPersistentDiskXML is the hot-pluggable virtio disk for a persistent disk
-// image (qcow2, like every image disk.Factory creates on QEMU hosts). The
-// serial shows up in the guest as /dev/disk/by-id/virtio-<serial>.
-func qemuPersistentDiskXML(imagePath, target, serial string) string {
+// image. The serial shows up in the guest as /dev/disk/by-id/virtio-<serial>.
+func qemuPersistentDiskXML(imagePath, format, target, serial string) string {
+	if format == "" {
+		format = "qcow2"
+	}
 	return fmt.Sprintf(`<disk type='file' device='disk'>
-  <driver name='qemu' type='qcow2'/>
+  <driver name='qemu' type='%s'/>
   <source file='%s'/>
   <target dev='%s' bus='virtio'/>
   <serial>%s</serial>
-</disk>`, xmlEscape(imagePath), xmlEscape(target), xmlEscape(serial))
+</disk>`, xmlEscape(format), xmlEscape(imagePath), xmlEscape(target), xmlEscape(serial))
 }
 
-func (b QEMUDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
-	return qemuPersistentDiskXML(imagePath, target, serial), nil
+func (b QEMUDomainBuilder) BuildPersistentDiskXML(imagePath, format, target, serial string) (string, error) {
+	return qemuPersistentDiskXML(imagePath, format, target, serial), nil
 }
 
-func (b QEMUKernelDomainBuilder) BuildPersistentDiskXML(imagePath, target, serial string) (string, error) {
-	return qemuPersistentDiskXML(imagePath, target, serial), nil
+func (b QEMUKernelDomainBuilder) BuildPersistentDiskXML(imagePath, format, target, serial string) (string, error) {
+	return qemuPersistentDiskXML(imagePath, format, target, serial), nil
+}
+
+// ephemeralFormat is the libvirt driver type for the ephemeral disk image:
+// qcow2 unless disk.Factory fell back to a raw dd image.
+func ephemeralFormat(disks driver.DomainDiskPaths) string {
+	if disks.EphemeralFormat == "" {
+		return "qcow2"
+	}
+	return disks.EphemeralFormat
 }

@@ -27,6 +27,10 @@ type Disk interface {
 
 	Exists() (bool, error)
 	Delete() error
+
+	// Format returns the image format of ImagePath(): "qcow2" (qemu-img) or
+	// "raw" (the dd fallback).
+	Format() (string, error)
 }
 
 var _ Disk = DiskImpl{}

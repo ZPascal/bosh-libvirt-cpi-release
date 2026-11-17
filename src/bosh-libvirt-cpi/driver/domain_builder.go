@@ -25,6 +25,9 @@ type VMDomainProps struct {
 type DomainDiskPaths struct {
 	RootDisk      string
 	EphemeralDisk string
+	// EphemeralFormat is the image format of EphemeralDisk ("qcow2" or "raw");
+	// empty means qcow2.
+	EphemeralFormat string
 }
 
 // DomainBuilder produces libvirt XML domain definitions for a specific backend.
@@ -33,7 +36,7 @@ type DomainBuilder interface {
 	BuildStemcellDomain(id string, imagePath string) (string, error)
 	DiskImageFormat() string // "vmdk", "raw", "qcow2"
 	// BuildPersistentDiskXML returns the <disk> device XML that attaches the
-	// persistent disk image at target (e.g. "vdc") with the given serial, or
-	// ErrPersistentDiskUnsupported.
-	BuildPersistentDiskXML(imagePath, target, serial string) (string, error)
+	// persistent disk image (format "qcow2" or "raw") at target (e.g. "vdc")
+	// with the given serial, or ErrPersistentDiskUnsupported.
+	BuildPersistentDiskXML(imagePath, format, target, serial string) (string, error)
 }

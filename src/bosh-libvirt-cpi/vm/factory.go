@@ -248,6 +248,16 @@ func (f Factory) Create(
 		}
 	}
 
+	// QEMU attaches the ephemeral image with an explicit driver type; disk.Factory
+	// falls back to a raw image when qemu-img is missing on the host.
+	if format := f.domBuilder.DiskImageFormat(); format == "qcow2" || format == "ext4" {
+		if ephFormat, fmtErr := ephemeralDisk.Format(); fmtErr == nil {
+			disks.EphemeralFormat = ephFormat
+		} else {
+			f.logger.Error(f.logTag, "Probing ephemeral disk format, assuming qcow2: %s", fmtErr)
+		}
+	}
+
 	// LXC VMs require a MAC address so the domain XML includes a network interface.
 	// Without a MAC the interface element is omitted and the container has no
 	// network connectivity, so the agent can never reach NATS.
