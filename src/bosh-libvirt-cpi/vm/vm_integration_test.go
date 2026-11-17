@@ -60,6 +60,9 @@ var _ = Describe("VM (integration)", func() {
 
 		tmpDir, err = os.MkdirTemp("", "vm-integration-test")
 		Expect(err).ToNot(HaveOccurred())
+		// MkdirTemp creates 0700; QEMU runs as libvirt-qemu and must reach the
+		// VM's disk images below it ("Cannot access storage file … Permission denied").
+		Expect(os.Chmod(tmpDir, 0755)).To(Succeed())
 
 		stemcellFac = stemcell.NewFactory(
 			stemcell.FactoryOpts{DirPath: tmpDir + "/stemcells"},
