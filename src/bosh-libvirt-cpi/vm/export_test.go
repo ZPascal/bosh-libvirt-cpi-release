@@ -14,3 +14,14 @@ func RenderQEMUExt4InitForTest() string {
 		CPIWrapperScript string
 	}{}))
 }
+
+// RenderLXCInitForTest renders one of the LXC init templates
+// (lxc-dhcp, lxc-deploy, lxc-director) with placeholder network values.
+func RenderLXCInitForTest(name string) string {
+	return string(renderAsset("assets/init/"+name+".sh.tmpl", struct {
+		StaticCIDR string
+		StaticGW   string
+		StaticIP   string
+		MonitStub  string
+	}{"10.0.0.2/24", "10.0.0.1", "10.0.0.2", ""}))
+}
