@@ -117,7 +117,14 @@ var _ = Describe("VM (integration)", func() {
 				b, _ := os.ReadFile(agentLog)
 				return string(b)
 			}
-			Eventually(readLog, 3*time.Minute, 2*time.Second).Should(ContainSubstring(want))
+			deadline := time.Now().Add(3 * time.Minute)
+			for !strings.Contains(readLog(), want) && time.Now().Before(deadline) {
+				time.Sleep(2 * time.Second)
+			}
+			if !strings.Contains(readLog(), want) {
+				dumpLXCGuest(conn, v.ID().AsString(), filepath.Join(tmpDir, "vms", v.ID().AsString(), "rootfs"))
+				Fail(fmt.Sprintf("%q not in the guest's agent log after 3m (log: %q)", want, readLog()))
+			}
 			time.Sleep(15 * time.Second)
 			agentOutput := readLog()
 			lines := strings.Split(strings.TrimSpace(agentOutput), "\n")

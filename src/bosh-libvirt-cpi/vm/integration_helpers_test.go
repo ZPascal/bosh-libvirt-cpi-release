@@ -3,12 +3,17 @@
 package vm_test
 
 import (
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+	libvirt "libvirt.org/go/libvirt"
 
 	"bosh-libvirt-cpi/driver"
 	"bosh-libvirt-cpi/driver/domains"
@@ -78,4 +83,33 @@ func stemcellArchFromEnv() string {
 		return stemcell.NormalizeArch(arch)
 	}
 	return stemcell.ArchX86_64
+}
+
+// dumpLXCGuest prints what explains an LXC guest whose agent never logged:
+// the domain state, libvirt's log for the container, the guest's init and
+// agent logs, and the host's view of the container processes.
+func dumpLXCGuest(conn *libvirt.Connect, name, rootfs string) {
+	w := GinkgoWriter
+	if dom, err := conn.LookupDomainByName(name); err == nil {
+		state, reason, err := dom.GetState()
+		fmt.Fprintf(w, "domain %s: state=%d reason=%d err=%v\n", name, state, reason, err)
+		_ = dom.Free()
+	} else {
+		fmt.Fprintf(w, "domain %s: lookup failed: %v\n", name, err)
+	}
+	for _, f := range []string{
+		"/var/log/libvirt/lxc/" + name + ".log",
+		filepath.Join(rootfs, "tmp", "dhclient.log"),
+	} {
+		b, err := os.ReadFile(f)
+		fmt.Fprintf(w, "--- %s (err=%v)\n%s\n", f, err, b)
+	}
+	for _, args := range [][]string{
+		{"ls", "-la", filepath.Join(rootfs, "var", "vcap", "bosh", "log"), filepath.Join(rootfs, "bosh-lxc-init")},
+		{"head", "-c", "2000", filepath.Join(rootfs, "bosh-lxc-init")},
+		{"pgrep", "-a", "-f", "bosh-agent|bosh-lxc-init|dhclient"},
+	} {
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		fmt.Fprintf(w, "--- %s (err=%v)\n%s\n", strings.Join(args, " "), err, out)
+	}
 }
