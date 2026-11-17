@@ -36,3 +36,12 @@ func skipUnlessLibvirtRequired(reason string) {
 	}
 	Skip(reason)
 }
+
+// skipUnlessStemcellRequired skips a spec that needs STEMCELL_PATH, but fails
+// it when REQUIRE_STEMCELL is set (CI), so it can't pass without running.
+func skipUnlessStemcellRequired(reason string) {
+	if os.Getenv("REQUIRE_STEMCELL") != "" {
+		Fail(reason + " (REQUIRE_STEMCELL is set)")
+	}
+	Skip(reason)
+}

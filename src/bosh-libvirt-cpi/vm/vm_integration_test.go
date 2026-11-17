@@ -37,7 +37,7 @@ var _ = Describe("VM (integration)", func() {
 			skipUnlessLibvirtRequired("LIBVIRT_URI not set")
 		}
 		if os.Getenv("STEMCELL_PATH") == "" {
-			Skip("STEMCELL_PATH not set")
+			skipUnlessStemcellRequired("STEMCELL_PATH not set")
 		}
 
 		var err error

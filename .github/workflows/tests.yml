@@ -138,13 +138,29 @@ jobs:
           go mod vendor
         fi
 
+    - name: Resolve stemcell version
+      id: stemcell
+      run: echo "version=$(bash .github/scripts/download-stemcell.sh --version)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache stemcell
+      uses: actions/cache@v6
+      with:
+        path: /tmp/stemcell
+        key: stemcell-warden-boshlite-ubuntu-noble-${{ steps.stemcell.outputs.version }}
+
+    - name: Download stemcell (verified against bosh.io SHA-256)
+      run: bash .github/scripts/download-stemcell.sh /tmp/stemcell
+
     - name: Run integration tests (QEMU)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
-      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI explicitly, and
-      # REQUIRE_LIBVIRT so a missing/unreachable libvirt fails instead of skipping.
-      run: sudo env LIBVIRT_URI="${LIBVIRT_URI}" REQUIRE_LIBVIRT=1 "$(which go)" test -tags integration -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI/STEMCELL_PATH
+      # explicitly; REQUIRE_* make missing inputs fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
+          REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -mod=vendor ./...
 
     - name: Generate coverage
       working-directory: src/bosh-libvirt-cpi
@@ -196,13 +212,29 @@ jobs:
           go mod vendor
         fi
 
+    - name: Resolve stemcell version
+      id: stemcell
+      run: echo "version=$(bash .github/scripts/download-stemcell.sh --version)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache stemcell
+      uses: actions/cache@v6
+      with:
+        path: /tmp/stemcell
+        key: stemcell-warden-boshlite-ubuntu-noble-${{ steps.stemcell.outputs.version }}
+
+    - name: Download stemcell (verified against bosh.io SHA-256)
+      run: bash .github/scripts/download-stemcell.sh /tmp/stemcell
+
     - name: Run integration tests (LXC)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: lxc:///
-      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI explicitly, and
-      # REQUIRE_LIBVIRT so a missing/unreachable libvirt fails instead of skipping.
-      run: sudo env LIBVIRT_URI="${LIBVIRT_URI}" REQUIRE_LIBVIRT=1 "$(which go)" test -tags integration -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI/STEMCELL_PATH
+      # explicitly; REQUIRE_* make missing inputs fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
+          REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -mod=vendor ./...
 
     - name: Generate coverage
       working-directory: src/bosh-libvirt-cpi
