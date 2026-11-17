@@ -69,6 +69,44 @@ jobs:
         name: cpi-binary
         path: src/bosh-libvirt-cpi/bin/cpi
 
+  aarch64-tcg-boot:
+    name: aarch64 guest boot (QEMU TCG)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install QEMU (aarch64) + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients libvirt-dev e2fsprogs
+        sudo systemctl start libvirtd
+        sudo virsh net-start default || true
+
+    - name: Build aarch64 fixture (Ubuntu arm64 kernel + ubuntu-base rootfs)
+      run: bash .github/scripts/aarch64-boot-fixture.sh /tmp/aarch64
+
+    - name: Boot aarch64 guest and hot-plug a disk
+      working-directory: src/bosh-libvirt-cpi
+      env:
+        LIBVIRT_URI: qemu:///system
+        AARCH64_DIR: /tmp/aarch64
+      run: |
+        sudo -E "$(which go)" test -tags integration_aarch64 -mod=vendor ./driver/ \
+          -timeout 40m -v -ginkgo.v -ginkgo.focus 'aarch64 guest boot'
+
+    - name: Guest console log
+      if: always()
+      run: sudo cat /tmp/bosh-vm-bosh-aarch64-boot-test-console.log 2>/dev/null | tail -100 || true
+
   integration-tests-qemu:
     name: Integration Tests (QEMU)
     runs-on: ubuntu-latest
