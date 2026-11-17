@@ -346,6 +346,19 @@ var _ = Describe("vm.Factory", func() {
 				Expect(ext4Builder.BuildDomainDisks.EphemeralFormat).To(Equal("raw"))
 			})
 
+			It("pre-creates /var/vcap/store owned by vcap (uid 1000), like the LXC rootfs", func() {
+				var cmds []string
+				runner.ExecuteFunc = func(name string, args ...string) (string, int, error) {
+					cmds = append(cmds, name+" "+strings.Join(args, " "))
+					return "", 0, nil
+				}
+				defer func() { runner.ExecuteFunc = nil }()
+				Expect(createVM()).To(Succeed())
+				store := filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/var/vcap/store")
+				Expect(cmds).To(ContainElement("mkdir -p " + store))
+				Expect(cmds).To(ContainElement("chown 1000:1000 " + store))
+			})
+
 			It("does not mount a tmpfs over /var/vcap/store in /bosh-init", func() {
 				Expect(createVM()).To(Succeed())
 				initScript := string(runner.PutContents[filepath.Join(tmpDir, "vms/vm-uuid-vm-1/rootfs.img.mnt/bosh-init")])

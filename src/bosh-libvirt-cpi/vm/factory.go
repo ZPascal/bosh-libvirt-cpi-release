@@ -735,6 +735,11 @@ func (f Factory) provisionExt4Rootfs(
 	} {
 		_, _, _ = f.runner.Execute("mkdir", "-p", dd)
 	}
+	// /var/vcap/store is a plain rootfs dir until a persistent disk is mounted
+	// over it; give it vcap ownership (uid/gid 1000) as the LXC rootfs does.
+	storeDir := mntDir + "/var/vcap/store"
+	_, _, _ = f.runner.Execute("mkdir", "-p", storeDir)
+	_, _, _ = f.runner.Execute("chown", "1000:1000", storeDir)
 	// The warden stemcell's agent bind-mounts persistent disks from a path the
 	// CPI provides; QEMU hot-plugs them as virtio block devices instead.
 	f.configureAgentForVirtioDisks(mntDir + "/var/vcap/bosh/agent.json")
