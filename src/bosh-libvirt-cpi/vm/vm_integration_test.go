@@ -4,7 +4,11 @@ package vm_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -90,9 +94,10 @@ var _ = Describe("VM (integration)", func() {
 	})
 
 	It("creates a VM, attaches a disk, reports it, detaches, and deletes", func() {
-		sc, err := stemcellFac.ImportFromPath(stemcellForImport(tmpDir), "x86_64")
+		sc, err := stemcellFac.ImportFromPath(stemcellForImport(tmpDir), stemcellArchFromEnv())
 		Expect(err).ToNot(HaveOccurred())
 		defer sc.Delete()
+		Expect(sc.Architecture()).To(Equal(stemcellArchFromEnv()))
 
 		agentID := apiv1.NewAgentID("agent-integration-1")
 		cloudProps := apiv1.CloudPropsImpl{RawMessage: json.RawMessage(`{"memory": 256, "cpus": 1, "ephemeral_disk": 1000}`)}
@@ -101,6 +106,27 @@ var _ = Describe("VM (integration)", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(v.ID().AsString()).To(HavePrefix("vm-"))
 		defer v.Delete()
+
+		// EXPECT_AGENT_LOG (LXC, where the VM's rootfs is a host directory):
+		// the stemcell's bosh-agent must start in the guest and load the
+		// settings the CPI injected. Without a director it then keeps retrying
+		// the mbus, so "App setup" errors are the failure signal.
+		if want := os.Getenv("EXPECT_AGENT_LOG"); want != "" {
+			agentLog := filepath.Join(tmpDir, "vms", v.ID().AsString(), "rootfs", "var", "vcap", "bosh", "log", "bosh-agent-init.log")
+			readLog := func() string {
+				b, _ := os.ReadFile(agentLog)
+				return string(b)
+			}
+			Eventually(readLog, 3*time.Minute, 2*time.Second).Should(ContainSubstring(want))
+			time.Sleep(15 * time.Second)
+			agentOutput := readLog()
+			lines := strings.Split(strings.TrimSpace(agentOutput), "\n")
+			if len(lines) > 40 {
+				lines = lines[len(lines)-40:]
+			}
+			fmt.Fprintf(GinkgoWriter, "bosh-agent-init.log (tail):\n%s\n", strings.Join(lines, "\n"))
+			Expect(agentOutput).ToNot(ContainSubstring("App setup"))
+		}
 
 		disk, err := diskFactory.Create(512)
 		Expect(err).ToNot(HaveOccurred())

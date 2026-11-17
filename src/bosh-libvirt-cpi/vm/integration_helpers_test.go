@@ -12,6 +12,7 @@ import (
 
 	"bosh-libvirt-cpi/driver"
 	"bosh-libvirt-cpi/driver/domains"
+	"bosh-libvirt-cpi/stemcell"
 )
 
 func domBuilderFromEnv() driver.DomainBuilder {
@@ -68,4 +69,13 @@ func stemcellForImport(dir string) string {
 	_, err = io.Copy(out, in)
 	Expect(err).ToNot(HaveOccurred())
 	return dst
+}
+
+// stemcellArchFromEnv is the architecture to import STEMCELL_PATH with:
+// STEMCELL_ARCH (x86_64, aarch64 or arm64), x86_64 when unset.
+func stemcellArchFromEnv() string {
+	if arch := os.Getenv("STEMCELL_ARCH"); arch != "" {
+		return stemcell.NormalizeArch(arch)
+	}
+	return stemcell.ArchX86_64
 }

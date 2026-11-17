@@ -109,6 +109,48 @@ jobs:
       if: always()
       run: sudo cat /tmp/bosh-vm-bosh-aarch64-boot-test-console.log 2>/dev/null | tail -100 || true
 
+  arm64-stemcell:
+    name: ARM64 stemcell (LXC, native arm64)
+    runs-on: ubuntu-24.04-arm
+    needs: build
+    timeout-minutes: 60
+    env:
+      # aws-samples/sample-cloud-foundry-graviton (MIT-0): ARM64 stemcell recipe.
+      GRAVITON_SAMPLE_REF: 1e53fa1872dab4be8b5029b5d948dba4c078978f
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Check out the ARM64 BOSH sample
+      uses: actions/checkout@v7
+      with:
+        repository: aws-samples/sample-cloud-foundry-graviton
+        ref: ${{ env.GRAVITON_SAMPLE_REF }}
+        path: graviton
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev
+        sudo systemctl start libvirtd
+
+    - name: Build ARM64 stemcell
+      run: bash .github/scripts/build-arm64-stemcell.sh graviton /tmp/stemcell/stemcell-arm64.tgz
+
+    - name: Import the stemcell, create a VM from it, check its agent starts
+      working-directory: src/bosh-libvirt-cpi
+      # sudo-rs ignores -E: pass the inputs explicitly. REQUIRE_* fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI=lxc:/// STEMCELL_PATH=/tmp/stemcell/stemcell-arm64.tgz STEMCELL_ARCH=aarch64 \
+          EXPECT_AGENT_LOG="Starting agent" REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -mod=vendor ./stemcell/ ./vm/ -v -ginkgo.v
+
   integration-tests-qemu:
     name: Integration Tests (QEMU)
     runs-on: ubuntu-latest
@@ -229,7 +271,7 @@ jobs:
       # explicitly; REQUIRE_* make missing inputs fail instead of skip.
       run: |
         sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
-          REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          EXPECT_AGENT_LOG="Starting agent" REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
           "$(which go)" test -tags integration -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
