@@ -22,6 +22,40 @@ dump_vm_disks() {
   done
 }
 
+# Director blobstore (nginx WebDAV) state: a 500 on PUT is usually nginx being
+# unable to write the blob or its request-body temp file. Shows nginx's own
+# error log plus owner/mode of every directory on the write path.
+dump_blobstore() {
+  echo "=== director blobstore (nginx) diagnostics ==="
+  ssh -i ${SSH_KEY} \
+    -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+    root@${DIRECTOR_IP} '
+    echo "--- nginx error logs ---"
+    for f in /var/vcap/sys/log/blobstore/*error*.log /var/vcap/packages/nginx/logs/error.log; do
+      [ -f "$f" ] && { echo "## $f"; tail -60 "$f"; }
+    done
+    echo "--- nginx access log (last 20, PUTs show the status) ---"
+    for f in /var/vcap/sys/log/blobstore/*access*.log; do
+      [ -f "$f" ] && { echo "## $f"; tail -20 "$f"; }
+    done
+    echo "--- nginx write settings ---"
+    grep -hE "^\s*(user|root|dav_methods|create_full_put_path|client_body_temp_path|client_max_body_size)\b" \
+      /var/vcap/jobs/blobstore/config/nginx.conf 2>/dev/null || echo "(no blobstore nginx.conf)"
+    echo "--- owner/mode on the write path ---"
+    for d in /var/vcap/store /var/vcap/store/blobstore /var/vcap/store/blobstore/store \
+             /var/vcap/data/blobstore /var/vcap/data/blobstore/tmp /var/vcap/data/tmp /var/vcap/data/blobs; do
+      stat -c "%A %U:%G %n" "$d" 2>/dev/null || echo "(missing) $d"
+    done
+    for d in $(grep -hoE "^\s*(root|client_body_temp_path)\s+[^;]+" /var/vcap/jobs/blobstore/config/nginx.conf 2>/dev/null | awk "{print \$2}"); do
+      stat -c "%A %U:%G %n" "$d" 2>/dev/null || echo "(missing) $d"
+    done
+    echo "--- /var/vcap/store mount ---"
+    findmnt -T /var/vcap/store 2>/dev/null || mount | grep /var/vcap/store || echo "(not a separate mount)"
+    echo "--- nginx processes (user) ---"
+    ps -C nginx -o user,pid,args || echo "(no nginx running)"
+    ' 2>&1 || echo "(SSH into director VM failed)"
+}
+
 case "$PHASE" in
   wait)
     echo "=== network diagnostics ==="
@@ -101,7 +135,8 @@ case "$PHASE" in
     ;;
 
   upload)
-    echo "=== upload-stemcell failed - dumping CPI task debug log ==="
+    dump_blobstore
+    echo "=== upload failed - dumping last task debug log ==="
     TASK_ID=$(bosh -e ${BOSH_ENV_ALIAS} tasks --client admin --client-secret admin-password --recent=1 --json 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin).get('Tables',[{}])[0].get('Rows',[]); print(t[0].get('id','')) if t else ''" 2>/dev/null || echo "")
     [ -n "$TASK_ID" ] && bosh -e ${BOSH_ENV_ALIAS} task "$TASK_ID" --debug --client admin --client-secret admin-password 2>/dev/null | tail -100 || true
     echo "=== SSH diagnostics from director VM ==="

@@ -65,7 +65,10 @@ jobs:
         timeout 300 bosh -e "${BOSH_ENV_ALIAS}" upload-release \
           https://bosh.io/d/github.com/cloudfoundry/bosh?v=283.1.3 \
           --sha1 91a350d377e9185fbc950a1168073eb1e3207eae \
-          --client admin --client-secret admin-password
+          --client admin --client-secret admin-password || {
+            bash .github/scripts/e2e-debug-${{ inputs.backend }}.sh upload || true
+            exit 1
+          }
 
     - name: Upload stemcell and release (LXC)
       if: inputs.backend == 'lxc'
