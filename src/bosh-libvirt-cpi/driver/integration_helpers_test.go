@@ -4,6 +4,7 @@ package driver_test
 
 import (
 	"fmt"
+	. "github.com/onsi/ginkgo"
 	"net/url"
 	"os"
 
@@ -57,4 +58,14 @@ func testDomainXML(name string) string {
   <os><type arch='x86_64'>hvm</type></os>
 </domain>`, name)
 	}
+}
+
+// skipUnlessLibvirtRequired skips a libvirt integration spec whose libvirt
+// isn't configured or reachable, but fails it when REQUIRE_LIBVIRT is set
+// (CI), so a dropped LIBVIRT_URI can't make the suite pass without testing.
+func skipUnlessLibvirtRequired(reason string) {
+	if os.Getenv("REQUIRE_LIBVIRT") != "" {
+		Fail(reason + " (REQUIRE_LIBVIRT is set)")
+	}
+	Skip(reason)
 }

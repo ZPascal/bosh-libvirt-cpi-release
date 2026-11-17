@@ -1,5 +1,6 @@
 #!/bin/sh
 export PATH=/var/vcap/bosh/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+mkdir -p /var/vcap/bosh/log
 exec >>/var/vcap/bosh/log/bosh-agent-init.log 2>&1
 mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sysfs /sys 2>/dev/null || true

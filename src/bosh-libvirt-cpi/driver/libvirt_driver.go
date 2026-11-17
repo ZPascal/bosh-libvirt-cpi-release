@@ -268,6 +268,14 @@ func (d LibvirtDriver) DeleteStorageVol(poolName, volName string) error {
 	return vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
 }
 
+func (d LibvirtDriver) HostArch() (string, error) {
+	capsXML, err := d.conn.GetCapabilities()
+	if err != nil {
+		return "", err
+	}
+	return hostArchFromCapabilities(capsXML)
+}
+
 func (d LibvirtDriver) IsMissingDomainErr(err error) bool {
 	return errors.Is(err, libvirt.ERR_NO_DOMAIN)
 }

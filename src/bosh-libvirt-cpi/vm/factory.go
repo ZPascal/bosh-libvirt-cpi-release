@@ -271,12 +271,22 @@ func (f Factory) Create(
 		}
 	}
 
+	// The guest runs the stemcell's architecture; the libvirt host's decides
+	// between KVM and emulation (the CPI may reach libvirt over SSH).
+	hostArch, err := f.driver.HostArch()
+	if err != nil {
+		f.cleanUpPartialCreate(vm)
+		return nil, bosherr.WrapError(err, "Reading libvirt host architecture")
+	}
+
 	domainProps := driver.VMDomainProps{
 		CPUs:     vmProps.CPUs,
 		MemoryMB: vmProps.Memory,
 		Network:  f.opts.Network,
 		MAC:      vmMAC,
 		Kernel:   vmProps.Kernel,
+		Arch:     stemcell.Architecture(),
+		HostArch: hostArch,
 	}
 
 	xml, err := f.domBuilder.BuildDomain(vmID, domainProps, disks)

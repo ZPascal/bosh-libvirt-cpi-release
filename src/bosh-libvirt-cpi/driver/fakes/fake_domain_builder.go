@@ -6,6 +6,7 @@ type FakeDomainBuilder struct {
 	BuildDomainXML   string
 	BuildDomainErr   error
 	BuildDomainDisks driver.DomainDiskPaths // disks of the last BuildDomain call
+	BuildDomainProps driver.VMDomainProps   // props of the last BuildDomain call
 
 	BuildStemcellDomainXML string
 	BuildStemcellDomainErr error
@@ -21,6 +22,7 @@ var _ driver.DomainBuilder = &FakeDomainBuilder{}
 
 func (b *FakeDomainBuilder) BuildDomain(id string, props driver.VMDomainProps, disks driver.DomainDiskPaths) (string, error) {
 	b.BuildDomainDisks = disks
+	b.BuildDomainProps = props
 	return b.BuildDomainXML, b.BuildDomainErr
 }
 

@@ -3,7 +3,12 @@
 package vm_test
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -34,16 +39,16 @@ var _ = Describe("VM (integration)", func() {
 	BeforeEach(func() {
 		uri := os.Getenv("LIBVIRT_URI")
 		if uri == "" {
-			Skip("LIBVIRT_URI not set")
+			skipUnlessLibvirtRequired("LIBVIRT_URI not set")
 		}
 		if os.Getenv("STEMCELL_PATH") == "" {
-			Skip("STEMCELL_PATH not set")
+			skipUnlessStemcellRequired("STEMCELL_PATH not set")
 		}
 
 		var err error
 		conn, err = libvirt.NewConnect(uri)
 		if err != nil {
-			Skip("libvirt connection unavailable: " + err.Error())
+			skipUnlessLibvirtRequired("libvirt connection unavailable: " + err.Error())
 		}
 
 		logger = boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
@@ -59,6 +64,9 @@ var _ = Describe("VM (integration)", func() {
 
 		tmpDir, err = os.MkdirTemp("", "vm-integration-test")
 		Expect(err).ToNot(HaveOccurred())
+		// MkdirTemp creates 0700; QEMU runs as libvirt-qemu and must reach the
+		// VM's disk images below it ("Cannot access storage file … Permission denied").
+		Expect(os.Chmod(tmpDir, 0755)).To(Succeed())
 
 		stemcellFac = stemcell.NewFactory(
 			stemcell.FactoryOpts{DirPath: tmpDir + "/stemcells"},
@@ -86,19 +94,46 @@ var _ = Describe("VM (integration)", func() {
 	})
 
 	It("creates a VM, attaches a disk, reports it, detaches, and deletes", func() {
-		sc, err := stemcellFac.ImportFromPath(os.Getenv("STEMCELL_PATH"))
+		sc, err := stemcellFac.ImportFromPath(stemcellForImport(tmpDir), stemcellArchFromEnv())
 		Expect(err).ToNot(HaveOccurred())
 		defer sc.Delete()
+		Expect(sc.Architecture()).To(Equal(stemcellArchFromEnv()))
 
 		agentID := apiv1.NewAgentID("agent-integration-1")
-		cloudProps := apiv1.NewVMCloudPropsFromMap(map[string]interface{}{
-			"memory": 256, "cpus": 1, "ephemeral_disk": 1000,
-		})
+		cloudProps := apiv1.CloudPropsImpl{RawMessage: json.RawMessage(`{"memory": 256, "cpus": 1, "ephemeral_disk": 1000}`)}
 
 		v, err := vmFactory.Create(agentID, sc, cloudProps, apiv1.Networks{}, apiv1.VMEnv{})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(v.ID().AsString()).To(HavePrefix("vm-"))
 		defer v.Delete()
+
+		// EXPECT_AGENT_LOG (LXC, where the VM's rootfs is a host directory):
+		// the stemcell's bosh-agent must start in the guest and load the
+		// settings the CPI injected. Without a director it then keeps retrying
+		// the mbus, so "App setup" errors are the failure signal.
+		if want := os.Getenv("EXPECT_AGENT_LOG"); want != "" {
+			agentLog := filepath.Join(tmpDir, "vms", v.ID().AsString(), "rootfs", "var", "vcap", "bosh", "log", "bosh-agent-init.log")
+			readLog := func() string {
+				b, _ := os.ReadFile(agentLog)
+				return string(b)
+			}
+			deadline := time.Now().Add(3 * time.Minute)
+			for !strings.Contains(readLog(), want) && time.Now().Before(deadline) {
+				time.Sleep(2 * time.Second)
+			}
+			if !strings.Contains(readLog(), want) {
+				dumpLXCGuest(conn, v.ID().AsString(), filepath.Join(tmpDir, "vms", v.ID().AsString(), "rootfs"))
+				Fail(fmt.Sprintf("%q not in the guest's agent log after 3m (log: %q)", want, readLog()))
+			}
+			time.Sleep(15 * time.Second)
+			agentOutput := readLog()
+			lines := strings.Split(strings.TrimSpace(agentOutput), "\n")
+			if len(lines) > 40 {
+				lines = lines[len(lines)-40:]
+			}
+			fmt.Fprintf(GinkgoWriter, "bosh-agent-init.log (tail):\n%s\n", strings.Join(lines, "\n"))
+			Expect(agentOutput).ToNot(ContainSubstring("App setup"))
+		}
 
 		disk, err := diskFactory.Create(512)
 		Expect(err).ToNot(HaveOccurred())

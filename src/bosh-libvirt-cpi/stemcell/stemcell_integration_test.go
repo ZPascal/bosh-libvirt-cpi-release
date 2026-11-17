@@ -30,18 +30,18 @@ var _ = Describe("Stemcell (integration)", func() {
 	BeforeEach(func() {
 		uri := os.Getenv("LIBVIRT_URI")
 		if uri == "" {
-			Skip("LIBVIRT_URI not set")
+			skipUnlessLibvirtRequired("LIBVIRT_URI not set")
 		}
 
 		stemcellPath := os.Getenv("STEMCELL_PATH")
 		if stemcellPath == "" {
-			Skip("STEMCELL_PATH not set - provide path to a BOSH stemcell tarball")
+			skipUnlessStemcellRequired("STEMCELL_PATH not set - provide path to a BOSH stemcell tarball")
 		}
 
 		var err error
 		conn, err = libvirt.NewConnect(uri)
 		if err != nil {
-			Skip("libvirt connection unavailable: " + err.Error())
+			skipUnlessLibvirtRequired("libvirt connection unavailable: " + err.Error())
 		}
 
 		logger = boshlog.NewWriterLogger(boshlog.LevelDebug, os.Stderr)
@@ -73,19 +73,18 @@ var _ = Describe("Stemcell (integration)", func() {
 	})
 
 	It("imports a stemcell tarball and creates a domain, then deletes it", func() {
-		stemcellPath := os.Getenv("STEMCELL_PATH")
-
-		sc, err := factory.ImportFromPath(stemcellPath)
+		sc, err := factory.ImportFromPath(stemcellForImport(tmpDir), stemcellArchFromEnv())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(sc).ToNot(BeNil())
 		Expect(sc.ID().AsString()).To(HavePrefix("sc-"))
+		Expect(sc.Architecture()).To(Equal(stemcellArchFromEnv()))
 
 		exists, err := sc.Exists()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(exists).To(BeTrue())
 
 		imagePath := sc.ImagePath()
-		Expect(imagePath).To(HaveSuffix(".qcow2"))
+		Expect(imagePath).To(HaveSuffix("image." + domBuilderFromEnv().DiskImageFormat()))
 		Expect(filepath.Dir(imagePath)).To(Equal(filepath.Join(tmpDir, sc.ID().AsString())))
 
 		err = sc.Delete()

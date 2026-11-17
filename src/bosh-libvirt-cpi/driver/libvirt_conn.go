@@ -11,6 +11,7 @@ type LibvirtConn interface {
 	DomainDefineXML(xml string) (*libvirt.Domain, error)
 	LookupDomainByName(id string) (*libvirt.Domain, error)
 	LookupStoragePoolByName(name string) (*libvirt.StoragePool, error)
+	GetCapabilities() (string, error)
 	Close() (int, error)
 }
 
@@ -56,6 +57,10 @@ func (c *LibvirtConnImpl) LookupDomainByName(id string) (*libvirt.Domain, error)
 func (c *LibvirtConnImpl) LookupStoragePoolByName(name string) (*libvirt.StoragePool, error) {
 	return c.conn.LookupStoragePoolByName(name)
 }
+func (c *LibvirtConnImpl) GetCapabilities() (string, error) {
+	return c.conn.GetCapabilities()
+}
+
 func (c *LibvirtConnImpl) Close() (int, error) {
 	return c.conn.Close()
 }

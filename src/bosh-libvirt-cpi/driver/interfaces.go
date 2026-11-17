@@ -23,6 +23,10 @@ type Driver interface {
 	CreateStorageVol(poolName, volName string, sizeMB int) (string, error)
 	DeleteStorageVol(poolName, volName string) error
 
+	// Host: CPU architecture of the libvirt host ("x86_64", "aarch64", ...),
+	// which decides between KVM and emulation for a guest architecture.
+	HostArch() (string, error)
+
 	// Error helpers
 	IsMissingDomainErr(err error) bool
 }

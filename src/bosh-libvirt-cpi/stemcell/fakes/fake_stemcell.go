@@ -11,6 +11,8 @@ type FakeStemcell struct {
 
 	ImagePathResult string
 
+	ArchitectureResult string // defaults to "x86_64"
+
 	ExistsResult bool
 	ExistsErr    error
 	DeleteErr    error
@@ -26,3 +28,10 @@ func (s *FakeStemcell) ID() apiv1.StemcellCID { return s.cid }
 func (s *FakeStemcell) ImagePath() string     { return s.ImagePathResult }
 func (s *FakeStemcell) Exists() (bool, error) { return s.ExistsResult, s.ExistsErr }
 func (s *FakeStemcell) Delete() error         { return s.DeleteErr }
+
+func (s *FakeStemcell) Architecture() string {
+	if s.ArchitectureResult == "" {
+		return "x86_64"
+	}
+	return s.ArchitectureResult
+}

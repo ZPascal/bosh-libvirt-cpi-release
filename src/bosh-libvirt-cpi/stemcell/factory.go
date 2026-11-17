@@ -80,7 +80,7 @@ func NewFactory(
 	}
 }
 
-func (f Factory) ImportFromPath(imagePath string) (Stemcell, error) {
+func (f Factory) ImportFromPath(imagePath, arch string) (Stemcell, error) {
 	id, err := f.uuidGen.Generate()
 	if err != nil {
 		return nil, bosherr.WrapError(err, "Generating stemcell id")
@@ -96,6 +96,12 @@ func (f Factory) ImportFromPath(imagePath string) (Stemcell, error) {
 	}
 
 	stemcell := f.newStemcell(apiv1.NewStemcellCID(id))
+
+	err = f.runner.Put(filepath.Join(stemcellPath, architectureFile), []byte(NormalizeArch(arch)))
+	if err != nil {
+		f.cleanUpPartialImport(stemcell)
+		return nil, bosherr.WrapErrorf(err, "Recording stemcell architecture")
+	}
 
 	err = stemcell.Prepare()
 	if err != nil {

@@ -19,6 +19,10 @@ type VMDomainProps struct {
 	// Kernel enables direct kernel boot (skips the BIOS/disk bootloader). When
 	// set, the VM boots this kernel with the ext4 root disk mounted at /dev/vda.
 	Kernel string
+	// Arch is the guest architecture ("x86_64" or "aarch64"; empty = x86_64),
+	// HostArch the libvirt host's. Different architectures are emulated (TCG).
+	Arch     string
+	HostArch string
 }
 
 // DomainDiskPaths holds the paths to disk images for a VM domain.

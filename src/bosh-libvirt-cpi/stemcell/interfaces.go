@@ -6,7 +6,9 @@ import (
 
 // Importer imports a stemcell image from a local path.
 type Importer interface {
-	ImportFromPath(string) (Stemcell, error)
+	// ImportFromPath imports the stemcell image and records its guest
+	// architecture (see NormalizeArch).
+	ImportFromPath(imagePath, arch string) (Stemcell, error)
 }
 
 var _ Importer = Factory{}
@@ -23,6 +25,8 @@ type Stemcell interface {
 	ID() apiv1.StemcellCID
 
 	ImagePath() string
+	// Architecture is the guest architecture ("x86_64" or "aarch64").
+	Architecture() string
 
 	Exists() (bool, error)
 	Delete() error

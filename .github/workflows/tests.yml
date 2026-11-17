@@ -69,6 +69,88 @@ jobs:
         name: cpi-binary
         path: src/bosh-libvirt-cpi/bin/cpi
 
+  aarch64-tcg-boot:
+    name: aarch64 guest boot (QEMU TCG)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 45
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install QEMU (aarch64) + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y qemu-system-arm qemu-utils libvirt-daemon-system libvirt-clients libvirt-dev e2fsprogs
+        sudo systemctl start libvirtd
+        sudo virsh net-start default || true
+
+    - name: Build aarch64 fixture (Ubuntu arm64 kernel + ubuntu-base rootfs)
+      run: bash .github/scripts/aarch64-boot-fixture.sh /tmp/aarch64
+
+    - name: Boot aarch64 guest and hot-plug a disk
+      working-directory: src/bosh-libvirt-cpi
+      env:
+        LIBVIRT_URI: qemu:///system
+        AARCH64_DIR: /tmp/aarch64
+      run: |
+        # Pass the test's inputs explicitly: sudo-rs (Ubuntu 26.04) ignores -E.
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" AARCH64_DIR="${AARCH64_DIR}" \
+          "$(which go)" test -tags integration_aarch64 -mod=vendor ./driver/ \
+          -timeout 40m -v -ginkgo.v -ginkgo.focus 'aarch64 guest boot'
+
+    - name: Guest console log
+      if: always()
+      run: sudo cat /tmp/bosh-vm-bosh-aarch64-boot-test-console.log 2>/dev/null | tail -100 || true
+
+  arm64-stemcell:
+    name: ARM64 stemcell (LXC, native arm64)
+    runs-on: ubuntu-24.04-arm
+    needs: build
+    timeout-minutes: 60
+    env:
+      # aws-samples/sample-cloud-foundry-graviton (MIT-0): ARM64 stemcell recipe.
+      GRAVITON_SAMPLE_REF: 1e53fa1872dab4be8b5029b5d948dba4c078978f
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Check out the ARM64 BOSH sample
+      uses: actions/checkout@v7
+      with:
+        repository: aws-samples/sample-cloud-foundry-graviton
+        ref: ${{ env.GRAVITON_SAMPLE_REF }}
+        path: graviton
+
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/bosh-libvirt-cpi/go.mod
+        cache-dependency-path: src/bosh-libvirt-cpi/go.sum
+
+    - name: Install LXC + libvirt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y lxc libvirt-daemon-system libvirt-daemon-driver-lxc libvirt-dev
+        sudo systemctl start libvirtd
+
+    - name: Build ARM64 stemcell
+      run: bash .github/scripts/build-arm64-stemcell.sh graviton /tmp/stemcell/stemcell-arm64.tgz
+
+    - name: Import the stemcell, create a VM from it, check its agent starts
+      working-directory: src/bosh-libvirt-cpi
+      # sudo-rs ignores -E: pass the inputs explicitly. REQUIRE_* fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI=lxc:/// STEMCELL_PATH=/tmp/stemcell/stemcell-arm64.tgz STEMCELL_ARCH=aarch64 \
+          EXPECT_AGENT_LOG="Starting agent" REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -mod=vendor ./stemcell/ ./vm/ -v -ginkgo.v
+
   integration-tests-qemu:
     name: Integration Tests (QEMU)
     runs-on: ubuntu-latest
@@ -98,15 +180,29 @@ jobs:
           go mod vendor
         fi
 
+    - name: Resolve stemcell version
+      id: stemcell
+      run: echo "version=$(bash .github/scripts/download-stemcell.sh --version)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache stemcell
+      uses: actions/cache@v6
+      with:
+        path: /tmp/stemcell
+        key: stemcell-warden-boshlite-ubuntu-noble-${{ steps.stemcell.outputs.version }}
+
+    - name: Download stemcell (verified against bosh.io SHA-256)
+      run: bash .github/scripts/download-stemcell.sh /tmp/stemcell
+
     - name: Run integration tests (QEMU)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: qemu:///system
-      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
-
-    - name: Generate coverage
-      working-directory: src/bosh-libvirt-cpi
-      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI/STEMCELL_PATH
+      # explicitly; REQUIRE_* make missing inputs fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
+          REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7
@@ -154,15 +250,29 @@ jobs:
           go mod vendor
         fi
 
+    - name: Resolve stemcell version
+      id: stemcell
+      run: echo "version=$(bash .github/scripts/download-stemcell.sh --version)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache stemcell
+      uses: actions/cache@v6
+      with:
+        path: /tmp/stemcell
+        key: stemcell-warden-boshlite-ubuntu-noble-${{ steps.stemcell.outputs.version }}
+
+    - name: Download stemcell (verified against bosh.io SHA-256)
+      run: bash .github/scripts/download-stemcell.sh /tmp/stemcell
+
     - name: Run integration tests (LXC)
       working-directory: src/bosh-libvirt-cpi
       env:
         LIBVIRT_URI: lxc:///
-      run: sudo -E "$(which go)" test -tags integration -mod=vendor ./...
-
-    - name: Generate coverage
-      working-directory: src/bosh-libvirt-cpi
-      run: sudo -E "$(which go)" test -coverprofile=coverage.out -mod=vendor ./...
+      # sudo-rs (Ubuntu 26.04) ignores -E: pass LIBVIRT_URI/STEMCELL_PATH
+      # explicitly; REQUIRE_* make missing inputs fail instead of skip.
+      run: |
+        sudo env LIBVIRT_URI="${LIBVIRT_URI}" STEMCELL_PATH=/tmp/stemcell/stemcell.tgz \
+          EXPECT_AGENT_LOG="Starting agent" REQUIRE_LIBVIRT=1 REQUIRE_STEMCELL=1 \
+          "$(which go)" test -tags integration -coverprofile=coverage.out -mod=vendor ./...
 
     - name: Upload coverage
       uses: codecov/codecov-action@v7

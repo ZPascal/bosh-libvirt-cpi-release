@@ -59,35 +59,35 @@ var _ = Describe("stemcell.Factory", func() {
 
 	Describe("ImportFromPath", func() {
 		It("returns stemcell with 'sc-' prefixed ID on success", func() {
-			sc, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			sc, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(sc.ID().AsString()).To(Equal("sc-uuid-1"))
 		})
 
 		It("returns error when UUID generation fails", func() {
 			uuidGen.GenerateErr = errors.New("uuid failure")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Generating stemcell id"))
 		})
 
 		It("returns error when Upload fails", func() {
 			factory.ConvertToQCOW2 = func(src, dst string) error { return errors.New("upload failed") }
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Converting stemcell image to qcow2"))
 		})
 
 		It("returns error when BuildStemcellDomain fails", func() {
 			builder.BuildStemcellDomainErr = errors.New("build failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Building stemcell domain XML"))
 		})
 
 		It("returns error when DefineDomain fails", func() {
 			drv.DefineDomainErr = errors.New("define failed")
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Defining stemcell domain"))
 		})
@@ -122,7 +122,7 @@ var _ = Describe("stemcell.Factory", func() {
 			}
 			defer func() { runner.ExecuteFunc = nil }()
 
-			sc, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			sc, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(sc.ID().AsString()).To(Equal("sc-uuid-1"))
 			Expect(uploadSrc).To(Equal("/tmp/stemcell.tgz"))
@@ -143,7 +143,7 @@ var _ = Describe("stemcell.Factory", func() {
 			}
 			defer func() { runner.UploadFunc = nil }()
 
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("Uploading stemcell tarball to remote host"))
 		})
@@ -170,7 +170,7 @@ var _ = Describe("stemcell.Factory", func() {
 			}
 			defer func() { runner.ExecuteFunc = nil }()
 
-			_, err := factory.ImportFromPath("/tmp/stemcell.tgz")
+			_, err := factory.ImportFromPath("/tmp/stemcell.tgz", "x86_64")
 			Expect(err).ToNot(HaveOccurred())
 
 			joined := strings.Join(executedCmds, "\n")
