@@ -36,7 +36,7 @@ def xml():
         n = tpl.get('name','')
         if n and n not in ('bpm','libvirt_cpi') and n not in svcs: svcs.append(n)
     except: pass
-  svc_xml = ''.join('<service name=\"%(s)s\" type=\"5\"><status>0</status><monitor>1</monitor><pendingaction>0</pendingaction></service>' % {'s':s} for s in svcs)
+  svc_xml = ''.join('<service name=\"%(s)s\" type=\"5\"><status>%(st)d</status><monitor>%(mo)d</monitor><pendingaction>0</pendingaction></service>' % dict(s=s, st=monit_status(s)[0], mo=monit_status(s)[1]) for s in svcs)
   grp_xml = '<servicegroup name=\"vcap\">' + ''.join('<service>%s</service>' % s for s in svcs) + '</servicegroup>' if svcs else ''
   result = ('<monit id=\"stub\" incarnation=\"'+ inc + '\" version=\"5\"><services>' + svc_xml + '</services><servicegroups>' + grp_xml + '</servicegroups></monit>')
   import os as _os
@@ -83,6 +83,63 @@ def _pid_alive(pidfile):
     os.kill(pid, 0)
     return True
   except: return False
+# Classic monit jobs (no bpm.yml) are started/stopped with the start/stop
+# program from their monitrc, as the uid/gid monit would use, and reported by
+# their pidfile. bpm and director services keep the handling further down.
+MONIT_GLOB = '/var/vcap/monit/job/*.monitrc'
+JOBS_DIR = '/var/vcap/jobs'
+STARTED = set()
+def monit_services():
+  import glob, re
+  q = chr(34)
+  out = {}
+  for f in sorted(glob.glob(MONIT_GLOB)):
+    job = re.sub(r'^[0-9]+_', '', os.path.basename(f)[:-len('.monitrc')])
+    for block in re.split(r'(?m)^(?=check process )', open(f).read()):
+      m = re.match(r'check process (\S+)', block)
+      if not m: continue
+      d = {'job': job, 'start': None, 'stop': None, 'uid': None, 'gid': None, 'pidfile': None}
+      pm = re.search(r'with pidfile (\S+)', block)
+      if pm: d['pidfile'] = pm.group(1)
+      sm = re.search(r'start program '+q+'([^'+q+']+)'+q+r'(?:\s+as uid (\S+) and gid (\S+))?', block)
+      if sm: d['start'], d['uid'], d['gid'] = sm.group(1), sm.group(2), sm.group(3)
+      tm = re.search(r'stop program '+q+'([^'+q+']+)'+q, block)
+      if tm: d['stop'] = tm.group(1)
+      out[m.group(1)] = d
+  return out
+def is_monitrc_managed(svc):
+  d = monit_services().get(svc)
+  return bool(d and d['start'] and not os.path.exists(os.path.join(JOBS_DIR, d['job'], 'config', 'bpm.yml')))
+def monit_status(svc):
+  # (status, monitor): 0/1 running, 512/1 not running, 0/0 not monitored.
+  if not is_monitrc_managed(svc): return (0, 1)
+  if svc not in STARTED: return (0, 0)
+  pidfile = monit_services()[svc]['pidfile']
+  return (0, 1) if pidfile and _pid_alive(pidfile) else (512, 1)
+def _ids(uid, gid):
+  import pwd, grp
+  try: u = pwd.getpwnam(uid).pw_uid
+  except Exception: u = int(uid) if str(uid).isdigit() else 1000
+  try: g = grp.getgrnam(gid).gr_gid
+  except Exception: g = int(gid) if str(gid).isdigit() else u
+  return u, g
+def run_program(cmd, uid, gid, log):
+  args = ['/bin/sh', '-c', cmd]
+  if uid:
+    u, g = _ids(uid, gid or uid)
+    setpriv = next((p for p in ['/usr/bin/setpriv','/usr/sbin/setpriv','/sbin/setpriv'] if os.path.exists(p)), 'setpriv')
+    args = [setpriv, '--reuid='+str(u), '--regid='+str(g), '--clear-groups', '--'] + args
+  return subprocess.Popen(args, stdout=log, stderr=log, start_new_session=True)
+def stop_svc(svc):
+  if not is_monitrc_managed(svc): return
+  STARTED.discard(svc)
+  d = monit_services()[svc]
+  if not d['stop']: return
+  import os as _os3; _os3.makedirs('/var/vcap/bosh/log', exist_ok=True)
+  log = open('/var/vcap/bosh/log/monit-'+svc+'.log','a')
+  console_log('stop_svc via monitrc: '+svc)
+  try: run_program(d['stop'], d['uid'], d['gid'], log).wait(timeout=120)
+  except Exception as e: log.write('stop program failed: '+str(e)+'\n'); log.flush()
 def start_svc(svc):
   import glob, socket, time
   import os as _os2; _os2.makedirs('/var/vcap/bosh/log', exist_ok=True)
@@ -229,6 +286,13 @@ def start_svc(svc):
       for f in filenames:
         try: os.chown(os.path.join(dirpath, f), 1000, 1000)
         except: pass
+  if is_monitrc_managed(svc):
+    d = monit_services()[svc]
+    STARTED.add(svc)
+    run_program(d['start'], d['uid'], d['gid'], log)
+    log.write('started '+svc+' via monitrc start program as '+str(d['uid'])+'\n'); log.flush()
+    console_log('started '+svc+' via monitrc start program')
+    return
   bpmyml = '/var/vcap/jobs/' + job + '/config/bpm.yml'
   if os.path.exists(bpmyml):
     try:
@@ -321,6 +385,8 @@ class H(http.server.BaseHTTPRequestHandler):
     svc = self.path.strip('/')
     if svc and 'action=start' in body:
       start_svc(svc)
+    elif svc and ('action=stop' in body or 'action=unmonitor' in body):
+      stop_svc(svc)
     self.send_response(200)
     self.send_header('Content-Length','0')
     self.end_headers()
