@@ -198,6 +198,33 @@ Different hypervisors support different disk formats:
 | QEMU/KVM | qcow2 | raw, qcow, vmdk |
 | LXC | Directory | - |
 
+Disk images are created with `qemu-img` (qcow2). If `qemu-img` is missing on
+the libvirt host, the CPI falls back to a raw image and attaches it as raw.
+
+### Persistent Disks
+
+| Backend | Persistent disks |
+|---------|------------------|
+| QEMU/KVM, direct kernel boot (`qemu:///system?kernel=1`) | Supported |
+| QEMU/KVM, disk boot (`qemu:///system`) | Supported only with stemcells whose agent resolves virtio disks itself (e.g. OpenStack stemcells) |
+| LXC | Not supported |
+
+On QEMU, `attach_disk` hot-plugs the disk image into the running VM as a
+virtio disk (`vdc`, `vdd`, …) with the first 20 characters of the disk CID as
+its serial; `detach_disk` unplugs it. The BOSH agent then partitions, formats
+and mounts it at `/var/vcap/store`.
+
+- **Kernel boot:** the CPI rewrites the stemcell's `agent.json` in each VM's
+  root filesystem (no bind mounts, `DevicePathResolutionType: virtio`, disk-ID
+  transform to `virtio-<serial>`), so warden-boshlite stemcells work.
+- **Disk boot:** the stemcell image is used as-is, so its own agent
+  configuration applies. warden-boshlite stemcells bind-mount persistent disks
+  and do not work here; use kernel boot for them.
+- Kernel-boot guests run no udev, so the agent finds the disk by the
+  `/dev/vdX` path in the CPI's hint. After a guest reboot, a disk can come back
+  under a different name if earlier targets were freed (e.g. after a disk
+  migration); recreate the VM in that case.
+
 ## Performance Tuning
 
 ### QEMU/KVM Optimization
