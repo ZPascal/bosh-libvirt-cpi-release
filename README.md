@@ -26,7 +26,7 @@ See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per
 
 ```bash
 # Install libvirt
-sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients virtinst
+sudo apt-get install qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst
 
 # For VirtualBox support (optional)
 sudo apt-get install virtualbox libvirt-daemon-driver-vbox

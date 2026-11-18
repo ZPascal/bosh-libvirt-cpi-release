@@ -82,7 +82,8 @@ sudo modprobe kvm_amd     # AMD CPUs
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-    qemu-kvm \
+    qemu-system-x86 \
+    qemu-utils \
     libvirt-daemon-system \
     libvirt-clients \
     virtinst \
