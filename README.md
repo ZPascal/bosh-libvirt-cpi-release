@@ -28,9 +28,6 @@ See [docs/HYPERVISOR_CONFIGURATION.md](docs/HYPERVISOR_CONFIGURATION.md) for per
 # Install libvirt
 sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients virtinst
 
-# For VirtualBox support (optional)
-sudo apt-get install virtualbox libvirt-daemon-driver-vbox
-
 # For LXC support (optional)
 sudo apt-get install lxc libvirt-daemon-driver-lxc
 
@@ -64,24 +61,6 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 }
 ```
 
-**For VirtualBox (via libvirt):**
-```json
-{
-  "BackendURI": "vbox:///session",
-  "StoreDir": "~/.bosh_libvirt_cpi",
-  "Agent": {
-    "mbus": "https://mbus:mbus-password@0.0.0.0:6868",
-    "ntp": ["0.pool.ntp.org", "1.pool.ntp.org"],
-    "blobstore": {
-      "provider": "local",
-      "options": {
-        "blobstore_path": "/var/vcap/micro_bosh/data/cache"
-      }
-    }
-  }
-}
-```
-
 **For LXC:**
 ```json
 {
@@ -100,35 +79,58 @@ Create a CPI configuration file (e.g., `config/cpi.json`):
 }
 ```
 
-For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields — see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
+For remote libvirt hosts add `Host`, `Username`, `PrivateKey`, and `HostKey` fields - see [`config/cpi-qemu-remote.json`](config/cpi-qemu-remote.json).
 
 
-## CI
+## Release binaries
 
-Tests run on every push and PR to `main`. The pipeline is defined in `.github/workflows/tests.yml` and calls two reusable workflows:
+Every tag (`v*` or `x.y.z`) publishes the `cpi` binary on the [Releases page](https://github.com/ZPascal/bosh-libvirt-cpi-release/releases), built natively on each platform:
 
-**E2E (`e2e.yml`)** — spins up a real BOSH director on the CI runner, deploys a smoke test, and tears everything down. Runs for both QEMU and LXC backends in parallel. Everything runs in a single job: the director VM lives inside the runner's libvirt bridge network (`192.168.122.x`) and is unreachable from any other runner, so setup, tests, and teardown must share one machine.
+| OS | amd64 | arm64 |
+|----|:-----:|:-----:|
+| Linux | yes | yes |
+| macOS | yes | yes |
+| Windows | no | no |
+
+Windows is not offered because the CPI links libvirt's C library, which has no Windows build (see [INSTALL.md](docs/INSTALL.md#5-windows---not-supported)). Each archive contains `cpi`, `LICENSE` and the sample `config/` files, and `checksums.txt` lists the SHA-256 sums. libvirt must be installed on the machine that runs the binary.
+
+## Getting started as a user
+
+To run a BOSH Director with this CPI on your own machine, follow [docs/INSTALL.md](docs/INSTALL.md). It covers host prerequisites, CPI configuration, and `bosh create-env` with the ops files in `manifests/`.
+
+## Set up a BOSH Director in GitHub Actions
+
+The composite action `setup-bosh-director` installs libvirt (QEMU or LXC) and bootstraps a BOSH Director backed by this CPI on the runner. It runs as steps inside your job, so your own steps can talk to the Director afterwards:
 
 ```yaml
-jobs:
-  e2e:
-    uses: ./.github/workflows/e2e.yml
+steps:
+  - uses: actions/checkout@v7
     with:
-      backend: qemu   # or lxc
+      repository: ZPascal/bosh-libvirt-cpi-release
+      ref: v1.2.3                  # use a tag that contains the action
+  - uses: ./.github/actions/setup-bosh-director
+    with:
+      backend: qemu                # or lxc
+      cpi_binary_version: v1.2.3   # use the release binary; empty = compile from source
+  - run: bosh -e "$BOSH_ENV_ALIAS" deployments --client admin --client-secret admin-password
 ```
 
-**Setup BOSH Director (`setup-bosh-director.yml`)** — bootstraps a director and emits its credentials as job outputs. Intended for callers that run their own persistent runner and want to drive their own test steps against a live director. Cannot be combined with `e2e.yml` — both require the same runner for libvirt networking to work.
+The Director is a VM on the runner's libvirt bridge (`192.168.122.x`), so only steps on the same runner can reach it. Release binaries are used when you run outside this repository and not on a `pull_request`; otherwise, or if the download fails, the CPI is compiled from source. Pin the same tag for the checkout and `cpi_binary_version`, because the manifests and the binary should match.
 
-Full workflow documentation (inputs, outputs, step-by-step breakdown) is in [docs/e2e-backends.md](docs/e2e-backends.md).
+There is also a reusable workflow, `setup-bosh-director.yml`, that wraps the action in its own job and returns the credentials as outputs. Use it only with a persistent runner (`runs_on` input), since a hosted runner and its Director are gone when the job ends. Details: [docs/e2e-backends.md](docs/e2e-backends.md#setup-bosh-director-workflow-setup-bosh-directoryml).
+
+## CI (contributors)
+
+The project's own pipeline (`.github/workflows/tests.yml` and `e2e.yml`) runs a throwaway director plus smoke test for QEMU and LXC on every push and PR. You do not need it to use the CPI; see [docs/e2e-backends.md](docs/e2e-backends.md).
 
 ## Documentation
 
-- **[CI/CD Workflows](docs/e2e-backends.md)** - E2E workflow inputs, backend comparison, diagnostics
+- **[Installation Guide](docs/INSTALL.md)** - Installation and Director deployment
+- **[CI/CD Workflows](docs/e2e-backends.md)** - E2E pipeline and the reusable `setup-bosh-director` workflow
 - **[Hypervisor Configuration Guide](docs/HYPERVISOR_CONFIGURATION.md)** - Per-backend installation prerequisites and known limitations
 - **Configuration Examples**:
   - [QEMU/KVM Local](config/cpi-qemu.json)
   - [QEMU/KVM Remote](config/cpi-qemu-remote.json)
-  - [VirtualBox](config/cpi-vbox.json)
   - [LXC](config/cpi-lxc.json)
 
 ## Architecture

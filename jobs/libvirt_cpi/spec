@@ -12,8 +12,7 @@ properties:
   backend_uri:
     description: >
       Libvirt connection URI. Determines the hypervisor backend.
-      Examples: "qemu:///system" (QEMU/KVM), "lxc:///" (LXC),
-      "vbox:///session" (VirtualBox).
+      Examples: "qemu:///system" (QEMU/KVM), "lxc:///" (LXC)
     default: "qemu:///system"
 
   host:

@@ -50,13 +50,13 @@ The BOSH Libvirt CPI provides a unified interface to multiple virtualization tec
 │  └──────────┬───────────────────────────┘  │
 └─────────────┼───────────────────────────────┘
               │
-    ┌─────────┼─────────┬─────────┐
-    │         │         │         │
-┌───▼────┐ ┌──▼───┐ ┌──▼──┐ ┌────▼────┐
-│ QEMU/  │ │VBox  │ │ LXC │ │   Xen   │
-│  KVM   │ │      │ │     │ │         │
-└────────┘ └──────┘ └─────┘ └─────────┘
-   VMs       VMs    Containers  VMs
+    ┌─────────┴─────────┐
+    │                   │
+┌───▼────┐          ┌───▼───┐
+│ QEMU/  │          │  LXC  │
+│  KVM   │          │       │
+└────────┘          └───────┘
+   VMs             Containers
 ```
 
 ## Component Details
@@ -100,7 +100,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 ```go
 // provider/libvirt_provider.go
 type LibvirtProvider struct {
-    hypervisor HypervisorType  // qemu, vbox, lxc, etc.
+    hypervisor HypervisorType  // qemu, lxc, etc.
     uri        string           // Connection URI
     driver     driver.Driver    // Command executor
     // ...
@@ -137,10 +137,7 @@ Each hypervisor is supported through libvirt's driver system:
 | Hypervisor | Libvirt Driver | Domain Type | VM Format |
 |------------|---------------|-------------|-----------|
 | QEMU/KVM | qemu | kvm | qcow2 |
-| VirtualBox | vbox | vbox | VMDK/VDI |
 | LXC | lxc | lxc | Directory |
-| Xen | xen | xen | raw/qcow2 |
-| VMware | vmware | vmware | VMDK |
 
 ## Data Flow
 
@@ -159,7 +156,6 @@ Libvirt Provider
     │
     ├─► Generate hypervisor-specific XML
     │   (QEMU: kvm type with virtio)
-    │   (VBox: vbox type with RDP)
     │   (LXC: lxc type with container init)
     │
     ├─► Write XML to temp file
@@ -250,18 +246,6 @@ The provider generates different XML templates based on hypervisor:
 </domain>
 ```
 
-### VirtualBox Template
-```xml
-<domain type='vbox'>
-  <name>vm-name</name>
-  <memory>2097152</memory>
-  <vcpu>2</vcpu>
-  <devices>
-    <graphics type='rdp' autoport='yes'/>
-  </devices>
-</domain>
-```
-
 ### LXC Template
 ```xml
 <domain type='lxc'>
@@ -312,7 +296,7 @@ The provider generates different XML templates based on hypervisor:
 4. **Update validation:**
    ```go
    // cpi/factory_options.go
-   validHypervisors := []string{"qemu", "vbox", "lxc", "newhv"}
+   validHypervisors := []string{"qemu", "lxc", "newhv"}
    ```
 
 ## Security Considerations
@@ -338,11 +322,6 @@ The provider generates different XML templates based on hypervisor:
 - **Startup time:** 5-15 seconds
 - **Overhead:** ~5-10%
 - **Best for:** Production workloads
-
-### VirtualBox
-- **Startup time:** 10-30 seconds
-- **Overhead:** ~10-15%
-- **Best for:** Development
 
 ### LXC
 - **Startup time:** 1-3 seconds

@@ -25,7 +25,7 @@ var _ = Describe("LibvirtDriver", func() {
 		logger = boshlog.NewLogger(boshlog.LevelNone)
 		conn = &fakes.FakeLibvirtConn{}
 		builder = &fakes.FakeDomainBuilder{}
-		d = driver.NewLibvirtDriver(conn, builder, logger)
+		d = driver.NewLibvirtDriver(conn, builder, logger).WithReconnectDelay(0)
 	})
 
 	Describe("DefineDomain", func() {
@@ -75,6 +75,62 @@ var _ = Describe("LibvirtDriver", func() {
 			// FakeLibvirtConn returns (nil, nil) by default
 			Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
 		})
+
+		Context("when libvirtd drops the connection", func() {
+			connLost := libvirt.Error{Code: libvirt.ERR_SYSTEM_ERROR, Domain: libvirt.FROM_RPC}
+
+			It("reconnects and treats a now-missing domain as success", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.OnReconnect = func() {
+					conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_NO_DOMAIN}
+				}
+				Expect(d.DestroyDomain("vm-1")).To(Succeed())
+				Expect(conn.ReconnectCalls).To(Equal(1))
+			})
+
+			It("gives up after 3 failed reconnects", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.ReconnectErr = errors.New("still down")
+				Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(3))
+			})
+
+			It("also reconnects on 'client socket is closed'", func() {
+				conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_INTERNAL_ERROR, Domain: libvirt.FROM_RPC}
+				conn.OnReconnect = func() {
+					conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_NO_DOMAIN}
+				}
+				Expect(d.DestroyDomain("vm-1")).To(Succeed())
+				Expect(conn.ReconnectCalls).To(Equal(1))
+			})
+
+			It("keeps the reconnect error in the returned error", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.ReconnectErr = errors.New("still down")
+				Expect(d.DestroyDomain("vm-1")).To(MatchError(ContainSubstring("still down")))
+			})
+
+			It("does not reconnect for unrelated libvirt errors", func() {
+				conn.LookupDomainByNameErr = libvirt.Error{Code: libvirt.ERR_OPERATION_FAILED, Domain: libvirt.FROM_QEMU}
+				Expect(d.DestroyDomain("vm-1")).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(0))
+			})
+
+			It("reconnects when shutting down a domain", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.OnReconnect = func() { conn.LookupDomainByNameErr = errors.New("gone") }
+				Expect(d.ShutdownDomain("vm-1")).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(1))
+			})
+
+			It("reconnects when looking up a domain", func() {
+				conn.LookupDomainByNameErr = connLost
+				conn.OnReconnect = func() { conn.LookupDomainByNameErr = errors.New("gone") }
+				_, err := d.LookupDomain("vm-1")
+				Expect(err).To(HaveOccurred())
+				Expect(conn.ReconnectCalls).To(Equal(1))
+			})
+		})
 	})
 
 	Describe("DeleteStorageVol", func() {
@@ -106,12 +162,12 @@ var _ = Describe("LibvirtDriver", func() {
 		})
 
 		It("returns error when lookup returns nil domain with no error", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.StartDomain("vm-1")).To(HaveOccurred())
 		})
 
 		It("returns error when lookup returns nil domain with no error for Shutdown", func() {
-			// conn returns (nil, nil) by default — withDomain must guard against nil
+			// conn returns (nil, nil) by default - withDomain must guard against nil
 			Expect(d.ShutdownDomain("vm-1")).To(HaveOccurred())
 		})
 	})

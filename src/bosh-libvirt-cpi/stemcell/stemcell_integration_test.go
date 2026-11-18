@@ -35,7 +35,7 @@ var _ = Describe("Stemcell (integration)", func() {
 
 		stemcellPath := os.Getenv("STEMCELL_PATH")
 		if stemcellPath == "" {
-			Skip("STEMCELL_PATH not set — provide path to a BOSH stemcell tarball")
+			Skip("STEMCELL_PATH not set - provide path to a BOSH stemcell tarball")
 		}
 
 		var err error

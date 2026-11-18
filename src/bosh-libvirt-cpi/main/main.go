@@ -57,9 +57,12 @@ func main() {
 		logger.Error("main", "Connecting to libvirt: %s", err.Error())
 		os.Exit(1)
 	}
-	defer conn.Close() //nolint:errcheck
 
-	libvirtConn := driver.NewLibvirtConnImpl(conn)
+	// Remember the (possibly SSH-tunnelled) URI so the connection can be
+	// re-established if libvirtd drops it. Close via the wrapper: after a
+	// reconnect it holds the live handle.
+	libvirtConn := driver.NewReconnectableLibvirtConn(conn, libvirtURI)
+	defer libvirtConn.Close() //nolint:errcheck
 
 	cpiFactory := cpi.NewFactoryWithConn(
 		libvirtConn, fs, cmdRunner, uuidGen, compressor, cpi.FactoryOpts(config), logger)
