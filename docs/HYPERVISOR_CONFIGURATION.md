@@ -49,7 +49,7 @@ If you don't specify a `uri`, it will be automatically generated based on the `h
 **Prerequisites:**
 ```bash
 # Install QEMU/KVM and libvirt
-sudo apt-get install qemu-kvm libvirt-daemon-system libvirt-clients
+sudo apt-get install qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients
 
 # Start libvirt
 sudo systemctl start libvirtd
