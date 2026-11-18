@@ -17,6 +17,9 @@ type LibvirtDriver struct {
 	domBuilder DomainBuilder
 	logTag     string
 	logger     boshlog.Logger
+
+	reconnectDelay    time.Duration
+	reconnectAttempts int
 }
 
 // NewLibvirtDriver returns a LibvirtDriver using conn and builder.
@@ -26,7 +29,17 @@ func NewLibvirtDriver(conn LibvirtConn, builder DomainBuilder, logger boshlog.Lo
 		domBuilder: builder,
 		logTag:     "driver.LibvirtDriver",
 		logger:     logger,
+
+		reconnectDelay:    time.Second,
+		reconnectAttempts: 3,
 	}
+}
+
+// WithReconnectDelay sets the base delay between reconnect attempts
+// (the n-th attempt waits n*delay). Mainly useful to speed up tests.
+func (d LibvirtDriver) WithReconnectDelay(delay time.Duration) LibvirtDriver {
+	d.reconnectDelay = delay
+	return d
 }
 
 func (d LibvirtDriver) withDomain(id string, fn func(*libvirt.Domain) error) error {
@@ -54,37 +67,55 @@ func (d LibvirtDriver) StartDomain(id string) error {
 
 func (d LibvirtDriver) ShutdownDomain(id string) error {
 	d.logger.Debug(d.logTag, "Shutting down domain '%s'", id)
-	return d.withDomain(id, func(dom *libvirt.Domain) error { return dom.Shutdown() })
+	return d.withReconnect("shutdown of '"+id+"'", func() error {
+		return d.withDomain(id, func(dom *libvirt.Domain) error { return dom.Shutdown() })
+	})
 }
 
 // isConnectionLost reports whether err means the RPC connection to libvirtd
-// was dropped (e.g. "End of file while reading data: Input/output error").
+// was dropped, e.g. "End of file while reading data: Input/output error" or
+// "internal error: client socket is closed".
 func isConnectionLost(err error) bool {
 	var lverr libvirt.Error
-	return errors.As(err, &lverr) &&
-		lverr.Code == libvirt.ERR_SYSTEM_ERROR && lverr.Domain == libvirt.FROM_RPC
+	if !errors.As(err, &lverr) {
+		return false
+	}
+	if lverr.Code == libvirt.ERR_INVALID_CONN {
+		return true
+	}
+	if lverr.Domain != libvirt.FROM_RPC {
+		return false
+	}
+	switch lverr.Code {
+	case libvirt.ERR_SYSTEM_ERROR, libvirt.ERR_RPC, libvirt.ERR_INTERNAL_ERROR:
+		return true
+	}
+	return false
 }
 
-// DestroyDomain stops and undefines the domain. If libvirtd drops the
-// connection mid-call (seen with the LXC driver while tearing down a
-// container), it reconnects and retries; the operation is idempotent.
-func (d LibvirtDriver) DestroyDomain(id string) error {
-	err := d.destroyDomain(id)
-	for attempt := 0; attempt < 3 && err != nil && isConnectionLost(err); attempt++ {
-		rc, ok := d.conn.(interface{ Reconnect() error })
-		if !ok {
-			break
-		}
-		d.logger.Warn(d.logTag, "Connection lost destroying domain '%s', reconnecting: %s", id, err)
-		time.Sleep(time.Second)
-		if rerr := rc.Reconnect(); rerr != nil {
+// withReconnect runs op and, if libvirtd dropped the connection, reconnects
+// and runs it again. Only use it for idempotent operations.
+func (d LibvirtDriver) withReconnect(what string, op func() error) error {
+	err := op()
+	for attempt := 1; attempt <= d.reconnectAttempts && err != nil && isConnectionLost(err); attempt++ {
+		d.logger.Warn(d.logTag, "Connection lost during %s, reconnecting (attempt %d): %s", what, attempt, err)
+		time.Sleep(time.Duration(attempt) * d.reconnectDelay)
+		if rerr := d.conn.Reconnect(); rerr != nil {
 			d.logger.Warn(d.logTag, "Reconnect failed: %s", rerr)
+			err = fmt.Errorf("%w (reconnect failed: %s)", err, rerr)
 			continue
 		}
-		err = d.destroyDomain(id)
-		if err != nil && errors.Is(err, libvirt.ERR_NO_DOMAIN) {
-			return nil
-		}
+		err = op()
+	}
+	return err
+}
+
+// DestroyDomain stops and undefines the domain. It is idempotent, so it
+// survives libvirtd dropping the connection mid-call (seen with the LXC driver).
+func (d LibvirtDriver) DestroyDomain(id string) error {
+	err := d.withReconnect("destroy of '"+id+"'", func() error { return d.destroyDomain(id) })
+	if err != nil && errors.Is(err, libvirt.ERR_NO_DOMAIN) {
+		return nil
 	}
 	return err
 }
@@ -110,7 +141,12 @@ func (d LibvirtDriver) RebootDomain(id string) error {
 
 func (d LibvirtDriver) LookupDomain(id string) (Domain, error) {
 	d.logger.Debug(d.logTag, "Looking up domain '%s'", id)
-	dom, err := d.conn.LookupDomainByName(id)
+	var dom *libvirt.Domain
+	err := d.withReconnect("lookup of '"+id+"'", func() error {
+		var lerr error
+		dom, lerr = d.conn.LookupDomainByName(id)
+		return lerr
+	})
 	if err != nil {
 		return nil, err
 	}

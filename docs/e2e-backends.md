@@ -80,7 +80,7 @@ Director runs as an LXC container. Requires a few host tweaks the workflow appli
 
 Steps 1-5 of the E2E workflow (host setup, libvirt install, SSH key, release build, `bosh create-env`, wait for API and worker) live in a composite action. `e2e.yml` and `setup-bosh-director.yml` both use it, so they cannot drift apart. Because a composite action runs as steps inside the caller's job, the Director stays reachable by later steps on the same runner.
 
-The action also has `cpi_binary_version`. When set and the caller is not a `pull_request` run, it downloads the matching Linux binary from GitHub Releases, verifies the SHA-256 and copies it into `src/bosh-libvirt-cpi/` and patches the CI workspace's copy of the `libvirt_cpi` spec and packaging so the package installs it instead of running `go build` (nothing is committed). In that case Go is not installed on the runner and the `golang-1-linux` package is stubbed, so the compile VM doesn't download Go either. If the download fails it warns and compiles from source. `e2e.yml` leaves it empty, so the project's own tests always compile the code under test.
+The action also has `cpi_binary_version`. When set, and the caller is outside the CPI repository and not a `pull_request` run, it downloads the matching Linux binary from GitHub Releases, verifies the SHA-256 and copies it into `src/bosh-libvirt-cpi/` and patches the CI workspace's copy of the `libvirt_cpi` spec and packaging so the package installs it instead of running `go build` (nothing is committed). In that case Go is not installed on the runner and the `golang-1-linux` package is stubbed, so the compile VM doesn't download Go either. If the download fails it warns and compiles from source. Inside this repo it is never used, so the project's own tests always compile the code under test. Pin the same tag for the checkout and the binary so manifests and binary match.
 
 It expects the CPI repository to be checked out at the workspace root and exports `DIRECTOR_IP`, `BOSH_ENV_ALIAS`, `DIRECTOR_NAME`, `KERNEL_PATH` (QEMU) and `LIBVIRT_HOST_KEY` to later steps via `GITHUB_ENV`. Use it directly from another repository to run your own steps against the Director in the same job:
 
@@ -102,7 +102,7 @@ steps:
 
 A thin reusable-workflow wrapper around the composite action above. It only handles director bootstrap and emits credentials as job outputs. Intended for callers that run their own persistent runner and want to manage the director lifecycle separately from their test steps.
 
-It can be called from any repository: it checks out the CPI repository itself rather than the caller's.
+It can be called from any repository: it checks out the CPI repository (`cpi_repository`) rather than the caller's. On a hosted runner the Director disappears when the job ends, so use `runs_on` with a persistent runner, or use the composite action to keep everything in one job.
 
 ```yaml
 uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml@main
@@ -115,8 +115,9 @@ uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml
 | `backend` | yes | - | `qemu` or `lxc` |
 | `bosh_cli_version` | no | `v7.10.8` | BOSH CLI version to install |
 | `cpi_repository` | no | `ZPascal/bosh-libvirt-cpi-release` | Repo providing the release, manifests, scripts |
-| `cpi_ref` | no | `main` | Branch, tag or SHA for the manifests, scripts and release build |
-| `cpi_version` | no | `latest` | Release tag whose release `cpi` binary is packed into the BOSH release. Ignored on `pull_request` (source is compiled). Empty = always compile |
+| `cpi_ref` | no | empty | Branch, tag or SHA of the CPI repo. Empty = the caller's own commit inside the CPI repo, otherwise the default branch |
+| `runs_on` | no | `ubuntu-latest` | Runner label. The Director lives on this runner, so use a persistent one if later jobs need it |
+| `cpi_version` | no | `latest` | Release tag whose release `cpi` binary is packed into the BOSH release. Not used inside the CPI repo or on `pull_request` (source is compiled). Empty = always compile |
 
 **Important:** this workflow does not work with `e2e.yml` - they both assume the director is reachable from the same runner. `e2e.yml` runs everything in one job by design.
 
@@ -141,10 +142,11 @@ jobs:
     uses: ./.github/workflows/setup-bosh-director.yml
     with:
       backend: lxc
+      runs_on: my-persistent-runner   # the Director VM stays on this machine
 
   my-tests:
     needs: setup
-    runs-on: my-persistent-runner  # must be the same machine as setup
+    runs-on: my-persistent-runner     # same machine as setup
     steps:
       - name: Decode CA cert
         run: echo "${{ needs.setup.outputs.director-ca-cert }}" | base64 -d > /tmp/ca.crt

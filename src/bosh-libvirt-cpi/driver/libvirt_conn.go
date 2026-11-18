@@ -12,6 +12,8 @@ type LibvirtConn interface {
 	LookupDomainByName(id string) (*libvirt.Domain, error)
 	LookupStoragePoolByName(name string) (*libvirt.StoragePool, error)
 	Close() (int, error)
+	// Reconnect re-opens the connection after libvirtd dropped it.
+	Reconnect() error
 }
 
 // LibvirtConnImpl wraps a real *libvirt.Connect.

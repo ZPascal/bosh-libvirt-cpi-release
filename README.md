@@ -100,19 +100,24 @@ To run a BOSH Director with this CPI on your own machine, follow [docs/INSTALL.m
 
 ## Set up a BOSH Director in GitHub Actions
 
-The reusable workflow `setup-bosh-director.yml` bootstraps a BOSH Director backed by this CPI (QEMU/KVM or LXC) on a GitHub Actions runner and returns its credentials as job outputs. Call it from your own repository:
+The composite action `setup-bosh-director` installs libvirt (QEMU or LXC) and bootstraps a BOSH Director backed by this CPI on the runner. It runs as steps inside your job, so your own steps can talk to the Director afterwards:
 
 ```yaml
-jobs:
-  director:
-    uses: ZPascal/bosh-libvirt-cpi-release/.github/workflows/setup-bosh-director.yml@main
+steps:
+  - uses: actions/checkout@v7
     with:
-      backend: qemu   # or lxc
-      # cpi_ref: v1.2.3       # CPI tag/branch/SHA for manifests and scripts (default: main)
-      # cpi_version: v1.2.3    # release binary to use (default: latest)
+      repository: ZPascal/bosh-libvirt-cpi-release
+      ref: v1.2.3                  # use a tag that contains the action
+  - uses: ./.github/actions/setup-bosh-director
+    with:
+      backend: qemu                # or lxc
+      cpi_binary_version: v1.2.3   # use the release binary; empty = compile from source
+  - run: bosh -e "$BOSH_ENV_ALIAS" deployments --client admin --client-secret admin-password
 ```
 
-If you need the Director in the same job as your own steps, use the composite action `.github/actions/setup-bosh-director` instead (see the docs). On `pull_request` runs the workflow compiles the CPI from source to validate the change; on all other runs it uses the release binary and falls back to compiling if none is found. Outputs include `director-url`, `director-ca-cert`, `bosh-client`, `bosh-client-secret` and `bosh-env-alias`. The director's libvirt bridge (`192.168.122.x`) is only reachable from the machine that created it, so run your BOSH steps on that same runner. Inputs, outputs and a full example: [docs/e2e-backends.md](docs/e2e-backends.md#setup-bosh-director-workflow-setup-bosh-directoryml).
+The Director is a VM on the runner's libvirt bridge (`192.168.122.x`), so only steps on the same runner can reach it. Release binaries are used when you run outside this repository and not on a `pull_request`; otherwise, or if the download fails, the CPI is compiled from source. Pin the same tag for the checkout and `cpi_binary_version`, because the manifests and the binary should match.
+
+There is also a reusable workflow, `setup-bosh-director.yml`, that wraps the action in its own job and returns the credentials as outputs. Use it only with a persistent runner (`runs_on` input), since a hosted runner and its Director are gone when the job ends. Details: [docs/e2e-backends.md](docs/e2e-backends.md#setup-bosh-director-workflow-setup-bosh-directoryml).
 
 ## CI (contributors)
 

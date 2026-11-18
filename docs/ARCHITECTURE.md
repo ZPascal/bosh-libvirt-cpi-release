@@ -50,13 +50,13 @@ The BOSH Libvirt CPI provides a unified interface to multiple virtualization tec
 │  └──────────┬───────────────────────────┘  │
 └─────────────┼───────────────────────────────┘
               │
-    ┌─────────┼─────────┬─────────┐
-    │         │         │         │
-┌───▼────┐ ┌──▼───┐ ┌──▼──┐ ┌────▼────┐
-│ QEMU/  │ │VBox  │ │ LXC │ │   Xen   │
-│  KVM   │ │      │ │     │ │         │
-└────────┘ └──────┘ └─────┘ └─────────┘
-   VMs       VMs    Containers  VMs
+    ┌─────────┴─────────┐
+    │                   │
+┌───▼────┐          ┌───▼───┐
+│ QEMU/  │          │  LXC  │
+│  KVM   │          │       │
+└────────┘          └───────┘
+   VMs             Containers
 ```
 
 ## Component Details
@@ -100,7 +100,7 @@ func (f Factory) New(ctx apiv1.CallContext) (apiv1.CPI, error) {
 ```go
 // provider/libvirt_provider.go
 type LibvirtProvider struct {
-    hypervisor HypervisorType  // qemu, vbox, lxc, etc.
+    hypervisor HypervisorType  // qemu, lxc, etc.
     uri        string           // Connection URI
     driver     driver.Driver    // Command executor
     // ...
@@ -156,7 +156,6 @@ Libvirt Provider
     │
     ├─► Generate hypervisor-specific XML
     │   (QEMU: kvm type with virtio)
-    │   (VBox: vbox type with RDP)
     │   (LXC: lxc type with container init)
     │
     ├─► Write XML to temp file
@@ -297,7 +296,7 @@ The provider generates different XML templates based on hypervisor:
 4. **Update validation:**
    ```go
    // cpi/factory_options.go
-   validHypervisors := []string{"qemu", "vbox", "lxc", "newhv"}
+   validHypervisors := []string{"qemu", "lxc", "newhv"}
    ```
 
 ## Security Considerations

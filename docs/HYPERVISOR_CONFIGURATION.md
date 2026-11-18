@@ -19,7 +19,7 @@ The BOSH Libvirt CPI uses libvirt as a unified interface to multiple virtualizat
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `hypervisor` | string | No | `qemu` | Hypervisor type: qemu, vbox, lxc, xen, vmware |
+| `hypervisor` | string | No | `qemu` | Hypervisor type: qemu or lxc |
 | `uri` | string | No | Auto-generated | Libvirt connection URI |
 | `bin_path` | string | No | `virsh` | Path to virsh binary |
 | `store_dir` | string | Yes | - | Directory for VM and disk storage |

@@ -18,12 +18,17 @@ on:
         type: string
         default: ZPascal/bosh-libvirt-cpi-release
       cpi_ref:
-        description: 'Branch, tag or SHA of the CPI repository to build the release from'
+        description: 'Branch, tag or SHA of the CPI repository. Empty = the caller''s own commit when the caller is the CPI repo, otherwise the default branch.'
         required: false
         type: string
-        default: main
+        default: ''
+      runs_on:
+        description: 'Runner label. The Director lives on this runner, use a persistent one if later jobs need it.'
+        required: false
+        type: string
+        default: ubuntu-latest
       cpi_version:
-        description: 'CPI release tag (e.g. v1.2.3) or latest. The release binary is used unless the caller runs on pull_request, where the code is compiled from source. Empty = always compile.'
+        description: 'CPI release tag (e.g. v1.2.3) or latest. The release binary is used for callers outside the CPI repo, except on pull_request. Inside the CPI repo the code is always compiled from source. Empty = always compile.'
         required: false
         type: string
         default: latest
@@ -56,7 +61,7 @@ on:
 jobs:
   setup:
     name: Setup BOSH Director (${{ inputs.backend }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runs_on }}
     timeout-minutes: 240
     outputs:
       director-url:      ${{ steps.emit.outputs.director-url }}

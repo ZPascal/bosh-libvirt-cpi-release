@@ -8,16 +8,16 @@ This guide covers everything needed to install the CPI binary on a host machine,
 
 1. [How the CPI fits into BOSH](#1-how-the-cpi-fits-into-bosh)
 2. [Choosing a backend](#2-choosing-a-backend)
-3. [Linux - QEMU/KVM](#3-linux--qemukvm)
-4. [Linux - LXC](#4-linux--lxc)
-5. [Windows - not supported](#6-windows--not-supported)
-6. [Remote-host mode (Director inside a VM)](#7-remote-host-mode-director-inside-a-vm)
-7. [CPI configuration reference](#8-cpi-configuration-reference)
-8. [BOSH manifest integration](#9-bosh-manifest-integration)
-9. [Storage layout](#10-storage-layout)
-10. [Networking](#11-networking)
-11. [Kernel-boot mode (QEMU only)](#12-kernel-boot-mode-qemu-only)
-12. [Troubleshooting](#13-troubleshooting)
+3. [Linux - QEMU/KVM](#3-linux---qemukvm)
+4. [Linux - LXC](#4-linux---lxc)
+5. [Windows - not supported](#5-windows---not-supported)
+6. [Remote-host mode (Director inside a VM)](#6-remote-host-mode-director-inside-a-vm)
+7. [CPI configuration reference](#7-cpi-configuration-reference)
+8. [BOSH manifest integration](#8-bosh-manifest-integration)
+9. [Storage layout](#9-storage-layout)
+10. [Networking](#10-networking)
+11. [Kernel-boot mode (QEMU only)](#11-kernel-boot-mode-qemu-only)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -513,7 +513,7 @@ bosh -e your-director update-cloud-config manifests/cloud-config-qemu.yml \
   --client admin --client-secret admin-password
 ```
 
-The cloud config defines the VM types and networks available to deployments. The `kernel_path` variable is required for QEMU kernel-boot mode (see section 12) and should point to a kernel image on the host that matches the stemcell's userspace.
+The cloud config defines the VM types and networks available to deployments. The `kernel_path` variable is required for QEMU kernel-boot mode (see section 11) and should point to a kernel image on the host that matches the stemcell's userspace.
 
 ### 8.2 Stemcell
 
