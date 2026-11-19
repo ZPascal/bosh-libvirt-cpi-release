@@ -7,7 +7,7 @@ require (
 	github.com/cloudfoundry/bosh-utils v0.0.671
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.44.0
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	libvirt.org/go/libvirt v1.12007.0
 )
 
@@ -19,7 +19,7 @@ require (
 	github.com/nxadm/tail v1.4.8 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
