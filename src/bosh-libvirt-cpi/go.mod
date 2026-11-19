@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/cloudfoundry/bosh-cpi-go v0.0.0-20261017100100-5481e9266ff3
-	github.com/cloudfoundry/bosh-utils v0.0.671
+	github.com/cloudfoundry/bosh-utils v0.0.676
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.44.0
 	golang.org/x/crypto v0.59.0
@@ -17,7 +17,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
