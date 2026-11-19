@@ -341,8 +341,9 @@ const (
 type DomainEventUndefinedDetailType int
 
 const (
-	DOMAIN_EVENT_UNDEFINED_REMOVED = DomainEventUndefinedDetailType(C.VIR_DOMAIN_EVENT_UNDEFINED_REMOVED)
-	DOMAIN_EVENT_UNDEFINED_RENAMED = DomainEventUndefinedDetailType(C.VIR_DOMAIN_EVENT_UNDEFINED_RENAMED)
+	DOMAIN_EVENT_UNDEFINED_REMOVED  = DomainEventUndefinedDetailType(C.VIR_DOMAIN_EVENT_UNDEFINED_REMOVED)
+	DOMAIN_EVENT_UNDEFINED_RENAMED  = DomainEventUndefinedDetailType(C.VIR_DOMAIN_EVENT_UNDEFINED_RENAMED)
+	DOMAIN_EVENT_UNDEFINED_MIGRATED = DomainEventUndefinedDetailType(C.VIR_DOMAIN_EVENT_UNDEFINED_MIGRATED)
 )
 
 type DomainEventStartedDetailType int
@@ -397,9 +398,10 @@ const (
 type DomainEventShutdownDetailType int
 
 const (
-	DOMAIN_EVENT_SHUTDOWN_FINISHED = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_FINISHED)
-	DOMAIN_EVENT_SHUTDOWN_GUEST    = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_GUEST)
-	DOMAIN_EVENT_SHUTDOWN_HOST     = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_HOST)
+	DOMAIN_EVENT_SHUTDOWN_FINISHED    = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_FINISHED)
+	DOMAIN_EVENT_SHUTDOWN_GUEST       = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_GUEST)
+	DOMAIN_EVENT_SHUTDOWN_HOST        = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_HOST)
+	DOMAIN_EVENT_SHUTDOWN_GUEST_RESET = DomainEventShutdownDetailType(C.VIR_DOMAIN_EVENT_SHUTDOWN_GUEST_RESET)
 )
 
 type DomainMemoryStatTags int
@@ -6082,6 +6084,7 @@ func (d *Domain) GraphicsReload(typ DomainGraphicsReloadType, flags uint32) erro
 func (d *Domain) DelThrottleGroup(group string, flags DomainModificationImpact) error {
 	var err C.virError
 	cgroup := C.CString(group)
+	defer C.free(unsafe.Pointer(cgroup))
 	ret := C.virDomainDelThrottleGroupWrapper(d.ptr, cgroup, C.uint(flags), &err)
 	if ret == -1 {
 		return makeError(&err)
@@ -6101,6 +6104,7 @@ func (d *Domain) SetThrottleGroup(group string, params *DomainBlockIoTuneParamet
 
 	var err C.virError
 	cgroup := C.CString(group)
+	defer C.free(unsafe.Pointer(cgroup))
 	ret := C.virDomainSetThrottleGroupWrapper(d.ptr, cgroup, cparams, cnparams, C.uint(flags), &err)
 	if ret == -1 {
 		return makeError(&err)
