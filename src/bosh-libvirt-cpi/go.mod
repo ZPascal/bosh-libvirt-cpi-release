@@ -8,7 +8,7 @@ require (
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.44.0
 	golang.org/x/crypto v0.59.0
-	libvirt.org/go/libvirt v1.12007.0
+	libvirt.org/go/libvirt v1.12009.0
 )
 
 require (

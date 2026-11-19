@@ -113,6 +113,6 @@ golang.org/x/text/transform
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 ## explicit
 gopkg.in/tomb.v1
-# libvirt.org/go/libvirt v1.12007.0
+# libvirt.org/go/libvirt v1.12009.0
 ## explicit; go 1.11
 libvirt.org/go/libvirt
